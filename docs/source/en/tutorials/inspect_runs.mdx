@@ -30,7 +30,7 @@ Here's how it then looks like on the platform:
 First install the required packages. Here we install [Phoenix by Arize AI](https://github.com/Arize-ai/phoenix) because that's a good solution to collect and inspect the logs, but there are other OpenTelemetry-compatible platforms that you could use for this collection & inspection part.
 
 ```shell
-pip install 'smolagents[telemetry]'
+pip install 'smolagents[telemetry,toolkit]'
 ```
 
 Then run the collector in the background.
@@ -54,7 +54,7 @@ Then you can run your agents!
 from smolagents import (
     CodeAgent,
     ToolCallingAgent,
-    DuckDuckGoSearchTool,
+    WebSearchTool,
     VisitWebpageTool,
     InferenceClientModel,
 )
@@ -62,7 +62,7 @@ from smolagents import (
 model = InferenceClientModel()
 
 search_agent = ToolCallingAgent(
-    tools=[DuckDuckGoSearchTool(), VisitWebpageTool()],
+    tools=[WebSearchTool(), VisitWebpageTool()],
     model=model,
     name="search_agent",
     description="This is an agent that can do web search.",
@@ -143,7 +143,7 @@ SmolagentsInstrumentor().instrument(tracer_provider=trace_provider)
 from smolagents import (
     CodeAgent,
     ToolCallingAgent,
-    DuckDuckGoSearchTool,
+    WebSearchTool,
     VisitWebpageTool,
     InferenceClientModel,
 )
@@ -153,7 +153,7 @@ model = InferenceClientModel(
 )
 
 search_agent = ToolCallingAgent(
-    tools=[DuckDuckGoSearchTool(), VisitWebpageTool()],
+    tools=[WebSearchTool(), VisitWebpageTool()],
     model=model,
     name="search_agent",
     description="This is an agent that can do web search.",
