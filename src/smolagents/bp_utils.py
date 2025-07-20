@@ -68,7 +68,7 @@ def bp_parse_code_blobs(text: str) -> str:
     Raises:
         ValueError: If no valid code block is found in the text.
     """
-    pattern = r"```(?:runpy)\s*\n(.*?)\n```"
+    pattern = r"```(?:py|python)\s*(.*?)```<end_code>"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return "\n\n".join(match.strip() for match in matches)
@@ -77,18 +77,12 @@ def bp_parse_code_blobs(text: str) -> str:
         ast.parse(text)
         return text
     except SyntaxError:
-        raise ValueError(
-            dedent(
-                f"""
-Your code snippet is invalid, because the regex pattern {pattern} was not found in it.
-Here is your code snippet:
-{text}
-Make sure to include code with the correct pattern, for instance:
-Thoughts: Your thoughts
-Code:
-```runpy
-# Your python code here
-```<end_code>
-"""
-            ).strip()
-        )
+        pass
+
+    raise ValueError(
+        dedent(
+            f"""
+            Your code snippet is invalid
+            """
+        ).strip()
+    )

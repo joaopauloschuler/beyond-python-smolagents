@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TypedDict
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size
+from .bp_utils import bp_parse_code_blobs
 
 import jinja2
 import yaml
@@ -1646,6 +1647,7 @@ class CodeAgent(MultiStepAgent):
         
         str_len = 0
         str_len_str = '0'
+        saved_files = []
 
         if model_output is not None:
             model_output = str(model_output)
@@ -1683,7 +1685,7 @@ print('When I finish or I need to ask for a new task, I will call <runcode>final
                 code_action = json.loads(model_output_for_parsing)["code"]
                 code_action = extract_code_from_text(code_action) or code_action
             else:
-                code_action = parse_code_blobs(model_output_for_parsing)
+                code_action = bp_parse_code_blobs(model_output_for_parsing)
             code_action = fix_final_answer_code(code_action)
             if (len(saved_files)==0):
                 code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
