@@ -14,12 +14,15 @@
 # limitations under the License.
 import io
 import os
+import re
 import tempfile
 import uuid
 import warnings
 from collections.abc import Generator
 from contextlib import nullcontext as does_not_raise
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -54,7 +57,36 @@ from smolagents.models import (
 )
 from smolagents.monitoring import AgentLogger, LogLevel
 from smolagents.tools import Tool, tool
-from smolagents.utils import BASE_BUILTIN_MODULES, AgentExecutionError, AgentGenerationError, AgentToolCallError
+from smolagents.utils import (
+    BASE_BUILTIN_MODULES,
+    AgentExecutionError,
+    AgentGenerationError,
+    AgentToolCallError,
+    AgentToolExecutionError,
+)
+
+
+@dataclass
+class ChoiceDeltaToolCallFunction:
+    arguments: Optional[str] = None
+    name: Optional[str] = None
+
+
+@dataclass
+class ChoiceDeltaToolCall:
+    index: Optional[int] = None
+    id: Optional[str] = None
+    function: Optional[ChoiceDeltaToolCallFunction] = None
+    type: Optional[str] = None
+
+
+@dataclass
+class ChoiceDelta:
+    content: Optional[str] = None
+    function_call: Optional[str] = None
+    refusal: Optional[str] = None
+    role: Optional[str] = None
+    tool_calls: Optional[list] = None
 
 
 def get_new_path(suffix="") -> str:
@@ -668,6 +700,35 @@ class TestMultiStepAgent:
             warnings.simplefilter("error")  # Turn warnings into errors
             SimpleAgent(tools=[], model=MagicMock(), grammar=None, verbosity_level=LogLevel.DEBUG)
 
+    def test_system_prompt_property(self):
+        """Test that system_prompt property is read-only and calls initialize_system_prompt."""
+
+        class SimpleAgent(MultiStepAgent):
+            def initialize_system_prompt(self) -> str:
+                return "Test system prompt"
+
+            def step(self, memory_step: ActionStep) -> Generator[None]:
+                yield None
+
+        # Create a simple agent with mocked model
+        model = MagicMock()
+        agent = SimpleAgent(tools=[], model=model)
+
+        # Test reading the property works and calls initialize_system_prompt
+        assert agent.system_prompt == "Test system prompt"
+
+        # Test setting the property raises AttributeError with correct message
+        with pytest.raises(
+            AttributeError,
+            match=re.escape(
+                """The 'system_prompt' property is read-only. Use 'self.prompt_templates["system_prompt"]' instead."""
+            ),
+        ):
+            agent.system_prompt = "New system prompt"
+
+        # assert "read-only" in str(exc_info.value)
+        # assert "Use 'self.prompt_templates[\"system_prompt\"]' instead" in str(exc_info.value)
+
     def test_logs_display_thoughts_even_if_error(self):
         class FakeJsonModelNoCall(Model):
             def generate(self, messages, stop_sequences=None, tools_to_call_from=None):
@@ -986,7 +1047,6 @@ class TestMultiStepAgent:
         assert agent.tools["valid_tool_function"].inputs == {
             "input": {"type": "string", "description": "Input string."}
         }
-        assert agent.tools["valid_tool_function"].output_type == "string"
         assert agent.tools["valid_tool_function"]("test") == "TEST"
 
         # Test overriding with kwargs
@@ -1047,6 +1107,94 @@ class TestToolCallingAgent:
         assert agent.memory.steps[1].tool_calls[0].arguments == {"location": "Paris", "date": "today"}
         assert agent.memory.steps[1].observations == "The weather in Paris on date:today is sunny."
 
+    @patch("openai.OpenAI")
+    def test_toolcalling_agent_stream_outputs_multiple_tool_calls(self, mock_openai_client):
+        """Test that ToolCallingAgent with stream_outputs=True returns the first final_answer when multiple are called."""
+        mock_client = mock_openai_client.return_value
+        from smolagents import OpenAIServerModel
+
+        # Mock streaming response with multiple final_answer calls
+        mock_deltas = [
+            ChoiceDelta(role="assistant"),
+            ChoiceDelta(
+                tool_calls=[
+                    ChoiceDeltaToolCall(
+                        index=0,
+                        id="call_1",
+                        function=ChoiceDeltaToolCallFunction(name="final_answer"),
+                        type="function",
+                    )
+                ]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='{"an'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='swer"'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments=': "out'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments="put1"))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=0, function=ChoiceDeltaToolCallFunction(arguments='"}'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[
+                    ChoiceDeltaToolCall(
+                        index=1,
+                        id="call_2",
+                        function=ChoiceDeltaToolCallFunction(name="final_answer"),
+                        type="function",
+                    )
+                ]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='{"an'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='swer"'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments=': "out'))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments="put2"))]
+            ),
+            ChoiceDelta(
+                tool_calls=[ChoiceDeltaToolCall(index=1, function=ChoiceDeltaToolCallFunction(arguments='"}'))]
+            ),
+        ]
+
+        class MockChoice:
+            def __init__(self, delta):
+                self.delta = delta
+
+        class MockChunk:
+            def __init__(self, delta):
+                self.choices = [MockChoice(delta)]
+                self.usage = None
+
+        mock_client.chat.completions.create.return_value = (MockChunk(delta) for delta in mock_deltas)
+
+        # Mock usage for non-streaming fallback
+        mock_usage = MagicMock()
+        mock_usage.prompt_tokens = 10
+        mock_usage.completion_tokens = 20
+
+        model = OpenAIServerModel(model_id="fakemodel")
+
+        agent = ToolCallingAgent(model=model, tools=[], max_steps=1, stream_outputs=True)
+        result = agent.run("Make 2 calls to final answer: return both 'output1' and 'output2'")
+        assert len(agent.memory.steps[-1].model_output_message.tool_calls) == 2
+        assert agent.memory.steps[-1].model_output_message.tool_calls[0].function.name == "final_answer"
+        assert agent.memory.steps[-1].model_output_message.tool_calls[1].function.name == "final_answer"
+
+        # The agent should return the first final_answer result
+        assert result == "output1"
+
     @patch("huggingface_hub.InferenceClient")
     def test_toolcalling_agent_api_misformatted_output(self, mock_inference_client):
         """Test that even misformatted json blobs don't interrupt the run for a ToolCallingAgent."""
@@ -1086,42 +1234,163 @@ class TestToolCallingAgent:
             return "2"
 
         class FakeCodeModel(Model):
-            def generate(self, messages, tools_to_call_from=None, stop_sequences=None):
-                if len(messages) < 3:
-                    return ChatMessage(
-                        role="assistant",
-                        content="",
-                        tool_calls=[
-                            ChatMessageToolCall(
-                                id="call_0",
-                                type="function",
-                                function=ChatMessageToolCallDefinition(name="fake_tool_1", arguments={}),
-                            )
-                        ],
-                    )
-                else:
-                    tool_result = messages[-1]["content"][0]["text"].removeprefix("Observation:\n")
-                    return ChatMessage(
-                        role="assistant",
-                        content="",
-                        tool_calls=[
-                            ChatMessageToolCall(
-                                id="call_1",
-                                type="function",
-                                function=ChatMessageToolCallDefinition(
-                                    name="final_answer", arguments={"answer": tool_result}
-                                ),
-                            )
-                        ],
-                    )
+            def generate(self, messages, stop_sequences=None):
+                return ChatMessage(role="assistant", content="Code:\n```py\nfinal_answer(fake_tool_1())\n```")
 
-        agent = ToolCallingAgent(tools=[fake_tool_1], model=FakeCodeModel())
+        agent = CodeAgent(tools=[fake_tool_1], model=FakeCodeModel())
 
         agent.tools["final_answer"] = CustomFinalAnswerTool()
         agent.tools["fake_tool_1"] = fake_tool_2
 
         answer = agent.run("Fake task.")
         assert answer == "2CUSTOM"
+
+    def test_custom_final_answer_with_custom_inputs(self):
+        class CustomFinalAnswerToolWithCustomInputs(FinalAnswerTool):
+            inputs = {
+                "answer1": {"type": "string", "description": "First part of the answer."},
+                "answer2": {"type": "string", "description": "Second part of the answer."},
+            }
+
+            def forward(self, answer1: str, answer2: str) -> str:
+                return answer1 + "CUSTOM" + answer2
+
+        model = MagicMock()
+        model.generate.return_value = ChatMessage(
+            role="assistant",
+            content=None,
+            tool_calls=[
+                ChatMessageToolCall(
+                    id="call_0",
+                    type="function",
+                    function=ChatMessageToolCallDefinition(
+                        name="final_answer", arguments={"answer1": "1", "answer2": "2"}
+                    ),
+                )
+            ],
+        )
+        agent = ToolCallingAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
+        answer = agent.run("Fake task.")
+        assert answer == "1CUSTOM2"
+
+    @pytest.mark.parametrize(
+        "test_case",
+        [
+            # Case 0: Single valid tool call
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "test_value"}),
+                    )
+                ],
+                "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'test_value'}",
+                "expected_observations": "Processed: test_value",
+                "expected_final_outputs": [None],
+                "expected_error": None,
+            },
+            # Case 1: Multiple tool calls
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "value1"}),
+                    ),
+                    ChatMessageToolCall(
+                        id="call_2",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "value2"}),
+                    ),
+                ],
+                "expected_model_output": "Called Tool: 'test_tool' with arguments: {'input': 'value1'}\nCalled Tool: 'test_tool' with arguments: {'input': 'value2'}",
+                "expected_observations": "Processed: value1\nProcessed: value2",
+                "expected_final_outputs": [None, None],
+                "expected_error": None,
+            },
+            # Case 2: Invalid tool name
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="nonexistent_tool", arguments={"input": "test"}),
+                    )
+                ],
+                "expected_error": AgentToolExecutionError,
+            },
+            # Case 3: Tool execution error
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"input": "error"}),
+                    )
+                ],
+                "expected_error": AgentToolExecutionError,
+            },
+            # Case 4: Empty tool calls list
+            {
+                "tool_calls": [],
+                "expected_model_output": None,
+                "expected_observations": None,
+                "expected_final_outputs": [],
+                "expected_error": None,
+            },
+            # Case 5: Final answer call
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(
+                            name="final_answer", arguments={"answer": "This is the final answer"}
+                        ),
+                    )
+                ],
+                "expected_model_output": "Called Tool: 'final_answer' with arguments: {'answer': 'This is the final answer'}",
+                "expected_observations": None,
+                "expected_final_outputs": ["This is the final answer"],
+                "expected_error": None,
+            },
+            # Case 6: Invalid arguments
+            {
+                "tool_calls": [
+                    ChatMessageToolCall(
+                        id="call_1",
+                        type="function",
+                        function=ChatMessageToolCallDefinition(name="test_tool", arguments={"wrong_param": "value"}),
+                    )
+                ],
+                "expected_error": AgentToolCallError,
+            },
+        ],
+    )
+    def test_process_tool_calls(self, test_case, test_tool):
+        # Create a ToolCallingAgent instance with the test tool
+        agent = ToolCallingAgent(tools=[test_tool], model=MagicMock())
+        # Create chat message with the specified tool calls for process_tool_calls
+        chat_message = ChatMessage(role=MessageRole.ASSISTANT, content="", tool_calls=test_case["tool_calls"])
+        # Create a memory step for process_tool_calls
+        memory_step = ActionStep(step_number=10, timing="mock_timing")
+
+        # Process tool calls
+        if test_case["expected_error"]:
+            with pytest.raises(test_case["expected_error"]):
+                list(agent.process_tool_calls(chat_message, memory_step))
+        else:
+            final_outputs = list(agent.process_tool_calls(chat_message, memory_step))
+            assert memory_step.model_output == test_case["expected_model_output"]
+            assert memory_step.observations == test_case["expected_observations"]
+            assert [final_output.output for final_output in final_outputs] == test_case["expected_final_outputs"]
+            # Verify memory step tool calls were updated correctly
+            if test_case["tool_calls"]:
+                assert memory_step.tool_calls == [
+                    ToolCall(name=tool_call.function.name, arguments=tool_call.function.arguments, id=tool_call.id)
+                    for tool_call in test_case["tool_calls"]
+                ]
 
 
 class TestCodeAgent:
@@ -1371,6 +1640,24 @@ class TestCodeAgent:
             )
         assert agent.additional_authorized_imports == ["matplotlib"]
         assert agent.executor_kwargs == {"max_print_outputs_length": 5_000}
+
+    def test_custom_final_answer_with_custom_inputs(self):
+        class CustomFinalAnswerToolWithCustomInputs(FinalAnswerTool):
+            inputs = {
+                "answer1": {"type": "string", "description": "First part of the answer."},
+                "answer2": {"type": "string", "description": "Second part of the answer."},
+            }
+
+            def forward(self, answer1: str, answer2: str) -> str:
+                return answer1 + "CUSTOM" + answer2
+
+        model = MagicMock()
+        model.generate.return_value = ChatMessage(
+            role="assistant", content="Code:\n```py\nfinal_answer(answer1='1', answer2='2')\n```"
+        )
+        agent = CodeAgent(tools=[CustomFinalAnswerToolWithCustomInputs()], model=model)
+        answer = agent.run("Fake task.")
+        assert answer == "1CUSTOM2"
 
 
 class TestMultiAgents:

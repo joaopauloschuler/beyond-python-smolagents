@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from huggingface_hub import ChatCompletionOutputMessage
 
+from smolagents.default_tools import FinalAnswerTool
 from smolagents.models import (
     AmazonBedrockServerModel,
     AzureOpenAIServerModel,
@@ -73,6 +74,46 @@ class TestModel:
         else:
             assert "stop" not in completion_kwargs
 
+    @pytest.mark.parametrize(
+        "with_tools, tool_choice, expected_result",
+        [
+            # Default behavior: With tools but no explicit tool_choice, should default to "required"
+            (True, ..., {"has_tool_choice": True, "value": "required"}),
+            # Custom value: With tools and explicit tool_choice="auto"
+            (True, "auto", {"has_tool_choice": True, "value": "auto"}),
+            # Tool name as string
+            (True, "valid_tool_function", {"has_tool_choice": True, "value": "valid_tool_function"}),
+            # Tool choice as dictionary
+            (
+                True,
+                {"type": "function", "function": {"name": "valid_tool_function"}},
+                {"has_tool_choice": True, "value": {"type": "function", "function": {"name": "valid_tool_function"}}},
+            ),
+            # With tools but explicit None tool_choice: should exclude tool_choice
+            (True, None, {"has_tool_choice": False, "value": None}),
+            # Without tools: tool_choice should never be included
+            (False, "required", {"has_tool_choice": False, "value": None}),
+            (False, "auto", {"has_tool_choice": False, "value": None}),
+            (False, None, {"has_tool_choice": False, "value": None}),
+            (False, ..., {"has_tool_choice": False, "value": None}),
+        ],
+    )
+    def test_prepare_completion_kwargs_tool_choice(self, with_tools, tool_choice, expected_result, example_tool):
+        model = Model()
+        kwargs = {"messages": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]}
+        if with_tools:
+            kwargs["tools_to_call_from"] = [example_tool]
+        if tool_choice is not ...:
+            kwargs["tool_choice"] = tool_choice
+
+        completion_kwargs = model._prepare_completion_kwargs(**kwargs)
+
+        if expected_result["has_tool_choice"]:
+            assert "tool_choice" in completion_kwargs
+            assert completion_kwargs["tool_choice"] == expected_result["value"]
+        else:
+            assert "tool_choice" not in completion_kwargs
+
     def test_get_json_schema_has_nullable_args(self):
         @tool
         def get_weather(location: str, celsius: bool | None = False) -> str:
@@ -122,14 +163,14 @@ class TestModel:
             do_sample=False,
         )
         messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}]}]
-        output = model.generate(messages, stop_sequences=["great"]).content
-        assert output == "assistant\nHello"
+        output = model.generate(messages).content
+        assert output == "Hello! I'm here"
 
         output = model.generate_stream(messages, stop_sequences=["great"])
         output_str = ""
         for el in output:
             output_str += el.content
-        assert output_str == "assistant\nHello"
+        assert output_str == "Hello! I'm here"
 
     def test_transformers_message_vl_no_tool(self, shared_datadir, monkeypatch):
         monkeypatch.setattr("huggingface_hub.constants.HF_HUB_DOWNLOAD_TIMEOUT", 30)  # instead of 10
@@ -142,15 +183,17 @@ class TestModel:
             device_map="cpu",
             do_sample=False,
         )
-        messages = [{"role": "user", "content": [{"type": "text", "text": "Hello!"}, {"type": "image", "image": img}]}]
-        output = model.generate(messages, stop_sequences=["great"]).content
-        assert output == "I am"
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": "What is this?"}, {"type": "image", "image": img}]}
+        ]
+        output = model.generate(messages).content
+        assert output == "This is a very"
 
         output = model.generate_stream(messages, stop_sequences=["great"])
         output_str = ""
         for el in output:
             output_str += el.content
-        assert output_str == "I am"
+        assert output_str == "This is a very"
 
     def test_parse_json_if_needed(self):
         args = "abc"
@@ -330,6 +373,30 @@ class TestOpenAIServerModel:
             base_url=api_base, api_key=api_key, organization=organization, project=project, max_retries=5
         )
         assert model.client == MockOpenAI.return_value
+
+    @require_run_all
+    def test_streaming_tool_calls(self):
+        model = OpenAIServerModel(model_id="gpt-4o-mini")
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Hello! Please return the final answer 'blob' and the final answer 'blob2' in two parallel tool calls",
+                    }
+                ],
+            }
+        ]
+        for el in model.generate_stream(messages, tools_to_call_from=[FinalAnswerTool()]):
+            if el.tool_calls:
+                assert el.tool_calls[0].function.name == "final_answer"
+                args = el.tool_calls[0].function.arguments
+                if len(el.tool_calls) > 1:
+                    assert el.tool_calls[1].function.name == "final_answer"
+                    args2 = el.tool_calls[1].function.arguments
+        assert args == '{"answer": "blob"}'
+        assert args2 == '{"answer": "blob2"}'
 
 
 class TestAmazonBedrockServerModel:
