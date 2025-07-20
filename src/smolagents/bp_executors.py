@@ -43,11 +43,11 @@ class LocalExecExecutor(RemotePythonExecutor):
         self.restricted_modules = restricted_modules or []
         self.tools = {}
 
-    def __call__(self, code_action: str) -> tuple[Any, str, bool]:
+    def __call__(self, code_action: str) -> CodeOutput:
         """Check if code is a final answer and run it accordingly"""
         does_not_care = False
         output = self.run_code_raise_errors(code_action, return_final_answer=does_not_care)
-        is_final_answer = output[2]
+        is_final_answer = output.is_final_answer
         return output
         
     def send_tools(self, tools: dict[str, Tool]):
