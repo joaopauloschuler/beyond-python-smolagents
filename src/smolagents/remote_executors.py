@@ -46,7 +46,7 @@ class RemotePythonExecutor(PythonExecutor):
         self.additional_imports = additional_imports
         self.logger = logger
         self.logger.log("Initializing executor, hold on...")
-        self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$", re.M)
+        self.final_answer_pattern = re.compile(r"^final_answer\((.*)\)$", re.M | re.S)
         self.installed_packages = []
 
     def run_code_raise_errors(self, code: str, return_final_answer: bool = False) -> tuple[Any, str]:
@@ -157,6 +157,17 @@ class E2BExecutor(RemotePythonExecutor):
                 raise AgentError("No main result returned by executor!", self.logger)
             return None, execution_logs
 
+    def cleanup(self):
+        """Clean up the E2B sandbox and resources."""
+        try:
+            if hasattr(self, "sandbox"):
+                self.logger.log("Shutting down sandbox...", level=LogLevel.INFO)
+                self.sandbox.kill()
+                self.logger.log("Sandbox cleanup completed", level=LogLevel.INFO)
+                del self.sandbox
+        except Exception as e:
+            self.logger.log_error(f"Error during cleanup: {e}")
+
 
 class DockerExecutor(RemotePythonExecutor):
     """
@@ -234,7 +245,10 @@ class DockerExecutor(RemotePythonExecutor):
                 _, build_logs = self.client.images.build(
                     path=str(dockerfile_path.parent), dockerfile=str(dockerfile_path), tag=self.image_name
                 )
-                self.logger.log(build_logs, level=LogLevel.DEBUG)
+                for log_chunk in build_logs:
+                    # Only log non-empty messages
+                    if log_message := log_chunk.get("stream", "").rstrip():
+                        self.logger.log(log_message, level=LogLevel.DEBUG)
 
             self.logger.log(f"Starting container on {host}:{port}...", level=LogLevel.INFO)
             # Create base container parameters
@@ -375,13 +389,14 @@ class DockerExecutor(RemotePythonExecutor):
         return msg_id
 
     def cleanup(self):
-        """Clean up resources."""
+        """Clean up the Docker container and resources."""
         try:
             if hasattr(self, "container"):
                 self.logger.log(f"Stopping and removing container {self.container.short_id}...", level=LogLevel.INFO)
                 self.container.stop()
                 self.container.remove()
                 self.logger.log("Container cleanup completed", level=LogLevel.INFO)
+                del self.container
         except Exception as e:
             self.logger.log_error(f"Error during cleanup: {e}")
 
