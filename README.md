@@ -284,5 +284,3 @@ The `bp_tools.py` files provides a suite of functions and classes that can be us
 *   `replace_on_file(filename: string, old_value: string, new_value: string)`: Reads the content of `filename`, replaces all occurrences of `old_value` with `new_value` in the content, and writes the modified content back to the same file. Returns the modified content string. Useful for in-place file patching.
 *   `replace_on_file_with_files(filename: string, file_with_old_value: string, file_with_new_value: string)`: Reads content from `file_with_old_value` and `file_with_new_value`, then replaces all occurrences of the old content with the new content within the `filename` file. Returns the modified content string of `filename`.
 
-
-

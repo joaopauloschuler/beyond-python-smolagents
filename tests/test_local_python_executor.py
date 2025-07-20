@@ -1089,7 +1089,7 @@ exec(compile('{unsafe_code}', 'no filename', 'exec'))
 
         executor.send_tools({"final_answer": FinalAnswerTool()})
 
-        res, _, _ = executor(
+        res = executor(
             dedent(
                 """
                 def target_function():
@@ -1098,7 +1098,7 @@ exec(compile('{unsafe_code}', 'no filename', 'exec'))
                 final_answer(target_function)
                 """
             )
-        )
+        ).output
         assert res.__name__ == "target_function"
         assert res.__source__ == "def target_function():\n    return 'Hello world'"
 
@@ -1796,6 +1796,30 @@ def test_check_import_authorized(module: str, authorized_imports: list[str], exp
 
 
 class TestLocalPythonExecutor:
+    @pytest.mark.parametrize(
+        "additional_authorized_imports, should_raise",
+        [
+            # Valid imports
+            (["math"], None),
+            (["math", "os"], None),  # Multiple valid imports
+            ([], None),  # Empty list of imports
+            (["*"], None),  # Wildcard allows all imports
+            (["os.*"], None),  # Submodule wildcard
+            # Invalid imports
+            (["i_do_not_exist"], True),  # Non-existent module
+            (["math", "i_do_not_exist"], True),  # Mix of valid and invalid
+            (["i_do_not_exist.*"], True),  # Non-existent module with wildcard
+        ],
+    )
+    def test_additional_authorized_imports_are_installed(self, additional_authorized_imports, should_raise):
+        expectation = (
+            pytest.raises(InterpreterError, match="Non-installed authorized modules")
+            if should_raise
+            else does_not_raise()
+        )
+        with expectation:
+            LocalPythonExecutor(additional_authorized_imports=additional_authorized_imports)
+
     def test_state_name(self):
         executor = LocalPythonExecutor(additional_authorized_imports=[])
         assert executor.state.get("__name__") == "__main__"
@@ -1809,7 +1833,7 @@ class TestLocalPythonExecutor:
     )
     def test_call_from_dict(self, code):
         executor = LocalPythonExecutor([])
-        result, _, _ = executor(code)
+        result = executor(code).output
         assert result == 11
 
     @pytest.mark.parametrize(
@@ -1841,7 +1865,7 @@ class TestLocalPythonExecutor:
     def test_chained_assignments(self, code):
         executor = LocalPythonExecutor([])
         executor.send_tools({})
-        result, _, _ = executor(code)
+        result = executor(code).output
         assert result == 1
 
     def test_evaluate_assign_error(self):
@@ -1853,7 +1877,7 @@ class TestLocalPythonExecutor:
     def test_function_def_recovers_source_code(self):
         executor = LocalPythonExecutor([])
         executor.send_tools({"final_answer": FinalAnswerTool()})
-        res, _, _ = executor(
+        res = executor(
             dedent(
                 """
                 def target_function():
@@ -1862,7 +1886,7 @@ class TestLocalPythonExecutor:
                 final_answer(target_function)
                 """
             )
-        )
+        ).output
         assert res.__name__ == "target_function"
         assert res.__source__ == "def target_function():\n    return 'Hello world'"
 
@@ -1873,7 +1897,7 @@ class TestLocalPythonExecutor:
     def test_isinstance_builtin_type(self, code, expected_result):
         executor = LocalPythonExecutor([])
         executor.send_tools({})
-        result, _, _ = executor(code)
+        result = executor(code).output
         assert result is expected_result
 
 

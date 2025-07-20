@@ -287,7 +287,7 @@ class TestInferenceClientModel:
         model = InferenceClientModel(model_id="test-model", custom_role_conversions=custom_role_conversions)
         model.client = MagicMock()
         mock_response = model.client.chat_completion.return_value
-        mock_response.choices[0].message = ChatCompletionOutputMessage(role="assistant")
+        mock_response.choices[0].message = ChatCompletionOutputMessage(role=MessageRole.ASSISTANT)
         messages = [ChatMessage(role=MessageRole.USER, content="Test message")]
         _ = model(messages)
         # Verify that the role conversion was applied
@@ -344,25 +344,41 @@ class TestInferenceClientModel:
 
 class TestLiteLLMModel:
     @pytest.mark.parametrize(
-        "model_id, error_flag",
+        "model_id",
         [
-            ("groq/llama-3.3-70b", "Invalid API Key"),
-            ("cerebras/llama-3.3-70b", "The api_key client option must be set"),
-            ("mistral/mistral-tiny", "The api_key client option must be set"),
+            "groq/llama-3.3-70b",
+            "cerebras/llama-3.3-70b",
+            "mistral/mistral-tiny",
         ],
     )
-    def test_call_different_providers_without_key(self, model_id, error_flag):
+    def test_call_different_providers_without_key(self, model_id):
+        # Different litellm versions produce different error messages for missing API keys
+        # This test checks for the presence of any common authentication-related error phrases
+        possible_error_messages = [
+            "Missing API Key",
+            "Wrong API Key",
+            "Invalid API Key",
+            "The api_key client option must be set",
+            "AuthenticationError",
+            "Unauthorized",
+        ]
         model = LiteLLMModel(model_id=model_id)
         messages = [ChatMessage(role=MessageRole.USER, content=[{"type": "text", "text": "Test message"}])]
+        # Test generate method
         with pytest.raises(Exception) as e:
-            # This should raise 401 error because of missing API key, not fail for any "bad format" reason
             model.generate(messages)
-        assert error_flag in str(e)
+        error_message = str(e)
+        assert any(possible_error_message in error_message for possible_error_message in possible_error_messages), (
+            f"Error message '{error_message}' does not contain any expected phrases"
+        )
+        # Test generate_stream method
         with pytest.raises(Exception) as e:
-            # This should raise 401 error because of missing API key, not fail for any "bad format" reason
             for el in model.generate_stream(messages):
                 assert el.content is not None
-        assert error_flag in str(e)
+        error_message = str(e)
+        assert any(possible_error_message in error_message for possible_error_message in possible_error_messages), (
+            f"Error message '{error_message}' does not contain any expected phrases"
+        )
 
     def test_passing_flatten_messages(self):
         model = LiteLLMModel(model_id="groq/llama-3.3-70b", flatten_messages_as_text=False)
