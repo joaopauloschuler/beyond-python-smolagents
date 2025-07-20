@@ -910,7 +910,7 @@ You have been provided with these additional arguments, that you can access usin
     
     def set_system_prompt(self, new_system_prompt):
         self.prompt_templates['system_prompt'] = new_system_prompt
-        self.system_prompt = self.initialize_system_prompt()
+        # removed in v1.18: self.system_prompt = self.initialize_system_prompt()
 
     def save(self, output_dir: str | Path, relative_path: str | None = None):
         """
