@@ -1939,8 +1939,8 @@ You can combine the above to be able to run very large portions of python code i
 
         is_final_answer = False
         try:
-            output, execution_logs, is_final_answer = self.python_executor(code_action)
-            execution_logs = truncate_content(execution_logs, 20000) # execution log is truncated to 20K
+            code_output = self.python_executor(code_action)
+            code_output.logs = truncate_content(code_output.logs, 20000) # execution log is truncated to 20K
             execution_outputs_console = []
             if len(code_output.logs) > 0:
                 execution_outputs_console += [
@@ -1950,13 +1950,13 @@ You can combine the above to be able to run very large portions of python code i
             observation = "Execution logs:\n" + code_output.logs
         except Exception as e:
             if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
-                execution_logs = str(self.python_executor.state["_print_outputs"])
-                if len(execution_logs) > 0:
+                code_output.logs = str(self.python_executor.state["_print_outputs"])
+                if len(code_output.logs) > 0:
                     execution_outputs_console = [
                         Text("Execution logs:", style="bold"),
-                        Text(execution_logs),
+                        Text(code_output.logs),
                     ]
-                    memory_step.observations = "Execution logs:\n" + execution_logs
+                    memory_step.observations = "Execution logs:\n" + code_output.logs
                     self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
             error_msg = str(e)
             if "Import of " in error_msg and " is not allowed" in error_msg:

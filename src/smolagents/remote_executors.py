@@ -461,8 +461,6 @@ class DockerExecutor(RemotePythonExecutor):
     def delete(self):
         """Ensure cleanup on deletion."""
         self.cleanup()
-        
-__all__ = ["E2BExecutor", "DockerExecutor"]
 
 class WasmExecutor(RemotePythonExecutor):
     """

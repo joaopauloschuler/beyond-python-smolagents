@@ -8,6 +8,7 @@ import base64
 from io import BytesIO
 import PIL.Image
 from .utils import AgentError
+from .local_python_executor import CodeOutput
 
 class LocalExecExecutor(RemotePythonExecutor):
     """
@@ -47,7 +48,7 @@ class LocalExecExecutor(RemotePythonExecutor):
         does_not_care = False
         output = self.run_code_raise_errors(code_action, return_final_answer=does_not_care)
         is_final_answer = output[2]
-        return output[0], output[1], is_final_answer
+        return output
         
     def send_tools(self, tools: dict[str, Tool]):
         self.tools = tools
@@ -221,8 +222,4 @@ if '_' in locals():
             logs += "\nStderr:\n" + stderr_content
         print('Logs', logs)
         
-        # Check if result is required but not found
-        # if return_final_answer and result is None:
-        #    raise AgentError("No result was returned from the code execution", self.logger)
-        
-        return self.globals_dict['_final_answer'], logs, is_final_answer
+        return CodeOutput(output=self.globals_dict['_final_answer'], logs=logs, is_final_answer=is_final_answer)
