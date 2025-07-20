@@ -1640,7 +1640,7 @@ class CodeAgent(MultiStepAgent):
             #     memory_step.model_output_message.content = model_output
 
             memory_step.token_usage = chat_message.token_usage
-            memory_step.model_output = output_text
+            memory_step.model_output = model_output
         except Exception as e:
             raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
         
