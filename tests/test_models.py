@@ -194,6 +194,13 @@ class TestInferenceClientModel:
         with pytest.raises(ValueError, match="Received both `token` and `api_key` arguments."):
             InferenceClientModel(model_id="test-model", token="abc", api_key="def")
 
+    def test_structured_outputs_with_unsupported_provider(self):
+        with pytest.raises(
+            ValueError, match="InferenceClientModel only supports structured outputs with these providers:"
+        ):
+            model = InferenceClientModel(model_id="test-model", token="abc", provider="some_provider")
+            model.generate(messages=[{"role": "user", "content": "Hello!"}], response_format={"type": "json_object"})
+
     @require_run_all
     def test_get_hfapi_message_no_tool(self):
         model = InferenceClientModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct", max_tokens=10)
