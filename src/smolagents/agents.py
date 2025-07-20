@@ -1746,7 +1746,7 @@ class CodeAgent(MultiStepAgent):
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
                             input_messages,
-                            stop_sequences=["</runcode>","Calling tools:"],
+                            stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )
                         output_text = ""
@@ -1773,7 +1773,7 @@ class CodeAgent(MultiStepAgent):
                     else:
                         chat_message: ChatMessage = self.model(
                             input_messages,
-                            stop_sequences=["</runcode>","Calling tools:"],
+                            stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )
                         memory_step.model_output_message = chat_message
@@ -1806,6 +1806,8 @@ class CodeAgent(MultiStepAgent):
             str_len_str = str(str_len)
             if ('<runcode>' in model_output) and not('</runcode>' in model_output):
                 model_output = model_output + '</runcode>'
+            if ('<code>' in model_output) and not('</code>' in model_output):
+                model_output = model_output + '</code>'
             self.logger.log_markdown(
                 content=model_output,
                 title="Output of the LLM with "+str_len_str+" chars:",
@@ -1818,6 +1820,8 @@ class CodeAgent(MultiStepAgent):
             appended_files = self.append_files_from_text(model_output)
             model_output = self.remove_tags('appendtofile', model_output)
             model_output_for_parsing = model_output.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
+            #v1.19 compatibility
+            model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
             # this is for backward compatibility
             if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
                 model_output_for_parsing = model_output_for_parsing + """
