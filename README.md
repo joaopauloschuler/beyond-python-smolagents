@@ -47,9 +47,9 @@ To get started with Beyond Python Smolagents, follow these steps:
     !pip install litellm==1.67.2
     ```
 
-2.  **Clone the Repository:** Clone the `v1.14-bp` branch of the Beyond Python Smolagents repository.
+2.  **Clone the Repository:** Clone the `v1.20-bp` branch of the Beyond Python Smolagents repository.
     ```bash
-    !git clone -b v1.14-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
+    !git clone -b v1.20-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
     ```
 
 3.  **Install Beyond Python Smolagents:** Install the cloned project, including the LiteLLM dependencies.
@@ -66,12 +66,12 @@ import smolagents
 from smolagents.bp_tools import *
 from smolagents.bp_utils import *
 from smolagents.bp_thinkers import *
-from smolagents import HfApiModel, LiteLLMModel, LogLevel
+from smolagents import LiteLLMModel, LogLevel
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
 from smolagents import tool
 
 MAX_TOKENS = 64000
-coder_model_id = "gemini/gemini-2.5-flash-preview-04-17"
+coder_model_id = "gemini/gemini-2.5-flash"
 coder_model = LiteLLMModel(model_id=coder_model_id, api_key=YOUR_KEY_VALUE, max_tokens=MAX_TOKENS)
 
 tools = [ run_os_command,
