@@ -1829,8 +1829,8 @@ class CodeAgent(MultiStepAgent):
                 model_output_for_parsing = model_output_for_parsing + """
 
 ```py
-print('I still have work to do to complete the task.')
-print('When I finish or I need to ask for a new task, I will call <runcode>final_answer(result)</runcode>.')
+print('As I can not ask questions to users, I will use my best guess when required.')
+print('When I finish, I will call <runcode>final_answer(result)</runcode>.')
 ```<end_code>
 """
             # len3 = len(model_output)
