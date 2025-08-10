@@ -433,11 +433,11 @@ def fast_solver(p_coder_model,
   final_file_name = 'final_solution'+fileext
   local_agent = get_local_agent()
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext, reset=True)
-  if (not os.path.isfile('solution1'+fileext)): local_agent.run('Have you saved the file solution1'+fileext+'?', reset=False)
+  if (not os.path.isfile('solution1'+fileext)): local_agent.run('Please save the solution into the file solution1'+fileext+' .', reset=False)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution2'+fileext, reset=True)
-  if (not os.path.isfile('solution2'+fileext)): local_agent.run('Have you saved the file solution2'+fileext+'?', reset=False)
+  if (not os.path.isfile('solution2'+fileext)): local_agent.run('Please save the solution into the file solution2'+fileext+' .', reset=False)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution3'+fileext, reset=True)
-  if (not os.path.isfile('solution3'+fileext)): local_agent.run('Have you saved the file solution3'+fileext+'?', reset=False)
+  if (not os.path.isfile('solution3'+fileext)): local_agent.run('Please save the solution into the file solution3'+fileext+' .', reset=False)
   task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
 The 3 solutions are given in the tags:
@@ -462,6 +462,7 @@ Your goal is to mix the best parts of each solution to form a final solution.
 If one of the solutions is already perfect, you can just copy it into the final solution.
 """+motivation
   local_agent.run(task_description, reset=True)
+  if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+final_file_name+' .', reset=False)
   return True
   
 
