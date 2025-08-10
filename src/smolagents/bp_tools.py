@@ -51,17 +51,19 @@ print(load_string_from_file(filename="another_file.csv"))
     Args:
       filename: str
     """
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            content = f.read()
-    except UnicodeDecodeError:
+    content = ''
+    if os.path.isfile(filename):
         try:
-            # Try a different common encoding if utf-8 fails
-            with open(filename, 'r', encoding='latin-1') as f:
+            with open(filename, 'r', encoding='utf-8') as f:
                 content = f.read()
-        except Exception as e:
-            # If both common encodings fail, report the error
-            raise ValueError(f"Could not read file {filename} due to encoding issues or other errors: {e}")
+        except UnicodeDecodeError:
+            try:
+                # Try a different common encoding if utf-8 fails
+                with open(filename, 'r', encoding='latin-1') as f:
+                    content = f.read()
+            except Exception as e:
+                # If both common encodings fail, report the error
+                raise ValueError(f"Could not read file {filename} due to encoding issues or other errors: {e}")
     return content
 
 @tool
