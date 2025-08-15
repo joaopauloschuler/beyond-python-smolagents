@@ -180,6 +180,10 @@ When you finish, you can use this example (if you like):
 final_answer('I have finished the task. YAY!')
 </runcode>
 </example>
+When the user asks you to run something with <runcode>...</runcode>, it means that
+the user wants you to respond with <runcode>...</runcode> so the commands
+will run in his device. If you try to run <runcode> or <savetofile> at your end, you will fail.
+When you respond with the <runcode> and <safetofile> tags, these tags will be run/saved in the user's device. 
 """
 def evolutive_problem_solver(p_coder_model,
   task_str,

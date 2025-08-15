@@ -1846,8 +1846,16 @@ class CodeAgent(MultiStepAgent):
                 model_output_for_parsing = model_output_for_parsing + """
 
 ```py
-print('As I can not ask questions to users, I will use my best guess when required.')
-print('When I finish, I will call <runcode>final_answer(result)</runcode>.')
+print(\"\"\"
+Reminders to my future self:
+* As I can not ask questions to users, I will use my best guess when required.
+* When I feel tempted to repeat the same reply, I will try a new approach.
+* When I finish or when I do not know what to do, I will finish by printing in
+the output: <runcode>final_answer("I finished working.")</runcode>.
+* When the user asks me to run something with <runcode></runcode>, it means that
+the user wants me to respond with the <runcode>...</runcode> string so the commands
+will run in his device.
+\"\"\")
 ```<end_code>
 """
             # len3 = len(model_output)
