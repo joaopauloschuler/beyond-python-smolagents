@@ -1716,6 +1716,23 @@ class CodeAgent(MultiStepAgent):
             },
         )
         return system_prompt
+    
+    def posepend_last_message(self, input_messages):        
+        # Add postpend string to the last user message
+        if input_messages and self.model.postpend_string:
+            for i in range(len(input_messages) - 1, -1, -1):
+                if input_messages[i].role in (MessageRole.USER, MessageRole.TOOL_RESPONSE):
+                    content = input_messages[i].content
+                    if isinstance(content, list):
+                        # Find the last text content and append
+                        for j in range(len(content) - 1, -1, -1):
+                            if content[j].get('type') == 'text':
+                                content[j]['text'] += f"\n\n{self.model.postpend_string}"
+                                break
+                    elif isinstance(content, str):
+                        input_messages[i].content = content + f"\n\n{self.model.postpend_string}"
+                    break
+        return input_messages
 
     def _step_stream(
         self, memory_step: ActionStep
@@ -1748,7 +1765,7 @@ class CodeAgent(MultiStepAgent):
                 try:
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
-                            input_messages,
+                            self.posepend_last_message(input_messages),
                             stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )
@@ -1775,7 +1792,7 @@ class CodeAgent(MultiStepAgent):
                         model_output = chat_message.content
                     else:
                         chat_message: ChatMessage = self.model(
-                            input_messages,
+                            self.posepend_last_message(input_messages),
                             stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )

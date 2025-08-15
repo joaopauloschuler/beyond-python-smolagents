@@ -387,6 +387,7 @@ class Model:
         self._last_input_token_count: int | None = None
         self._last_output_token_count: int | None = None
         self.model_id: str | None = model_id
+        self.postpend_string = ''
 
     @property
     def last_input_token_count(self) -> int | None:
