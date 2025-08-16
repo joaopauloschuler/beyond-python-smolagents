@@ -896,11 +896,11 @@ You have been provided with these additional arguments, that you can access usin
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
         """
-        pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
+        pattern = '<'+tag+"""\s+filename=(['"])([^'"]*)\\1>(.*?)</"""+tag+'>'
         matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
 
         results = []
-        for filename, content in matches:
+        for quote, filename, content in matches:
             results.append({
                 'filename': filename,
                 'content': content  # Trim whitespace
