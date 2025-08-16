@@ -155,6 +155,16 @@ def get_file_size(filename: str) -> int:
     return 0
 
 @tool
+def is_file(filename: str) -> bool:
+    """
+    Returns true if filename is a file.
+    Implemented as "os.path.isfile(filename)".
+    Args:
+      filename: str
+    """
+    return os.path.isfile(filename)
+
+@tool
 def force_directories(file_path: str) -> None:
     """
     Extracts the directory path from a full file path and creates
@@ -207,12 +217,17 @@ As you can see in the above command, you can use any computer language that is a
     """
     command = shlex.split(str_command)
     proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
+    result = ""
     try:
         outs, errs = proc.communicate(input="", timeout=timeout)
     except subprocess.TimeoutExpired:
+        result += "ERROR: timeout has expired. "
         proc.kill()
         outs, errs = proc.communicate()
-    result = ""
+    except:
+        proc.kill()
+        outs, errs = proc.communicate()
+    
     if outs is not None: result += outs.decode('utf-8')
     if errs is not None: result += errs.decode('utf-8')
     return result
