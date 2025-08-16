@@ -217,6 +217,8 @@ As you can see in the above command, you can use any computer language that is a
     """
     command = shlex.split(str_command)
     result = ""
+    outs = None
+    errs = None
     try:
         proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
         try:
