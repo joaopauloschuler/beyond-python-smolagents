@@ -216,17 +216,20 @@ As you can see in the above command, you can use any computer language that is a
       timeout: int
     """
     command = shlex.split(str_command)
-    proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
     result = ""
     try:
-        outs, errs = proc.communicate(input="", timeout=timeout)
-    except subprocess.TimeoutExpired:
-        result += "ERROR: timeout has expired. "
-        proc.kill()
-        outs, errs = proc.communicate()
-    except:
-        proc.kill()
-        outs, errs = proc.communicate()
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
+        try:
+            outs, errs = proc.communicate(input="", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            result += "ERROR: timeout has expired. "
+            proc.kill()
+            outs, errs = proc.communicate()
+        except:
+            proc.kill()
+            outs, errs = proc.communicate()
+    except Exception as e:
+        result += f"ERROR: {e}"
     
     if outs is not None: result += outs.decode('utf-8')
     if errs is not None: result += errs.decode('utf-8')
