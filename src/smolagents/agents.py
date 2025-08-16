@@ -896,11 +896,11 @@ You have been provided with these additional arguments, that you can access usin
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
         """
-        pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
+        pattern = '<'+tag+"""\s+filename=(['"])([^'"]*)\\1>(.*?)</"""+tag+'>'
         matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
 
         results = []
-        for filename, content in matches:
+        for quote, filename, content in matches:
             results.append({
                 'filename': filename,
                 'content': content  # Trim whitespace
@@ -976,6 +976,24 @@ You have been provided with these additional arguments, that you can access usin
     def set_system_prompt(self, new_system_prompt):
         self.prompt_templates['system_prompt'] = new_system_prompt
         # removed in v1.18: self.system_prompt = self.initialize_system_prompt()
+    
+    def posepend_last_message(self, input_messages):        
+        # Add postpend string to the last user message
+        if input_messages and self.model.postpend_string:
+            for i in range(len(input_messages) - 1, -1, -1):
+                if input_messages[i].role in (MessageRole.USER, MessageRole.TOOL_RESPONSE):
+                    content = input_messages[i].content
+                    if isinstance(content, list):
+                        # Find the last text content and append
+                        for j in range(len(content) - 1, -1, -1):
+                            if content[j].get('type') == 'text':
+                                content[j]['text'] += f"\n\n{self.model.postpend_string}"
+                                break
+                    elif isinstance(content, str):
+                        input_messages[i].content = content + f"\n\n{self.model.postpend_string}"
+                    break
+        return input_messages
+
 
     def save(self, output_dir: str | Path, relative_path: str | None = None):
         """
@@ -1363,7 +1381,7 @@ class ToolCallingAgent(MultiStepAgent):
         try:
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 output_stream = self.model.generate_stream(
-                    input_messages,
+                    self.posepend_last_message(input_messages),
                     stop_sequences=["Observation:", "Calling tools:"],
                     tools_to_call_from=self.tools_and_managed_agents,
                 )
@@ -1716,7 +1734,7 @@ class CodeAgent(MultiStepAgent):
             },
         )
         return system_prompt
-
+    
     def _step_stream(
         self, memory_step: ActionStep
     ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
@@ -1748,7 +1766,7 @@ class CodeAgent(MultiStepAgent):
                 try:
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
-                            input_messages,
+                            self.posepend_last_message(input_messages),
                             stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )
@@ -1775,7 +1793,7 @@ class CodeAgent(MultiStepAgent):
                         model_output = chat_message.content
                     else:
                         chat_message: ChatMessage = self.model(
-                            input_messages,
+                            self.posepend_last_message(input_messages),
                             stop_sequences=["</runcode>","</code>","Calling tools:"],
                             **additional_args,
                         )
@@ -1829,8 +1847,16 @@ class CodeAgent(MultiStepAgent):
                 model_output_for_parsing = model_output_for_parsing + """
 
 ```py
-print('As I can not ask questions to users, I will use my best guess when required.')
-print('When I finish, I will call <runcode>final_answer(result)</runcode>.')
+print(\"\"\"
+Reminders to my future self:
+* As I can not ask questions to users, I will use my best guess when required.
+* When I feel tempted to repeat the same reply, I will try a new approach.
+* When I finish or when I do not know what to do, I will finish by printing in
+the output: <runcode>final_answer("I finished working.")</runcode>.
+* When the user asks me to run something with <runcode></runcode>, it means that
+the user wants me to respond with the <runcode>...</runcode> string so the commands
+will run in his device.
+\"\"\")
 ```<end_code>
 """
             # len3 = len(model_output)

@@ -172,6 +172,12 @@ system_prompt: |-
   {%- if custom_instructions %}
   {{custom_instructions}}
   {%- endif %}
+  
+  When the user asks me to run something with <runcode></runcode>, it means that
+  the user wants me to respond with the <runcode>...</runcode> string so the commands
+  will run in his device.
+  If you try to run <runcode> or <savetofile> at your end, you will fail. But, when you respond 
+  with the <runcode> and <safetofile> tags (text), these tags will be run/saved in the user's device. 
 
 planning:
   initial_plan : |-
