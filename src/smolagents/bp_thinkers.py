@@ -293,8 +293,8 @@ DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
       if (i<steps-2):
         task_description="""Thank you very much.
 Would we build something better or more interesting or more useful than each individual solution by mixing parts of them into a new solution?
-If you believe that mixing is a good idea, you'll call the function final_answer('yes').
-If you believe that this is not a good idea, you'll call the function final_answer('no').
+If you believe that mixing is a good idea, you'll call the function <runcode>final_answer('yes')</runcode>.
+If you believe that this is not a good idea, you'll call the function <runcode>final_answer('no')</runcode>.
 """
         should_mix = (local_agent.run(task_description, reset=False)=='yes')
         if should_mix:
@@ -302,7 +302,7 @@ If you believe that this is not a good idea, you'll call the function final_answ
           task_description="""Thank you very much.
 Please mix parts of the solutions into a new solution.
 Save the new solution into the file """+solution_file+""".
-When you have finished, call the function final_answer("Task completed! YAY!") please."""
+When you have finished, call the function <runcode>final_answer("Task completed! YAY!")</runcode> please."""
           local_agent.run(task_description, reset=False)
           if refine: test_and_refine(local_agent, solution_file)
           # when mixing, we don't try to pick the best of 3 solutions.
@@ -474,7 +474,9 @@ Your next step is mixing the already 3 existing solutions in the tags to form a 
 Save your final solution into the file '"""+final_file_name+"""'.
 
 When you finish, you can run:
-<runcode>final_answer("I HAVE FINISHED! YAY!").
+<runcode>
+final_answer("I HAVE FINISHED! YAY!")
+</runcode>.
 DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 
 Your goal is to mix the best parts of each solution to form a final solution.
@@ -522,7 +524,10 @@ Please detail what did you change.
 In the case that you believe that you have not properly reviewed/tested it yet, please review/test your own solution now.
 After you test and bug fix it, please save the full updated source code that solves the task described in <task></task> 
 into the folder '"""+solution_file+"""' respecting the original folder structure. Do not create updated copies of existing files.
-When you have finished, call the function final_answer("Task completed! YAY!") please.
+When you have finished, call the function 
+<runcode>
+final_answer("Task completed! YAY!")
+</runcode> please.
 """
     print('Refine 2')
     local_agent.run(task_description, reset=False)
