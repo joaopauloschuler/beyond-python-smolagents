@@ -348,6 +348,7 @@ No real person can interact with this code.
             local_agent.run("""From the proposed improvements, please randomly pick one. 
 You can pick a random improvement following this example:
 <runcode>
+import random
 improvements = [
   "Go for a walk in the park",
   "Read a fascinating book",
@@ -593,8 +594,8 @@ DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
       if (i<steps-2):
         task_description="""Thank you very much.
 Would we build something better or more interesting or more useful than each individual solution by mixing parts of them into a new solution?
-If you believe that mixing is a good idea, you'll call the function final_answer('yes').
-If you believe that this is not a good idea, you'll call the function final_answer('no').
+If you believe that mixing is a good idea, you'll call the function <runcode>final_answer('yes')</runcode>.
+If you believe that this is not a good idea, you'll call the function <runcode>final_answer('no')/<runcode>.
 """
         should_mix = (local_agent.run(task_description, reset=False)=='yes')
         if should_mix:
@@ -602,7 +603,7 @@ If you believe that this is not a good idea, you'll call the function final_answ
           task_description="""Thank you very much.
 Please mix parts of the solutions into a new solution.
 Save the new solution into the folder """+solution_file+""" respecting the original folder structure. Do not create updated copies of existing files.
-When you have finished, call the function final_answer("Task completed! YAY!") please."""
+When you have finished, call the function <runcode>final_answer("Task completed! YAY!")</runcode> please."""
           local_agent.run(task_description, reset=False)
           if refine: test_and_refine(local_agent, solution_file)
           # when mixing, we don't try to pick the best of 3 solutions.
@@ -648,7 +649,18 @@ This environment is simulated. Therefore, real user inputs will not work.  Sendi
 No real person can interact with this code.
 """
             local_agent.run(task_description, reset=True)
-            local_agent.run("From the proposed improvements, please randomly pick one.", reset=False)
+            local_agent.run("""From the proposed improvements, please randomly pick one. 
+You can pick a random improvement following this example:
+<runcode>
+import random
+improvements = [
+  "Go for a walk in the park",
+  "Read a fascinating book",
+  "Cook a delicious meal",
+]
+final_answer(random.choice(improvements))
+</runcode>
+""", reset=False)
             task_description="""Thank you. Please code the randomly selected improvement."""+motivation+"""
 When you finish, call the function
 <runcode>
