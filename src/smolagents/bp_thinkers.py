@@ -442,7 +442,11 @@ def fast_solver(p_coder_model,
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
     return coder_agent
-  
+  after_finish_description=""" .
+After you finish the task, you will respond with:
+<runcode>
+final_answer("I HAVE FINISHED! YAY!")
+</runcode>."""
   local_task_description = 'The task description is enclosed in the tags <task></task>:' + \
     '<task>'+task_str+'</task>'
   motivation = \
@@ -451,12 +455,12 @@ def fast_solver(p_coder_model,
       " Feel free to use your creativity and true hidden skills."
   final_file_name = 'final_solution'+fileext
   local_agent = get_local_agent()
-  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext, reset=True)
-  if (not os.path.isfile('solution1'+fileext)): local_agent.run('Please save the solution into the file solution1'+fileext+' .', reset=False)
-  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution2'+fileext, reset=True)
-  if (not os.path.isfile('solution2'+fileext)): local_agent.run('Please save the solution into the file solution2'+fileext+' .', reset=False)
-  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution3'+fileext, reset=True)
-  if (not os.path.isfile('solution3'+fileext)): local_agent.run('Please save the solution into the file solution3'+fileext+' .', reset=False)
+  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext+after_finish_description, reset=True)
+  if (not os.path.isfile('solution1'+fileext)): local_agent.run('Please save the solution into the file solution1'+fileext+after_finish_description, reset=False)
+  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution2'+fileext+after_finish_description, reset=True)
+  if (not os.path.isfile('solution2'+fileext)): local_agent.run('Please save the solution into the file solution2'+fileext+after_finish_description, reset=False)
+  local_agent.run(local_task_description + motivation + ' Save the solution into the file solution3'+fileext+after_finish_description, reset=True)
+  if (not os.path.isfile('solution3'+fileext)): local_agent.run('Please save the solution into the file solution3'+fileext+after_finish_description, reset=False)
   task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
 The 3 solutions are given in the tags:
@@ -471,19 +475,15 @@ These are the existing solutions:
 
 Your next step is mixing the already 3 existing solutions in the tags to form a better an final solution.
 
-Save your final solution into the file '"""+final_file_name+"""'.
-
-When you finish, you can run:
-<runcode>
-final_answer("I HAVE FINISHED! YAY!")
-</runcode>.
+Save your final solution into the file '"""+final_file_name+after_finish_description+"""
 DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 
 Your goal is to mix the best parts of each solution to form a final solution.
 If one of the solutions is already perfect, you can just copy it into the final solution.
 """+motivation
   local_agent.run(task_description, reset=True)
-  if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+final_file_name+' .', reset=False)
+  if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+\
+    final_file_name+after_finish_description, reset=False)
   return True
   
 
