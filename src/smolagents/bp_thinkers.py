@@ -222,7 +222,7 @@ Please detail what did you change.
     task_description="""Thank you! Love your work!
 In the case that you believe that you have not properly reviewed/tested it yet, please review/test your own solution now.
 After you test and bug fix it, please save the full updated source code that solves the task described in <task></task> into the file '"""+solution_file+"""'.
-When you have finished, call the function final_answer("Task completed! YAY!") please.
+When you have finished, call the function <runcode>final_answer("Task completed! YAY!")</runcode> please.
 """
     print('Refine 2')
     local_agent.run(task_description, reset=False)
@@ -282,9 +282,9 @@ These are the solutions:
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
 You'll finish your task with something similar to:
-
+<runcode>
 final_answer(" my evaluations here ").
-
+</runcode>
 DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 
 """
@@ -335,9 +335,9 @@ A previous version of yourself wrote the following advices in the tags <advices>
 <advices>"""+load_string_from_file('advices.notes')+"""</advices>
 Your next step is suggesting improvements. Feel free to say whatever you would like.
 DO NOT CODE ANYTHING except for providing final via
-
+<runcode>
 final_answer(" your suggestions ").
-
+</runcode>
 YOUR TASK IS SUGGESTING IMPROVEMENTS.
 
 This environment is simulated. Therefore, real user inputs will not work.  Sending emails will also not work.
@@ -358,9 +358,9 @@ final_answer(random.choice(improvements))
 """, reset=False)
             task_description="""Thank you. Please code the randomly selected improvement."""+motivation+"""
 When you finish, call the function
-
+<runcode>
 final_answer("I have finished the task.").
-
+</runcode>
 Your goal is not to start a new solution. Your goal is to update the existing solution.
 THE FULL SOLUTION IS INTENDED TO BE PLACED IN A SINGLE FILE. DO NOT CREATE AN ARCHITECTURE WITH MULTIPLE FILES!"""
             if alternatives_cnt==0:
@@ -392,7 +392,9 @@ The new solution is enclosed in the tags <newcode></newcode>:
 <newcode>"""+load_string_from_file(solution_file)+"""</newcode>
 YOUR TASK IS TO MERGE BOTH SOLUTIONS.
 When you finish merging, you will call:
+<runcode>
 final_answer("I have merged both solutions").
+</runcode>
 
 This environment is simulated. Therefore, real user inputs will not work. Sending emails will also not work.
 
@@ -580,9 +582,9 @@ The 3 solutions are given in the folders:
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
 You'll finish your task with something similar to:
-
+<runcode>
 final_answer(" my evaluations here ").
-
+</runcode>
 DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 
 """
@@ -607,9 +609,9 @@ When you have finished, call the function final_answer("Task completed! YAY!") p
           continue
 
       task_description="""Thank you very much.
-If you believe that the solution 1 is the best, you'll call the function final_answer('solution1').
-If you believe that the solution 2 is the best, you'll call the function final_answer('solution2').
-If you believe that the solution 3 is the best, you'll call the function final_answer('solution3').
+If you believe that the solution 1 is the best, you'll call the function <runcode>final_answer('solution1')</runcode>.
+If you believe that the solution 2 is the best, you'll call the function <runcode>final_answer('solution2')</runcode>.
+If you believe that the solution 3 is the best, you'll call the function <runcode>final_answer('solution3')</runcode>.
 """
       selected_solution = local_agent.run(task_description, reset=False)
       if not(selected_solution in valid_solutions):
@@ -636,9 +638,9 @@ A previous version of yourself wrote the following advices in the tags <advices>
 <advices>"""+load_string_from_file('advices.notes')+"""</advices>
 Your next step is suggesting improvements. Feel free to say whatever you would like.
 DO NOT CODE ANYTHING except for providing final via
-
+<runcode>
 final_answer(" your suggestions ").
-
+</runcode>
 YOUR TASK IS SUGGESTING IMPROVEMENTS.
 
 This environment is simulated. Therefore, real user inputs will not work.  Sending emails will also not work.
@@ -649,9 +651,9 @@ No real person can interact with this code.
             local_agent.run("From the proposed improvements, please randomly pick one.", reset=False)
             task_description="""Thank you. Please code the randomly selected improvement."""+motivation+"""
 When you finish, call the function
-
+<runcode>
 final_answer("I have finished the task.").
-
+</runcode>
 Your goal is not to start a new solution. Your goal is to update the existing solution located in the folder """+solution_file+""" respecting the original folder structure. Do not create updated copies of existing files.
 In the case that you save documentation, do not mention the folder """+solution_file+""" on it as this is a temporary working folder. You can certainly mention its subfolders.
 THE FULL SOLUTION IS INTENDED TO BE PLACED IN THIS FOLDER AND ITS SUBFOLDERS."""
