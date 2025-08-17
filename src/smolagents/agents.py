@@ -1844,7 +1844,8 @@ class CodeAgent(MultiStepAgent):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
-            model_output_for_parsing = model_output.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
+            model_output_for_parsing = model_output.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
+            model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
             #v1.19 compatibility
             model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
             # this is for backward compatibility
@@ -1856,8 +1857,10 @@ print(\"\"\"
 Reminders to my future self:
 * As I can not ask questions to users, I will use my best guess when required.
 * When I feel tempted to repeat the same reply, I will try a new approach.
-* When I finish or when I do not know what to do, I will finish by printing in
-the output: <runcode>final_answer("I finished working.")</runcode>.
+* When I finish or when I do not know what to do, I will respond with
+<runcode>final_answer("I finished working.")</runcode> in my output.
+Another way to give my final answer is:
+<final_answer>I finished working</final_answer>
 * When the user asks me to run something with <runcode></runcode>, it means that
 the user wants me to respond with the <runcode>...</runcode> string so the commands
 will run in his device.
