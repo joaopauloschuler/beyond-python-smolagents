@@ -309,9 +309,9 @@ When you have finished, call the function final_answer("Task completed! YAY!") p
           continue
 
       task_description="""Thank you very much.
-If you believe that the solution 1 is the best, you'll call the function final_answer('solution1').
-If you believe that the solution 2 is the best, you'll call the function final_answer('solution2').
-If you believe that the solution 3 is the best, you'll call the function final_answer('solution3').
+If you believe that the solution 1 is the best, you'll call the function <runcode>final_answer('solution1')</runcode>.
+If you believe that the solution 2 is the best, you'll call the function <runcode>final_answer('solution2')</runcode>.
+If you believe that the solution 3 is the best, you'll call the function <runcode>final_answer('solution3')</runcode>.
 """
       selected_solution = local_agent.run(task_description, reset=False)
       if selected_solution in valid_solutions:
@@ -343,7 +343,17 @@ This environment is simulated. Therefore, real user inputs will not work.  Sendi
 No real person can interact with this code.
 """
             local_agent.run(task_description, reset=True)
-            local_agent.run("From the proposed improvements, please randomly pick one.", reset=False)
+            local_agent.run("""From the proposed improvements, please randomly pick one. 
+You can pick a random improvement following this example:
+<runcode>
+improvements = [
+  "Go for a walk in the park",
+  "Read a fascinating book",
+  "Cook a delicious meal",
+]
+final_answer(random.choice(improvements))
+</runcode>
+""", reset=False)
             task_description="""Thank you. Please code the randomly selected improvement."""+motivation+"""
 When you finish, call the function
 
