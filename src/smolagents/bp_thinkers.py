@@ -314,6 +314,8 @@ If you believe that the solution 2 is the best, you'll call the function <runcod
 If you believe that the solution 3 is the best, you'll call the function <runcode>final_answer('solution3')</runcode>.
 """
       selected_solution = local_agent.run(task_description, reset=False)
+      if not(selected_solution in valid_solutions):
+        selected_solution = 'solution3'
       if selected_solution in valid_solutions:
         best_solution = selected_solution+fileext
         copy_file(best_solution, 'best_solution.best')
@@ -610,6 +612,8 @@ If you believe that the solution 2 is the best, you'll call the function final_a
 If you believe that the solution 3 is the best, you'll call the function final_answer('solution3').
 """
       selected_solution = local_agent.run(task_description, reset=False)
+      if not(selected_solution in valid_solutions):
+        selected_solution = 'solution3'
       if selected_solution in valid_solutions:
         best_solution = selected_solution
         remove_folder_contents('best_solution')
