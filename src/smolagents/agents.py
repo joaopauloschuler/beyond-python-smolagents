@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Unio
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size
 from .bp_utils import bp_parse_code_blobs
+from .bp_utils import is_valid_python_code
 
 import jinja2
 import yaml
@@ -1839,6 +1840,10 @@ class CodeAgent(MultiStepAgent):
             # len2 = len(model_output)
             appended_files = self.append_files_from_text(model_output)
             model_output = self.remove_tags('appendtofile', model_output)
+            if (is_valid_python_code(model_output)):
+                model_output = """```py
+"""+model_output+"""
+```<end_code>"""
             model_output_for_parsing = model_output.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
             #v1.19 compatibility
             model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')

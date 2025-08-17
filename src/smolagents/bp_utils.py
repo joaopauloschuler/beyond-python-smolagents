@@ -53,6 +53,17 @@ def remove_files(file_filter):
   for file_path in txt_files:
     os.remove(file_path)
 
+def is_valid_python_code(code_string):
+    """Returns true if the string is a valid python code."""
+    result = False    
+    try:
+        ast.parse(code_string)
+        return True
+    except SyntaxError:
+        result = False
+    except Exception:
+        result = False
+    return result
 
 def bp_parse_code_blobs(text: str) -> str:
     """Extract code blocs from the LLM's output.
