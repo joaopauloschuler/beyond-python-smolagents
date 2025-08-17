@@ -238,6 +238,23 @@ As you can see in the above command, you can use any computer language that is a
     return result
 
 @tool
+def print_source_code_lines(filename: str, start_line: int, end_line: int) -> None:
+  """ 
+  This tool prints the lines from the start_line to the end_line of the file filename.
+  In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
+
+  Args:
+    filename: str The path to the text file.
+    start_line: int
+    end_line: int
+  """
+  file_content = load_string_from_file(filename)
+  lines = file_content.splitlines()
+  print("Content of " + filename + " from line "+str(start_line)+" to line " +str(end_line) )
+  for i in range(start_line-1, end_line):
+      print(f"{i+1}: {lines[i]}")
+
+@tool
 def get_line_from_file(file_name: str, line_number: int) -> str:
     """
     Reads a specified line from a text file.
