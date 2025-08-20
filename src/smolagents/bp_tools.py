@@ -565,89 +565,27 @@ def string_to_source_code(string_with_files: str, output_base_dir: str = '.', ov
         print(f"Summary: {successful_saves} files saved successfully, {skipped_saves} skipped, {failed_saves} failed.")
 
 @tool
-def pascal_interface_to_string(folder_name: str) -> str:
-    """
-    Scans a folder and subfolders for Pascal source code file types
-    (.pas, .inc, .pp, .lpr, .dpr), extracts the content between the 'interface'
-    and 'implementation' keywords (case-insensitive) using a robust stateful
-    parser that correctly ignores content within comments and strings.
-    Concatenates the extracted content into a single string with
-    <pascal_interface filename="...">...</pascal_interface> tags.
+def get_pascal_interface_from_file(filename: str) -> str:
+        """
+        Returns the pascal interface of a pascal source code file.
+        Args:
+            filename: The pascal source code file name.
 
-    If an 'implementation' section is not found after 'interface', it extracts
-    from 'interface' to the end of the file. If 'interface' is not found,
-    it extracts nothing for that file's interface section. Handles basic
-    encoding issues. Reports file reading errors within the output tags.
+        Returns:
+            The pascal interface
+        """
+        return get_pascal_interface_from_code(load_string_from_file(filename))
 
-    Args:
-        folder_name: The path to the root folder to scan.
+@tool
+def get_pascal_interface_from_code(content: str) -> str:
+        """
+        Returns the interface of a pascal source code
+        Args:
+            content: The pascal source code.
 
-    Returns:
-        A single string containing the concatenated interface sections,
-        formatted with tags, or an empty string if the folder does not
-        exist or no relevant files are found.
-    """
-    if not os.path.isdir(folder_name):
-        # Print to execution log for debugging/info, but return empty string as per inspired function
-        print(f"Error: Folder '{folder_name}' not found.")
-        return ""
-
-    relevant_files = []
-    # Added .pp, .lpr, .dpr based on common Pascal file types
-    allowed_extensions = ('.pas', '.inc', '.pp', '.lpr', '.dpr')
-
-    for root, _, files in os.walk(folder_name):
-        for filename in files:
-            filepath = os.path.join(root, filename)
-            _, file_extension = os.path.splitext(filename)
-            file_extension_lower = file_extension.lower()
-
-            if file_extension_lower in allowed_extensions:
-                relevant_files.append(filepath)
-
-    # Sort files alphabetically by full path for deterministic output
-    relevant_files.sort()
-
-    output_parts = []
-
-    for filepath in relevant_files:
-        # Determine the relative path for the tag filename attribute
-        relative_filepath = os.path.relpath(filepath, folder_name)
-        content = ""
-        interface_content = ""
-        read_error = None
-
-        try:
-            # Attempt to read file content, trying multiple common encodings
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                 try:
-                    # Try a different common encoding if utf-8 fails
-                    with open(filepath, 'r', encoding='latin-1') as f:
-                        content = f.read()
-                 except Exception as e:
-                    read_error = f"Could not read file due to encoding issues or other errors: {e}"
-                    print(f"Error reading file {filepath}: {read_error}") # Print to execution log
-
-
-        except FileNotFoundError:
-             # Should not happen based on os.walk, but included for robustness
-             read_error = "File not found unexpectedly."
-             print(f"Error reading file {filepath}: {read_error}") # Print to execution log
-
-        except Exception as e:
-            # Catch any other potential reading errors
-            read_error = f"An unexpected error occurred while reading: {e}"
-            print(f"An unexpected error occurred while reading file {filepath}: {e}") # Print to execution log
-
-        if read_error:
-            # If read failed, add an error tag and skip to the next file
-             formatted_block = f'<pascal_interface filename="{relative_filepath}">\nError reading file: {read_error}\n</pascal_interface>'
-             output_parts.append(formatted_block)
-             continue # Skip to the next file
-
+        Returns:
+            The pascal interface
+        """
         # --- Robust Extraction Logic (Stateful Character Parser from Solution 2) ---
         interface_section_content_chars = [] # Use a list to build the string efficiently
         is_interface_found = False
@@ -785,13 +723,98 @@ def pascal_interface_to_string(folder_name: str) -> str:
 
         # Join the captured characters into a string
         interface_content = "".join(interface_section_content_chars).strip() # Strip leading/trailing whitespace
+        return interface_content
 
+@tool
+def pascal_interface_to_string(folder_name: str) -> str:
+    """
+    Scans a folder and subfolders for Pascal source code file types
+    (.pas, .inc, .pp, .lpr, .dpr), extracts the content between the 'interface'
+    and 'implementation' keywords (case-insensitive) using a robust stateful
+    parser that correctly ignores content within comments and strings.
+    Concatenates the extracted content into a single string with
+    <pascal_interface filename="...">...</pascal_interface> tags.
+
+    If an 'implementation' section is not found after 'interface', it extracts
+    from 'interface' to the end of the file. If 'interface' is not found,
+    it extracts nothing for that file's interface section. Handles basic
+    encoding issues. Reports file reading errors within the output tags.
+
+    Args:
+        folder_name: The path to the root folder to scan.
+
+    Returns:
+        A single string containing the concatenated interface sections,
+        formatted with tags, or an empty string if the folder does not
+        exist or no relevant files are found.
+    """
+    if not os.path.isdir(folder_name):
+        # Print to execution log for debugging/info, but return empty string as per inspired function
+        print(f"Error: Folder '{folder_name}' not found.")
+        return ""
+
+    relevant_files = []
+    # Added .pp, .lpr, .dpr based on common Pascal file types
+    allowed_extensions = ('.pas', '.inc', '.pp', '.lpr', '.dpr')
+
+    for root, _, files in os.walk(folder_name):
+        for filename in files:
+            filepath = os.path.join(root, filename)
+            _, file_extension = os.path.splitext(filename)
+            file_extension_lower = file_extension.lower()
+
+            if file_extension_lower in allowed_extensions:
+                relevant_files.append(filepath)
+
+    # Sort files alphabetically by full path for deterministic output
+    relevant_files.sort()
+
+    output_parts = []
+
+    for filepath in relevant_files:
+        # Determine the relative path for the tag filename attribute
+        relative_filepath = os.path.relpath(filepath, folder_name)
+        content = ""
+        interface_content = ""
+        read_error = None
+
+        try:
+            # Attempt to read file content, trying multiple common encodings
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                 try:
+                    # Try a different common encoding if utf-8 fails
+                    with open(filepath, 'r', encoding='latin-1') as f:
+                        content = f.read()
+                 except Exception as e:
+                    read_error = f"Could not read file due to encoding issues or other errors: {e}"
+                    print(f"Error reading file {filepath}: {read_error}") # Print to execution log
+
+
+        except FileNotFoundError:
+             # Should not happen based on os.walk, but included for robustness
+             read_error = "File not found unexpectedly."
+             print(f"Error reading file {filepath}: {read_error}") # Print to execution log
+
+        except Exception as e:
+            # Catch any other potential reading errors
+            read_error = f"An unexpected error occurred while reading: {e}"
+            print(f"An unexpected error occurred while reading file {filepath}: {e}") # Print to execution log
+
+        if read_error:
+            # If read failed, add an error tag and skip to the next file
+             formatted_block = f'<pascal_interface filename="{relative_filepath}">\nError reading file: {read_error}\n</pascal_interface>'
+             output_parts.append(formatted_block)
+             continue # Skip to the next file
+
+        interface_content = get_pascal_interface_from_code(content)
         # Construct the output block for this file using the tag format from Solution 1
         # Only add a block if 'interface' was actually found in the file
-        if is_interface_found:
+        if len(interface_content) > 10:
              formatted_block = f'<pascal_interface filename="{relative_filepath}">\n{interface_content}\n</pascal_interface>'
              output_parts.append(formatted_block)
-
 
     # Join all formatted blocks with a newline separator between blocks
     # Add an extra newline after each block for better readability in the final output
