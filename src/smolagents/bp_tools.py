@@ -373,7 +373,112 @@ compile_and_run_pascal_code("hello.pas", timeout=60)
     print('Compilation error.')
 
 @tool
-def source_code_to_string(folder_name: str,  allowed_extensions: tuple = ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp')) -> str:
+def remove_pascal_comments_from_string(code_string: str) -> str:
+    """
+    Remove all comments from a Delphi/Pascal code string.
+    
+    Handles:
+    - Single-line comments (//)
+    - Brace comments ({ }) with nesting
+    - Parenthesis-asterisk comments ((* *))
+    - Preserves comment-like text inside string literals
+
+    Args:
+      code_string: str
+    """
+    result = []
+    i = 0
+    length = len(code_string)
+    
+    # State tracking
+    in_string = False
+    string_char = None  # ' or "
+    brace_comment_depth = 0
+    in_paren_comment = False
+    in_line_comment = False
+    
+    while i < length:
+        char = code_string[i]
+        next_char = code_string[i + 1] if i + 1 < length else None
+        
+        # Handle string literals first
+        if not (brace_comment_depth > 0 or in_paren_comment or in_line_comment):
+            if not in_string and char in ["'", '"']:
+                in_string = True
+                string_char = char
+                result.append(char)
+                i += 1
+                continue
+            elif in_string and char == string_char:
+                # Check for escaped quote (double quote in Pascal)
+                if next_char == string_char:
+                    result.append(char)
+                    result.append(next_char)
+                    i += 2
+                    continue
+                else:
+                    in_string = False
+                    string_char = None
+                    result.append(char)
+                    i += 1
+                    continue
+        
+        # If we're in a string, just copy characters
+        if in_string:
+            result.append(char)
+            i += 1
+            continue
+        
+        # Handle end of line comment
+        if in_line_comment:
+            if char in ['\n', '\r']:
+                in_line_comment = False
+                result.append(char)  # Preserve newlines
+            i += 1
+            continue
+        
+        # Handle end of (* *) comment
+        if in_paren_comment:
+            if char == '*' and next_char == ')':
+                in_paren_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        
+        # Handle end of { } comment
+        if brace_comment_depth > 0:
+            if char == '}':
+                brace_comment_depth -= 1
+            elif char == '{':
+                brace_comment_depth += 1  # Handle nesting
+            i += 1
+            continue
+        
+        # Check for start of comments (only when not in any comment or string)
+        if char == '/' and next_char == '/':
+            in_line_comment = True
+            i += 2
+            continue
+        elif char == '{':
+            brace_comment_depth = 1
+            i += 1
+            continue
+        elif char == '(' and next_char == '*':
+            in_paren_comment = True
+            i += 2
+            continue
+        
+        # Normal character - add to result
+        result.append(char)
+        i += 1
+    
+    return ''.join(result)
+
+@tool
+def source_code_to_string(folder_name: str, 
+    allowed_extensions: tuple = ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp'),
+    remove_pascal_comments: bool = False) -> str:
     """
     Scans a folder and subfolders for specific source code file types (.py, .txt, .pas, .inc, .md),
     concatenates their content into a single string with XML-like tags,
@@ -385,7 +490,7 @@ def source_code_to_string(folder_name: str,  allowed_extensions: tuple = ('.py',
     Args:
         folder_name: The path to the root folder to scan.
         allowed_extensions: tuple of allowed file extensions to scan. Defaults to ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp').
-
+        remove_pascal_comments: if true, removes pascal comments
     Returns:
         A single string containing the concatenated content of the scanned files,
         formatted with <file filename="...">...</file> tags, or an empty string
@@ -458,7 +563,8 @@ def source_code_to_string(folder_name: str,  allowed_extensions: tuple = ('.py',
             print(f"An unexpected error occurred while reading file {filepath}: {e}")
             content = f"An unexpected error occurred while reading: {e}"
 
-
+        if (remove_pascal_comments):
+            content = remove_pascal_comments_from_string(content)
         # Format the content block using the base filename
         formatted_block = f'<file filename="{filename_for_tag}">\n{content}\n</file>'
         output_string_parts.append(formatted_block)
