@@ -830,7 +830,7 @@ def get_pascal_interface_from_code(content: str, remove_pascal_comments: bool = 
         # Join the captured characters into a string
         interface_content = "".join(interface_section_content_chars).strip() # Strip leading/trailing whitespace
         if (remove_pascal_comments):
-            interface_content = remove_pascal_comments_from_string(remove_pascal_comments)
+            interface_content = remove_pascal_comments_from_string(interface_content)
         return interface_content
 
 @tool
