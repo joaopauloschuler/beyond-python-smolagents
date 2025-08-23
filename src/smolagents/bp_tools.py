@@ -671,24 +671,24 @@ def string_to_source_code(string_with_files: str, output_base_dir: str = '.', ov
         print(f"Summary: {successful_saves} files saved successfully, {skipped_saves} skipped, {failed_saves} failed.")
 
 @tool
-def get_pascal_interface_from_file(filename: str) -> str:
+def get_pascal_interface_from_file(filename: str, remove_pascal_comments: bool = False) -> str:
         """
         Returns the pascal interface of a pascal source code file.
         Args:
             filename: The pascal source code file name.
-
+            remove_pascal_comments: if true, removes pascal comments.
         Returns:
             The pascal interface
         """
-        return get_pascal_interface_from_code(load_string_from_file(filename))
+        return get_pascal_interface_from_code(load_string_from_file(filename), remove_pascal_comments)
 
 @tool
-def get_pascal_interface_from_code(content: str) -> str:
+def get_pascal_interface_from_code(content: str, remove_pascal_comments: bool = False) -> str:
         """
         Returns the interface of a pascal source code
         Args:
             content: The pascal source code.
-
+            remove_pascal_comments: if true, removes pascal comments.
         Returns:
             The pascal interface
         """
@@ -829,10 +829,12 @@ def get_pascal_interface_from_code(content: str) -> str:
 
         # Join the captured characters into a string
         interface_content = "".join(interface_section_content_chars).strip() # Strip leading/trailing whitespace
+        if (remove_pascal_comments):
+            interface_content = remove_pascal_comments_from_string(remove_pascal_comments)
         return interface_content
 
 @tool
-def pascal_interface_to_string(folder_name: str) -> str:
+def pascal_interface_to_string(folder_name: str, remove_pascal_comments: bool = False) -> str:
     """
     Scans a folder and subfolders for Pascal source code file types
     (.pas, .inc, .pp, .lpr, .dpr), extracts the content between the 'interface'
@@ -848,7 +850,7 @@ def pascal_interface_to_string(folder_name: str) -> str:
 
     Args:
         folder_name: The path to the root folder to scan.
-
+        remove_pascal_comments: if true, removes pascal comments.
     Returns:
         A single string containing the concatenated interface sections,
         formatted with tags, or an empty string if the folder does not
@@ -915,7 +917,7 @@ def pascal_interface_to_string(folder_name: str) -> str:
              output_parts.append(formatted_block)
              continue # Skip to the next file
 
-        interface_content = get_pascal_interface_from_code(content)
+        interface_content = get_pascal_interface_from_code(content, remove_pascal_comments)
         # Construct the output block for this file using the tag format from Solution 1
         # Only add a block if 'interface' was actually found in the file
         if len(interface_content) > 10:
