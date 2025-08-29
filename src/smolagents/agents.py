@@ -903,7 +903,7 @@ You have been provided with these additional arguments, that you can access dire
         output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
         pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
         output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
-        return 
+        return output
         
     def save_files_from_text(self, txt):
         files = self.parse_tags('savetofile', txt)
