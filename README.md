@@ -44,12 +44,12 @@ To get started with Beyond Python Smolagents, follow these steps:
 
 1.  **Install LiteLLM:** LiteLLM is used to interact with various language models.
     ```bash
-    !pip install litellm==1.67.2
+    !pip install litellm
     ```
 
-2.  **Clone the Repository:** Clone the `v1.20-bp` branch of the Beyond Python Smolagents repository.
+2.  **Clone the Repository:** Clone the `v1.21-bp` branch of the Beyond Python Smolagents repository.
     ```bash
-    !git clone -b v1.20-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
+    !git clone -b v1.21-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
     ```
 
 3.  **Install Beyond Python Smolagents:** Install the cloned project, including the LiteLLM dependencies.
