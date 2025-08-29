@@ -900,7 +900,10 @@ You have been provided with these additional arguments, that you can access dire
             Text without the tag.
         """
         pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
-        return re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
+        output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
+        pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
+        output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
+        return 
         
     def save_files_from_text(self, txt):
         files = self.parse_tags('savetofile', txt)
@@ -1758,10 +1761,11 @@ class CodeAgent(MultiStepAgent):
                         output_text = chat_message.content
 
                         model_output = output_text
+                        #TODO: fix input and output token count
                         chat_message = ChatMessage(
                             role="assistant",
                             content=output_text,
-                            token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+                            token_usage=TokenUsage(input_tokens=0, output_tokens=0),
                         )
                         memory_step.model_output_message = chat_message
                         model_output = chat_message.content
@@ -1817,7 +1821,11 @@ class CodeAgent(MultiStepAgent):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
-            model_output_for_parsing = model_output.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
+            model_output_for_parsing = self.remove_tags('thoughts', model_output)
+            model_output_for_parsing = self.remove_tags('plans', model_output_for_parsing)
+            model_output_for_parsing = self.remove_tags('freewill', model_output_for_parsing)
+            model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
+            model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
             model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
             #v1.19 compatibility
             model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
