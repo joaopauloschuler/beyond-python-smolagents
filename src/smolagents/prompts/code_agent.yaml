@@ -208,14 +208,7 @@ planning:
     You can leverage these tools, behaving like regular python functions:
     ```python
     {%- for tool in tools.values() %}
-    def {{ tool.name }}({% for arg_name, arg_info in tool.inputs.items() %}{{ arg_name }}: {{ arg_info.type }}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{tool.output_type}}:
-        """{{ tool.description }}
-
-        Args:
-        {%- for arg_name, arg_info in tool.inputs.items() %}
-            {{ arg_name }}: {{ arg_info.description }}
-        {%- endfor %}
-        """
+    {{ tool.to_code_prompt() }}
     {% endfor %}
     ```
 
@@ -276,13 +269,7 @@ planning:
     You can leverage these tools, behaving like regular python functions:
     ```python
     {%- for tool in tools.values() %}
-    def {{ tool.name }}({% for arg_name, arg_info in tool.inputs.items() %}{{ arg_name }}: {{ arg_info.type }}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{tool.output_type}}:
-        """{{ tool.description }}
-
-        Args:
-        {%- for arg_name, arg_info in tool.inputs.items() %}
-            {{ arg_name }}: {{ arg_info.description }}
-        {%- endfor %}"""
+    {{ tool.to_code_prompt() }}
     {% endfor %}
     ```
 
