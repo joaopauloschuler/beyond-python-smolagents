@@ -10,6 +10,7 @@ import re
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False.
 Setting restart_chat to False is particularly useful when this sub assistant replies to you “I have completed the task” without providing any further information. In this case, you can ask for the missing details with “restart_chat to False”.
+For independent tasks to this sub assistant, consider using “restart_chat = True” to save the context of this sub assistant.
 """
 
 @tool
