@@ -6,10 +6,12 @@ import shutil
 
 STEP_CALLBACKS = []
 
-DEFAULT_THINKER_TOOLS = [compile_and_run_pascal_code, pascal_interface_to_string,
-    source_code_to_string, string_to_source_code,
-    run_php_file, run_os_command, replace_on_file, replace_on_file_with_files,
-    get_file_size, force_directories, load_string_from_file, save_string_to_file, append_string_to_file, ]
+DEFAULT_THINKER_TOOLS = [
+  copy_file, is_file, 
+  print_source_code_lines, get_line_from_file,
+  source_code_to_string, string_to_source_code,
+  run_os_command, replace_on_file, replace_on_file_with_files,
+  get_file_size, force_directories, load_string_from_file, save_string_to_file, append_string_to_file, ]
 
 DEFAULT_THINKER_SYSTEM_PROMPT = """You are an super-intelligent assistant who can solve any task. You will be given a task to solve as best you can.
 To do so, you have been given access to a list of tools: these tools are basically Python functions which you can call with code.
