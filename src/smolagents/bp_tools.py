@@ -7,7 +7,7 @@ import subprocess
 import shlex
 import re
 
-RESTART_CHAT_TXT = """Use this subassistant as much as you can with the goal to save your own context.
+RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False.
 Setting restart_chat to False is particularly useful when this sub assistant replies to you “I have completed the task” without providing any further information. In this case, you can ask for the missing details with “restart_chat to False”.
 """
@@ -1155,9 +1155,11 @@ class GetRelevantInfoFromFile(Tool):
 <md>
 """+load_string_from_file(filename)[:128000*4]+"""
 </md>
-Please provide relevant information about """+relevant_about_str+""" in the tags <md></md>.
+Please provide relevant information about """+relevant_about_str+""" from the above tags <md></md>.
 Do not use python code except for the final answer - the output format must be a string.
-<runcode>final_answer('your reply')</runcode>"""
+You will provide the relevant information following this example:
+<runcode>final_answer('This is what I have found: ... ')</runcode>.
+"""
             result = self.agent.run(task_str, reset=restart_chat)
             return result
 
@@ -1193,8 +1195,10 @@ class GetRelevantInfoFromUrl(Tool):
 <md>
 """+LocalVistWebPageTool(url)+"""
 </md>
-Please provide relevant information about """+relevant_about_str+""" in the tags <md></md>.
-Do not use python code except for the final answer - the output format must be a string as per example:
-<runcode>final_answer('your reply')</runcode>"""
+Please provide relevant information about """+relevant_about_str+""" from the above tags <md></md>.
+Do not use python code except for the final answer - the output format must be a string.
+You will provide the relevant information following this example:
+<runcode>final_answer('This is what I have found: ... ')</runcode>.
+"""
             result = self.agent.run(task_str, reset=restart_chat)
             return result
