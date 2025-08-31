@@ -388,6 +388,7 @@ class Model:
         self.kwargs = kwargs
         self.model_id: str | None = model_id
         self.postpend_string = ''
+        self.max_len_truncate_content = 20000
 
     def _prepare_completion_kwargs(
         self,
