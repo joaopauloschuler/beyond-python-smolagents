@@ -11,7 +11,9 @@ DEFAULT_THINKER_TOOLS = [
   print_source_code_lines, get_line_from_file,
   source_code_to_string, string_to_source_code,
   run_os_command, replace_on_file, replace_on_file_with_files,
-  get_file_size, force_directories, load_string_from_file, save_string_to_file, append_string_to_file, ]
+  get_file_size, load_string_from_file, save_string_to_file, append_string_to_file]
+
+#TODO: include force_directories into the DEFAULT_THINKER_TOOLS (it now fails adding)
 
 DEFAULT_THINKER_SYSTEM_PROMPT = """You are an super-intelligent assistant who can solve any task. You will be given a task to solve as best you can.
 To do so, you have been given access to a list of tools: these tools are basically Python functions which you can call with code.
@@ -431,7 +433,7 @@ def fast_solver(p_coder_model,
   executor_type='exec',
   add_base_tools=True,
   step_callbacks=STEP_CALLBACKS,
-  log_level = LogLevel.DEBUG
+  log_level = LogLevel.ERROR
   ):
   def get_local_agent():
     coder_agent = CodeAgent(
