@@ -1149,7 +1149,13 @@ class GetRelevantInfoFromFile(Tool):
             self.agent = agent
 
         def forward(self, relevant_about_str:str, filename: str, restart_chat: bool = True) -> str:
-            task_str = 'Hello super-intelligence! Please provide relevant information about '+relevant_about_str+' after reading the following (do not use python code except for the final answer - the output format must be a string): '+ load_string_from_file(filename)[:15000]
+            task_str = """Hello super-intelligence! I have the following content in the tags <md></md>. This is the content:
+<md>
+"""+load_string_from_file(filename)[:128000*4]+"""
+</md>
+Please provide relevant information about """+relevant_about_str+""" in the tags <md></md>.
+Do not use python code except for the final answer - the output format must be a string.
+<runcode>final_answer('your reply')</runcode>"""
             result = self.agent.run(task_str, reset=restart_chat)
             return result
 
@@ -1180,7 +1186,13 @@ class GetRelevantInfoFromUrl(Tool):
             self.agent = agent
 
         def forward(self, relevant_about_str:str, url: str, restart_chat: bool = True) -> str:
-            LocalVistWebPageTool = VisitWebpageTool()
-            task_str = 'Hello super-intelligence! Please provide relevant information about '+relevant_about_str+' after reading the following (do not use python code except for the final answer - the output format must be a string): '+ LocalVistWebPageTool(url)[:15000]
+            LocalVistWebPageTool = VisitWebpageTool(128000*4)
+            task_str = """Hello super-intelligence! I have the following md content in the tags <md></md>. This is the content:
+<md>
+"""+LocalVistWebPageTool(url)+"""
+</md>
+Please provide relevant information about """+relevant_about_str+""" in the tags <md></md>.
+Do not use python code except for the final answer - the output format must be a string as per example:
+<runcode>final_answer('your reply')</runcode>"""
             result = self.agent.run(task_str, reset=restart_chat)
             return result
