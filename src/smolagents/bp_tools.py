@@ -7,6 +7,11 @@ import subprocess
 import shlex
 import re
 
+RESTART_CHAT_TXT = """Use this subassistant as much as you can with the goal to save your own context.
+You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False.
+Setting restart_chat to False is particularly useful when this sub assistant replies to you “I have completed the task” without providing any further information. In this case, you can ask for the missing details with “restart_chat to False”.
+"""
+
 @tool
 def save_string_to_file(content: str, filename: str) -> bool:
     """
@@ -945,8 +950,8 @@ def trim_right_lines(multi_line_string: str) -> str:
 
 class Summarize(Tool):
     name = "summarize"
-    description = """This subassistant will return the summary of a string. Use this subassistant as much as you can with the goal to save your own context size.
-You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+    description = """This subassistant will return the summary of a string.
+"""+RESTART_CHAT_TXT
     inputs = {
         "text_str": {
             "type": "string",
@@ -972,8 +977,8 @@ You can restart the chat by setting restart_chat to True or ask for more details
     
 class SummarizeUrl(Tool):
     name = "summarize_url"
-    description = """This subassistant will return the summary of a web page given its url as a string. Use this subassistant as much as you can with the goal to save your own context size.
-  You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+    description = """This subassistant will return the summary of a web page given its url as a string.
+"""+RESTART_CHAT_TXT
     inputs = {
         "url": {
             "type": "string",
@@ -1000,8 +1005,8 @@ class SummarizeUrl(Tool):
     
 class SummarizeLocalFile(Tool):
         name = "summarize_local_file"
-        description = """This function will return the summary of a local file. Use this subassistant as much as you can with the goal to save your own context.
-    You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+        description = """This function will return the summary of a local file.
+"""+RESTART_CHAT_TXT
         inputs = {
             "filename": {
                 "type": "string",
@@ -1027,11 +1032,10 @@ class SummarizeLocalFile(Tool):
 
 class Subassistant(Tool):
         name = "subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the subassistant.
-    Check what the site https://cnn.com is about or
-    create a summary from the content of the file /content/README.md .
-    Use this subassistant as much as you can with the goal to save your own context size.
-    You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+        description = """This assistant is similar to yourself in capability. It is called the sub assistant.
+Check what the site https://cnn.com is about or
+create a summary from the content of the file /content/README.md .
+"""+RESTART_CHAT_TXT
         inputs = {
             "task_str": {
                 "type": "string",
@@ -1056,49 +1060,13 @@ class Subassistant(Tool):
 
 class InternetSearchSubassistant(Tool):
         name = "internet_search_subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the subassistant.
-Check what the site https://cnn.com is about or
-create a summary from the content of the file /content/README.md .
-Use this subassistant as much as you can with the goal to save your own context size.
-You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+        description = """This assistant is similar to yourself in capability. It is called the internet search sub assistant.
+This sub assistant is dedicated to internet searches.
+"""+RESTART_CHAT_TXT
         inputs = {
             "task_str": {
                 "type": "string",
-                "description": "Task description.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
-
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
-
-        def forward(self, task_str: str, restart_chat: bool = True) -> str:
-            local_task_str = """Hello super intelligence!
-  Please do an internet search regarding '"""+task_str+"""'.
-  Then, please reply with as much information as you can via final_answer('Hello, my findings are:...') .
-  In your answer, please include the references (links).
-  """
-            result = self.agent.run(local_task_str, reset=restart_chat)
-            return result
-
-class CoderSubassistant(Tool):
-        name = "coder_subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the subassistant.
-Check what the site https://cnn.com is about or
-create a summary from the content of the file /content/README.md .
-Use this subassistant as much as you can with the goal to save your own context size.
-You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
-        inputs = {
-            "task_str": {
-                "type": "string",
-                "description": "Task description.",
+                "description": "search topic.",
             },
             "restart_chat": {
                 "type": "boolean",
@@ -1122,10 +1090,44 @@ In your answer, please include the references (links).
             result = self.agent.run(local_task_str, reset=restart_chat)
             return result
 
+class CoderSubassistant(Tool):
+        name = "coder_subassistant"
+        description = """This assistant is similar to yourself in capability. It is called the coder sub assistant.
+"""+RESTART_CHAT_TXT
+        inputs = {
+            "task_str": {
+                "type": "string",
+                "description": "Coding task description.",
+            },
+            "restart_chat": {
+                "type": "boolean",
+                "description": "When true, forgets the previous chat.",
+                "nullable" : True
+            }
+        }
+        output_type = "string"
+        agent = None
+
+        def __init__(self, agent):
+            super().__init__()
+            self.agent = agent
+
+        def forward(self, task_str: str, restart_chat: bool = True) -> str:
+            local_task_str = """Hello super intelligence!
+Please code '"""+task_str+"""'.
+Then, please reply with your code via 
+<final_answer>
+# my code ...
+...
+</final_answer>
+"""
+            result = self.agent.run(local_task_str, reset=restart_chat)
+            return result
+
 class GetRelevantInfoFromFile(Tool):
         name = "get_relevant_info_from_file"
-        description = """This subassistant will return relevant information about relevant_about_str from a local file. Use this subassistant as much as you can with the goal to save your own context.
-  You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+        description = """This sub assistant will return relevant information about relevant_about_str from a local file.
+"""+RESTART_CHAT_TXT
         inputs = {
             "relevant_about_str": {
                 "type": "string",
@@ -1161,8 +1163,8 @@ Do not use python code except for the final answer - the output format must be a
 
 class GetRelevantInfoFromUrl(Tool):
         name = "get_relevant_info_from_url"
-        description = """This subassistant will return relevant information from an url. Use this subassistant as much as you can with the goal to save your own context.
-  You can restart the chat by setting restart_chat to True or ask for more details by setting restart_chat to False."""
+        description = """This sub assistant will return relevant information from an url.
+"""+RESTART_CHAT_TXT
         inputs = {
             "relevant_about_str": {
                 "type": "string",
