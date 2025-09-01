@@ -1,4 +1,5 @@
 from .tools import *
+from .default_tools import DuckDuckGoSearchTool
 from .bp_tools import *
 from .bp_utils import *
 from .agents import *
@@ -492,8 +493,38 @@ If one of the solutions is already perfect, you can just copy it into the final 
   local_agent.run(task_description, reset=True)
   if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+\
     final_file_name+after_finish_description, reset=False)
-  return True
-  
+  return load_string_from_file(final_file_name)  
+
+def get_relevant_info_from_search_fast(coder_model, research_subject, agent_steps = 10, step_callbacks=[], log_level = LogLevel.ERROR):
+  search_agent = CodeAgent(
+      tools=[],
+      model=coder_model,
+      additional_authorized_imports=['*'],
+      add_base_tools=False,
+      max_steps=5,
+      step_callbacks=step_callbacks
+      )
+  LocalRelevantInfoFrom = GetRelevantInfoFromUrl(search_agent)
+  LocalWebSearchTool = DuckDuckGoSearchTool()
+  task = """Hello super-intelligence!
+Please search on internet for the contents inside the tags <search></search>. This is what to search for:
+<search>
+"""+research_subject+"""
+</search>
+List the most interesting ideas that you find.
+Also, list advices that you would give to someone using this knowledge.
+List interesting URLs that you think should be reviewed further.
+Use LocalRelevantInfoFrom to extract information from URLs.
+Please include the source URLs (references).
+"""
+  return fast_solver(coder_model,
+    task,
+    agent_steps = agent_steps,
+    fileext = '.md',
+    tools=[run_os_command, LocalRelevantInfoFrom, LocalWebSearchTool],
+    add_base_tools=False,
+    step_callbacks=step_callbacks,
+    log_level = log_level)
 
 def evolutive_problem_solver_folder(p_coder_model,
   task_str,
