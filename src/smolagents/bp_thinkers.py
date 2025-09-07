@@ -423,8 +423,8 @@ final_answer("Task completed! YAY!")
 """
               local_agent.run(task_description, reset=False)
 
-    except:
-      print('ERROR')
+    except Exception as e:
+      print(f"Exception: {e}", "at step", i)
   return load_string_from_file('best_solution.best')
 
 def fast_solver(p_coder_model,
@@ -728,6 +728,6 @@ final_answer("Task completed! YAY!")
             local_agent.run(task_description, reset=False)
             # refine solution code here
             if refine: test_and_refine(local_agent, solution_file)
-    except:
-      print('ERROR')
+    except Exception as e:
+      print(f"Exception: {e}", "at step", i)
   return True # load_string_from_file('best_solution.best')
