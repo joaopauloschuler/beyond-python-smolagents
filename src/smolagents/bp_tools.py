@@ -485,7 +485,8 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 @tool
 def source_code_to_string(folder_name: str, 
     allowed_extensions: tuple = ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp'),
-    remove_pascal_comments: bool = False) -> str:
+    remove_pascal_comments: bool = False,
+    exclude_list: tuple = ('excluded_folder','excluded_file.pas')) -> str:
     """
     Scans a folder and subfolders for specific source code file types (.py, .txt, .pas, .inc, .md),
     concatenates their content into a single string with XML-like tags,
@@ -498,6 +499,7 @@ def source_code_to_string(folder_name: str,
         folder_name: The path to the root folder to scan.
         allowed_extensions: tuple of allowed file extensions to scan. Defaults to ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp').
         remove_pascal_comments: if true, removes pascal comments
+        exclude_list: list of files or folders that will not be included
     Returns:
         A single string containing the concatenated content of the scanned files,
         formatted with <file filename="...">...</file> tags, or an empty string
@@ -514,8 +516,16 @@ def source_code_to_string(folder_name: str,
             filepath = os.path.join(root, filename)
             _, file_extension = os.path.splitext(filename)
             file_extension_lower = file_extension.lower()
+            subfolders_tuple = tuple(root.split('/'))
+            not_exclude = True
+            for item in subfolders_tuple:
+                if item in exclude_list:
+                    not_exclude = False
+                    break  # Exit the loop once a match is found
 
-            if file_extension_lower in allowed_extensions:
+            if not_exclude and \
+                (file_extension_lower in allowed_extensions) and \
+                (not (filename in exclude_list)):
                 # Store full path for sorting, base filename for output tag, and extension
                 relevant_files_info.append({
                     'filepath': filepath,
