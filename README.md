@@ -58,6 +58,8 @@ To get started with Beyond Python Smolagents, follow these steps:
     ```
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
+## Ready to run example
+* [Google Colab - Free Pascal Task Manager Code Generation](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 
 ## Basic usage (single agent)
 Create a single agent with various tools for working with different programming languages:
