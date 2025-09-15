@@ -25,6 +25,7 @@ limitations under the License.
 ## Ready to run examples
 * [Google Colab - Coding task - Code a task manager in free pascal](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Google Colab - Writing task - Write about the importance of vitamin C](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
+* [Google Colab - Source code documentation task - Create a readme](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ***
 ### 🔥🚨 EXTREME SECURITY RISK 🚨🔥
@@ -171,7 +172,7 @@ When asked to code, you will produce documentation.
 You will write the documentation in a technical and non commercial language.
 You contribution will be helping others to understand how to use this project and its inner workings so future
 developers will be able to build on the top of it.
-It would be fantastic if you could add to the documentation ideas about to solve problems using this project. Solving ideas about how to use it to solve problems in the real world.
+It would be fantastic if you could add to the documentation ideas about to solve real world problems using this project.
 For saving documentation, use the tags <savetofile> and <appendtofile>. Trying to save documentation via python code is just too hard and error prone.
 When asked to test or review documentation, make sure that referred files or functions do actually exist. This is to prevent broken links.
 Your documentation should focus on existing features only. Do not document future or to be be developed features.
