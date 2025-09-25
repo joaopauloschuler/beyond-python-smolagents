@@ -14,19 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 # Beyond Python Smolagents
-**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities to:
-* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
-* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
-* 📚 Generate and update documentation including READMEs for existing codebases.
-* 🔍 Research and write technical documentation.
-* 👥 Collaborate across multiple agents to solve complex problems.
-* 🛠️ Compile, test, and debug source code in various languages.
-
-## Ready to run examples
-
-The examples cover 2 functions that you can easily call:
+**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities with 2 main functions that you can easily call:
 * [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
 * [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
+
+## Ready to run examples
 
 ### Writing task examples
 * [Google Colab - Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
@@ -37,22 +29,13 @@ The examples cover 2 functions that you can easily call:
 * [Google Colab - Code a task manager in free pascal - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Google Colab - Source code documentation task - Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
-***
-### 🔥🚨 EXTREME SECURITY RISK 🚨🔥
-***
-
-**This implementation grants agents extensive access and control over the environment in which they run.** This level of control is intentionally designed to enable powerful automation and interaction capabilities across different languages and the operating system (including file system access, running arbitrary OS commands, and executing code in various languages).
-
-**CONSEQUENTLY, USING THIS SOFTWARE IN AN ENVIRONMENT CONTAINING SENSITIVE DATA, PRODUCTION SYSTEMS, OR IMPORTANT PERSONAL INFORMATION IS HIGHLY DANGEROUS AND STRONGLY DISCOURAGED.**
-
-**YOU MUST ONLY RUN THIS CODE INSIDE A SECURELY ISOLATED ENVIRONMENT** specifically set up for this purpose, such as:
-*   **A dedicated Virtual Machine (VM):** Configure a VM with minimal or no sensitive data, isolated from your main network if possible. Treat anything inside the VM as potentially compromised.
-*   **A locked-down Container (like Docker):** Use containerization to create an isolated filesystem and process space. Ensure no sensitive volumes from your host machine are mounted into the container. Limit network access if possible.
-
-**DO NOT** run this code directly on your primary development machine, production servers, personal computer, or any environment with valuable data or system access you wish to protect.
-
-**USE THIS SOFTWARE ENTIRELY AT YOUR OWN RISK! The developers explicitly disclaim responsibility for any damage, data loss, security breaches, or other negative consequences resulting from the use of this software in an insecure or inappropriate environment.** This warning cannot be overstated.
-***
+## Feature list
+* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
+* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
+* 📚 Generate and update documentation including READMEs for existing codebases.
+* 🔍 Research and write technical documentation.
+* 👥 Collaborate across multiple agents to solve complex problems.
+* 🛠️ Compile, test, and debug source code in various languages.
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
@@ -336,3 +319,19 @@ You will decide the need for researching using internet_search_subassistant befo
 the_boss = CodeAgent(model=coder_model, tools = tools, add_base_tools=True)
 the_boss.run(task_str)
 ```
+***
+### 🔥🚨 EXTREME SECURITY RISK 🚨🔥
+***
+
+**This implementation grants agents extensive access and control over the environment in which they run.** This level of control is intentionally designed to enable powerful automation and interaction capabilities across different languages and the operating system (including file system access, running arbitrary OS commands, and executing code in various languages).
+
+**CONSEQUENTLY, USING THIS SOFTWARE IN AN ENVIRONMENT CONTAINING SENSITIVE DATA, PRODUCTION SYSTEMS, OR IMPORTANT PERSONAL INFORMATION IS HIGHLY DANGEROUS AND STRONGLY DISCOURAGED.**
+
+**YOU MUST ONLY RUN THIS CODE INSIDE A SECURELY ISOLATED ENVIRONMENT** specifically set up for this purpose, such as:
+*   **A dedicated Virtual Machine (VM):** Configure a VM with minimal or no sensitive data, isolated from your main network if possible. Treat anything inside the VM as potentially compromised.
+*   **A locked-down Container (like Docker):** Use containerization to create an isolated filesystem and process space. Ensure no sensitive volumes from your host machine are mounted into the container. Limit network access if possible.
+
+**DO NOT** run this code directly on your primary development machine, production servers, personal computer, or any environment with valuable data or system access you wish to protect.
+
+**USE THIS SOFTWARE ENTIRELY AT YOUR OWN RISK! The developers explicitly disclaim responsibility for any damage, data loss, security breaches, or other negative consequences resulting from the use of this software in an insecure or inappropriate environment.** This warning cannot be overstated.
+***
