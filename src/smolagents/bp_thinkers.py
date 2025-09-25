@@ -209,7 +209,8 @@ def evolutive_problem_solver(p_coder_model,
   log_level = LogLevel.DEBUG,
   refine = True,
   start_coder_model = None,
-  mixer_model = None
+  mixer_model = None,
+  secondary_improvement_model = None
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -255,6 +256,8 @@ with any advice that you would like to give to yourself to a future version of y
 
   if start_coder_model is None: start_coder_model = p_coder_model
   if mixer_model is None: mixer_model = p_coder_model
+  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
+
   local_task_description = 'The task description is enclosed in the tags <task></task>:' + \
     '<task>'+task_str+'</task>'
   valid_solutions=['solution1','solution2','solution3']
@@ -360,7 +363,10 @@ This environment is simulated. Therefore, real user inputs will not work.  Sendi
 
 No real person can interact with this code.
 """
-            local_agent = get_local_agent()
+            if solution_cnt == 2:
+              local_agent = get_local_agent(secondary_improvement_model)
+            else:
+              local_agent = get_local_agent(p_coder_model)
             local_agent.run(task_description, reset=True)
             local_agent.run("""From the proposed improvements, please randomly pick one. 
 You can pick a random improvement following this example:
