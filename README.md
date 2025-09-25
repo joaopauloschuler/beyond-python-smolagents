@@ -23,9 +23,13 @@ limitations under the License.
 * 🛠️ Compile, test, and debug source code in various languages.
 
 ## Ready to run examples
-* [Google Colab - Coding task - Code a task manager in free pascal - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
-* [Google Colab - Writing task - Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
-* [Google Colab - Writing task - Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
+### Writing tasks
+* [Google Colab - Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
+* [Google Colab - Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
+* [Google Colab - Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
+
+### Coding tasks
+* [Google Colab - Code a task manager in free pascal - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Google Colab - Source code documentation task - Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ***
