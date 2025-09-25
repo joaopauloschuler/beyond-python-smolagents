@@ -30,12 +30,12 @@ limitations under the License.
 * [Google Colab - Source code documentation task - Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ## Feature list
-* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
-* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
-* 📚 Generate and update documentation including READMEs for existing codebases.
-* 🔍 Research and write technical documentation.
 * 👥 Collaborate across multiple agents to solve complex problems.
-* 🛠️ Compile, test, and debug source code in various languages.
+* 🔍 Research and write technical documentation.
+* 📚 Generate and update documentation including READMEs for existing codebases.
+* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
+* 🛠️ Compile, test, and debug source code in various computing languages.
+* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
