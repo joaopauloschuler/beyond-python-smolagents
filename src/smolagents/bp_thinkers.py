@@ -247,7 +247,6 @@ with any advice that you would like to give to yourself to a future version of y
 """+new_advice, 'advices.notes')
     # end of test_and_refine
 
-
   local_task_description = 'The task description is enclosed in the tags <task></task>:' + \
     '<task>'+task_str+'</task>'
   valid_solutions=['solution1','solution2','solution3']
@@ -436,12 +435,15 @@ def fast_solver(p_coder_model,
   executor_type='exec',
   add_base_tools=True,
   step_callbacks=STEP_CALLBACKS,
-  log_level = LogLevel.ERROR
+  log_level = LogLevel.ERROR,
+  p_coder_model2 = None,
+  p_coder_model3 = None,
+  p_coder_model_final = None
   ):
-  def get_local_agent():
+  def get_local_agent(local_model):
     coder_agent = CodeAgent(
       tools=tools,
-      model=p_coder_model,
+      model=local_model,
       additional_authorized_imports=['*'],
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
@@ -451,6 +453,9 @@ def fast_solver(p_coder_model,
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
     return coder_agent
+  if p_coder_model2 is None: p_coder_model2 = p_coder_model
+  if p_coder_model3 is None: p_coder_model3 = p_coder_model
+  if p_coder_model_final is None: p_coder_model_final = p_coder_model
   after_finish_description=""" .
 After you finish the task, you will respond with:
 <runcode>
@@ -463,11 +468,13 @@ final_answer("I HAVE FINISHED! YAY!")
       " Feel free to show your intelligence with no restrains. It is the time for you to show the world your full power." + \
       " Feel free to use your creativity and true hidden skills."
   final_file_name = 'final_solution'+fileext
-  local_agent = get_local_agent()
+  local_agent = get_local_agent(p_coder_model)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext+after_finish_description, reset=True)
   if (not os.path.isfile('solution1'+fileext)): local_agent.run('Please save the solution into the file solution1'+fileext+after_finish_description, reset=False)
+  local_agent = get_local_agent(p_coder_model2)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution2'+fileext+after_finish_description, reset=True)
   if (not os.path.isfile('solution2'+fileext)): local_agent.run('Please save the solution into the file solution2'+fileext+after_finish_description, reset=False)
+  local_agent = get_local_agent(p_coder_model3)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution3'+fileext+after_finish_description, reset=True)
   if (not os.path.isfile('solution3'+fileext)): local_agent.run('Please save the solution into the file solution3'+fileext+after_finish_description, reset=False)
   task_description=""" Hello super-intelligence!
@@ -490,6 +497,7 @@ DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 Your goal is to mix the best parts of each solution to form a final solution.
 If one of the solutions is already perfect, you can just copy it into the final solution.
 """+motivation
+  local_agent = get_local_agent(p_coder_model_final)
   local_agent.run(task_description, reset=True)
   if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+\
     final_file_name+after_finish_description, reset=False)
