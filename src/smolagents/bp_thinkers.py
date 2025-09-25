@@ -190,8 +190,11 @@ final_answer('I have finished the task. YAY!')
 When the user asks you to run something with <runcode>...</runcode>, it means that
 the user wants you to respond with <runcode>...</runcode> so the commands
 will run in his device. If you try to run <runcode> or <savetofile> at your end, you will fail.
-When you respond with the <runcode> and <safetofile> tags, these tags will be run/saved in the user's device. 
+When you respond with the <runcode> and <safetofile> tags, these tags will be run/saved in the user's device.
+YOU ARE THE BRAIN OF AN AGENT INSIDE OF THE FANTASTIC BEYOND PYTHON SMOLAGENTS: https://github.com/joaopauloschuler/beyond-python-smolagents . Enjoy!
+As you are the brain of an agent, this is why you are required to respond with "final_answer" at each conclusive reply from you.
 """
+
 def evolutive_problem_solver(p_coder_model,
   task_str,
   agent_steps:int,
@@ -204,12 +207,15 @@ def evolutive_problem_solver(p_coder_model,
   add_base_tools=True,
   step_callbacks=STEP_CALLBACKS,
   log_level = LogLevel.DEBUG,
-  refine = True
+  refine = True,
+  start_coder_model = None,
+  mixer_model = None
   ):
-  def get_local_agent():
+  def get_local_agent(p_local_model = None):
+    if p_local_model is None: p_local_model = p_coder_model
     coder_agent = CodeAgent(
       tools=tools,
-      model=p_coder_model,
+      model=p_local_model,
       additional_authorized_imports=['*'],
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
@@ -247,6 +253,8 @@ with any advice that you would like to give to yourself to a future version of y
 """+new_advice, 'advices.notes')
     # end of test_and_refine
 
+  if start_coder_model is None: start_coder_model = p_coder_model
+  if mixer_model is None: mixer_model = p_coder_model
   local_task_description = 'The task description is enclosed in the tags <task></task>:' + \
     '<task>'+task_str+'</task>'
   valid_solutions=['solution1','solution2','solution3']
@@ -255,7 +263,7 @@ with any advice that you would like to give to yourself to a future version of y
       " Feel free to show your intelligence with no restrains. It is the time for you to show the world your full power." + \
       " Feel free to use your creativity and true hidden skills."
   if start_now:
-    local_agent = get_local_agent()
+    local_agent = get_local_agent(start_coder_model)
     local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext, reset=True)
     if refine: test_and_refine(local_agent, 'solution1'+fileext)
     local_agent.run(local_task_description + motivation + ' Save the solution into the file solution2'+fileext, reset=True)
@@ -264,7 +272,6 @@ with any advice that you would like to give to yourself to a future version of y
     if refine: test_and_refine(local_agent, 'solution3'+fileext)
   for i in range(steps):
     try:
-      local_agent = get_local_agent()
       # !rm *.txt
       # !rm *.json
       print('Evolutive problem solver is starting:', i)
@@ -294,6 +301,7 @@ final_answer(" my evaluations here ").
 DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
 
 """
+      local_agent = get_local_agent(mixer_model)
       local_agent.run(task_description, reset=True)
       # do not mix solutions at the end of the work.
       if (i<steps-2):
@@ -352,6 +360,7 @@ This environment is simulated. Therefore, real user inputs will not work.  Sendi
 
 No real person can interact with this code.
 """
+            local_agent = get_local_agent()
             local_agent.run(task_description, reset=True)
             local_agent.run("""From the proposed improvements, please randomly pick one. 
 You can pick a random improvement following this example:
