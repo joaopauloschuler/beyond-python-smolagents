@@ -103,24 +103,24 @@ coder_agent.run("Please list the files in the current folder.")
 ## The `fast_solver`
 The `fast_solver` function is a sophisticated multi-agent problem-solving approach that leverages the "wisdom of crowds" principle with AI models.
 
-## Core Purpose
+### Core Purpose
 This function takes a complex task and solves it by generating multiple independent solutions, then intelligently combining them into a superior final solution.
 
-## Workflow Breakdown
+### Workflow Breakdown
 
-### Phase 1: Independent Solution Generation
+#### Phase 1: Independent Solution Generation
 1. **Creates 3 separate AI agents** using potentially different models (`p_coder_model`, `p_coder_model2`, `p_coder_model3`)
 2. **Each agent independently solves the same task** without knowledge of the others' work
 3. **Saves each solution to separate files** (`solution1.ext`, `solution2.ext`, `solution3.ext`)
 4. **Includes fallback logic** - if an agent fails to save its solution initially, it gets a second chance
 
-### Phase 2: Solution Synthesis
+#### Phase 2: Solution Synthesis
 1. **Loads all three solutions** from the saved files
 2. **Creates a fourth "final" agent** (using `p_coder_model_final`)
 3. **Presents all three solutions to this agent** with instructions to mix and combine the best parts
 4. **Generates a final optimized solution** that synthesizes the strengths of all previous attempts
 
-## Key Features
+### Key Features
 
 **Multi-Model Support**: Can use up to 4 different AI models - allowing you to leverage different models' strengths (e.g., one model might be better at creativity, another at technical accuracy).
 
@@ -130,7 +130,7 @@ This function takes a complex task and solves it by generating multiple independ
 
 **Rich Motivation**: Each agent receives encouraging prompts to "show your intelligence with no restraints" and produce extensive, detailed solutions.
 
-## Why This Approach Works
+### Why This Approach Works
 
 1. **Diversity**: Multiple independent attempts often explore different solution approaches
 2. **Quality Enhancement**: The final synthesis stage can identify and combine the best elements from each approach
