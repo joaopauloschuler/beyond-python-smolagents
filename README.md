@@ -95,63 +95,46 @@ coder_agent = CodeAgent( model=coder_model, tools = tools, add_base_tools=True)
 coder_agent.run("Please list the files in the current folder.")
 ```
 
-## Create a team of agents (sub-assistants) and use them as tools
+## The `fast_solver`
+The `fast_solver` function is a sophisticated multi-agent problem-solving approach that leverages the "wisdom of crowds" principle with AI models.
 
-### Core Concepts
+## Core Purpose
+This function takes a complex task and solves it by generating multiple independent solutions, then intelligently combining them into a superior final solution.
 
-Beyond Python Smolagents is built around the concept of AI agents equipped with tools to interact with their environment and solve tasks.
+## Workflow Breakdown
 
-*   **Agents** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Autonomous entities powered by language models that receive instructions and use available tools to achieve objectives. Different agent types (`CodeAgent`, `ToolCallingAgent`, `MultiStepAgent`) are available, each tailored for potentially different purposes and capable of being configured with specific tool sets:
-    *   `CodeAgent`: Specialized in code generation, execution, and debugging across multiple languages.
-    *   `ToolCallingAgent`: A general-purpose agent capable of utilizing a defined set of tools.
-    *   `MultiStepAgent`: Designed to break down complex tasks into smaller steps and execute them sequentially or iteratively.
-*   **Models** (inherited from [smolagents](https://github.com/huggingface/smolagents)): The underlying Language Models (LLMs) that provide the cognitive capabilities for the agents, enabling them to understand tasks, reason, and generate responses or code. The framework integrates with various LLMs via the LiteLLM library, allowing users to select models based on cost, performance, context window size, and specific capabilities.
-*   **Tools:** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Functions or utilities that agents can call to perform actions in the environment. These abstract interactions such as running OS commands, accessing the filesystem, interacting with the internet, or executing code in different programming languages. Tools are fundamental; without them, agents can only generate text; with them, they can *act*. The framework provides many built-in tools, and users can define custom ones.
-*   **Sub-assistants:** Instances of agents are treated as tools and provided to a primary agent (often called "the boss"). This allows a higher-level agent to delegate specific sub-tasks to specialized agents. For example, a main agent tasked with building a project might delegate code generation to a `CoderSubassistant` or research to an `InternetSearchSubassistant`. This enables building complex, modular artificial workforce and leverages the specialized capabilities of different agent configurations.
-*   **Base Tools (`add_base_tools=True/False`)** (inherited from [smolagents](https://github.com/huggingface/smolagents)): A crucial parameter when initializing agents. It controls whether an agent automatically receives a default, standard set of tools provided by the Beyond Python Smolagents framework.
-    *   Setting `add_base_tools=True` equips the agent with a common set of utilities right out of the box. This set typically includes tools for basic file operations (`save_string_to_file`, `load_string_from_file`), web interaction (`VisitWebpageTool`, `DuckDuckGoSearchTool`), and Python execution (`PythonInterpreterTool`), among others. These are added *in addition to* any tools explicitly provided in the `tools` list during initialization. This is useful for creating general-purpose agents.
-    *   Setting `add_base_tools=False` means the agent will *only* have access to the tools explicitly passed to it via the `tools` parameter during initialization. This allows for creating highly minimal or very specifically-purposed agents with a restricted set of actions, which can be beneficial for security or task focus.
+### Phase 1: Independent Solution Generation
+1. **Creates 3 separate AI agents** using potentially different models (`p_coder_model`, `p_coder_model2`, `p_coder_model3`)
+2. **Each agent independently solves the same task** without knowledge of the others' work
+3. **Saves each solution to separate files** (`solution1.ext`, `solution2.ext`, `solution3.ext`)
+4. **Includes fallback logic** - if an agent fails to save its solution initially, it gets a second chance
 
+### Phase 2: Solution Synthesis
+1. **Loads all three solutions** from the saved files
+2. **Creates a fourth "final" agent** (using `p_coder_model_final`)
+3. **Presents all three solutions to this agent** with instructions to mix and combine the best parts
+4. **Generates a final optimized solution** that synthesizes the strengths of all previous attempts
 
-### Creating the team
-Beyond Python Smolagents allows you to compose complex working groups by having agents delegate tasks to other specialized agents, referred to as sub-assistants. This modular approach helps manage complexity and leverage agents optimized for specific tasks (e.g., coding, internet search, summarization).
+## Key Features
 
-The library provides wrapper classes (Subassistant, CoderSubassistant, InternetSearchSubassistant, Summarize, etc.) that turn an agent instance into a tool that another agent can call.
+**Multi-Model Support**: Can use up to 4 different AI models - allowing you to leverage different models' strengths (e.g., one model might be better at creativity, another at technical accuracy).
 
-Here's an example demonstrating how to set up a "boss" agent that can utilize other agents as sub-assistants:
-```
-no_tool_agent = ToolCallingAgent(tools=[], model=model, add_base_tools=False)
-tooled_agent = ToolCallingAgent(tools=tools, model=model, add_base_tools=True)
-internet_search_agent = ToolCallingAgent(tools=[save_string_to_file, load_string_from_file], model=model, add_base_tools=True)
+**Robust Error Handling**: If any agent fails to save its solution initially, the function automatically retries.
 
-subassistant = Subassistant(tooled_agent)
-internet_search_subassistant = InternetSearchSubassistant(internet_search_agent)
-coder_subassistant = CoderSubassistant(coder_agent)
-summarize = Summarize(no_tool_agent)
-summarize_url = SummarizeUrl(no_tool_agent)
-summarize_local_file = SummarizeLocalFile(no_tool_agent)
-get_relevant_info_from_file = GetRelevantInfoFromFile(no_tool_agent)
-get_relevant_info_from_url = GetRelevantInfoFromUrl(no_tool_agent)
+**Flexible Output**: The `fileext` parameter allows generating different types of content (code files, documentation, etc.).
 
-tools = [save_string_to_file, load_string_from_file, copy_file, get_file_size,
-  source_code_to_string, string_to_source_code, pascal_interface_to_string,
-  replace_on_file, replace_on_file_with_files,
-  subassistant, coder_subassistant, internet_search_subassistant,
-  summarize, summarize_url, summarize_local_file,
-  get_relevant_info_from_file, get_relevant_info_from_url,
-  run_os_command, run_php_file, compile_and_run_pascal_code,
-  ]
+**Rich Motivation**: Each agent receives encouraging prompts to "show your intelligence with no restraints" and produce extensive, detailed solutions.
 
-task_str="""Code, test and debug something that will impress me!
-For completing the task, you will first plan for it.
-You will decide what task will be assigned to each of your sub-assistants.
-You will decide the need for researching using internet_search_subassistant before you actually start coding a solution."""
+## Why This Approach Works
 
-the_boss = CodeAgent(model=coder_model, tools = tools, add_base_tools=True)
-the_boss.run(task_str)
-```
+1. **Diversity**: Multiple independent attempts often explore different solution approaches
+2. **Quality Enhancement**: The final synthesis stage can identify and combine the best elements from each approach
+3. **Error Mitigation**: If one agent produces a poor solution, the others can compensate
+4. **Scalability**: Can leverage different specialized models for different aspects of the problem
 
-## Use heavy thinking
+This is essentially an automated "brainstorming → synthesis" workflow that mimics how human teams might approach complex problems.
+
+## The heavy thinker - `evolutive_problem_solver`
 Using "Heavy Thinking" is typically more computationally intensive and time-consuming than basic single-agent tasks, but it is designed to yield superior results for difficult problems that benefit from a more thorough, multi-pass approach.
 `evolutive_problem_solver` combines evolutive computing, genetic algorithms and agents to produce a final result.
 
@@ -294,3 +277,57 @@ The `bp_tools.py` files provides a suite of functions and classes that can be us
 *   `replace_on_file(filename: string, old_value: string, new_value: string)`: Reads the content of `filename`, replaces all occurrences of `old_value` with `new_value` in the content, and writes the modified content back to the same file. Returns the modified content string. Useful for in-place file patching.
 *   `replace_on_file_with_files(filename: string, file_with_old_value: string, file_with_new_value: string)`: Reads content from `file_with_old_value` and `file_with_new_value`, then replaces all occurrences of the old content with the new content within the `filename` file. Returns the modified content string of `filename`.
 
+## Create a team of agents (sub-assistants) and use them as tools
+
+### Core Concepts
+
+Beyond Python Smolagents is built around the concept of AI agents equipped with tools to interact with their environment and solve tasks.
+
+*   **Agents** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Autonomous entities powered by language models that receive instructions and use available tools to achieve objectives. Different agent types (`CodeAgent`, `ToolCallingAgent`, `MultiStepAgent`) are available, each tailored for potentially different purposes and capable of being configured with specific tool sets:
+    *   `CodeAgent`: Specialized in code generation, execution, and debugging across multiple languages.
+    *   `ToolCallingAgent`: A general-purpose agent capable of utilizing a defined set of tools.
+    *   `MultiStepAgent`: Designed to break down complex tasks into smaller steps and execute them sequentially or iteratively.
+*   **Models** (inherited from [smolagents](https://github.com/huggingface/smolagents)): The underlying Language Models (LLMs) that provide the cognitive capabilities for the agents, enabling them to understand tasks, reason, and generate responses or code. The framework integrates with various LLMs via the LiteLLM library, allowing users to select models based on cost, performance, context window size, and specific capabilities.
+*   **Tools:** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Functions or utilities that agents can call to perform actions in the environment. These abstract interactions such as running OS commands, accessing the filesystem, interacting with the internet, or executing code in different programming languages. Tools are fundamental; without them, agents can only generate text; with them, they can *act*. The framework provides many built-in tools, and users can define custom ones.
+*   **Sub-assistants:** Instances of agents are treated as tools and provided to a primary agent (often called "the boss"). This allows a higher-level agent to delegate specific sub-tasks to specialized agents. For example, a main agent tasked with building a project might delegate code generation to a `CoderSubassistant` or research to an `InternetSearchSubassistant`. This enables building complex, modular artificial workforce and leverages the specialized capabilities of different agent configurations.
+*   **Base Tools (`add_base_tools=True/False`)** (inherited from [smolagents](https://github.com/huggingface/smolagents)): A crucial parameter when initializing agents. It controls whether an agent automatically receives a default, standard set of tools provided by the Beyond Python Smolagents framework.
+    *   Setting `add_base_tools=True` equips the agent with a common set of utilities right out of the box. This set typically includes tools for basic file operations (`save_string_to_file`, `load_string_from_file`), web interaction (`VisitWebpageTool`, `DuckDuckGoSearchTool`), and Python execution (`PythonInterpreterTool`), among others. These are added *in addition to* any tools explicitly provided in the `tools` list during initialization. This is useful for creating general-purpose agents.
+    *   Setting `add_base_tools=False` means the agent will *only* have access to the tools explicitly passed to it via the `tools` parameter during initialization. This allows for creating highly minimal or very specifically-purposed agents with a restricted set of actions, which can be beneficial for security or task focus.
+
+### Creating the team
+Beyond Python Smolagents allows you to compose complex working groups by having agents delegate tasks to other specialized agents, referred to as sub-assistants. This modular approach helps manage complexity and leverage agents optimized for specific tasks (e.g., coding, internet search, summarization).
+
+The library provides wrapper classes (Subassistant, CoderSubassistant, InternetSearchSubassistant, Summarize, etc.) that turn an agent instance into a tool that another agent can call.
+
+Here's an example demonstrating how to set up a "boss" agent that can utilize other agents as sub-assistants:
+```
+no_tool_agent = ToolCallingAgent(tools=[], model=model, add_base_tools=False)
+tooled_agent = ToolCallingAgent(tools=tools, model=model, add_base_tools=True)
+internet_search_agent = ToolCallingAgent(tools=[save_string_to_file, load_string_from_file], model=model, add_base_tools=True)
+
+subassistant = Subassistant(tooled_agent)
+internet_search_subassistant = InternetSearchSubassistant(internet_search_agent)
+coder_subassistant = CoderSubassistant(coder_agent)
+summarize = Summarize(no_tool_agent)
+summarize_url = SummarizeUrl(no_tool_agent)
+summarize_local_file = SummarizeLocalFile(no_tool_agent)
+get_relevant_info_from_file = GetRelevantInfoFromFile(no_tool_agent)
+get_relevant_info_from_url = GetRelevantInfoFromUrl(no_tool_agent)
+
+tools = [save_string_to_file, load_string_from_file, copy_file, get_file_size,
+  source_code_to_string, string_to_source_code, pascal_interface_to_string,
+  replace_on_file, replace_on_file_with_files,
+  subassistant, coder_subassistant, internet_search_subassistant,
+  summarize, summarize_url, summarize_local_file,
+  get_relevant_info_from_file, get_relevant_info_from_url,
+  run_os_command, run_php_file, compile_and_run_pascal_code,
+  ]
+
+task_str="""Code, test and debug something that will impress me!
+For completing the task, you will first plan for it.
+You will decide what task will be assigned to each of your sub-assistants.
+You will decide the need for researching using internet_search_subassistant before you actually start coding a solution."""
+
+the_boss = CodeAgent(model=coder_model, tools = tools, add_base_tools=True)
+the_boss.run(task_str)
+```
