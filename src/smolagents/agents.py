@@ -1821,7 +1821,8 @@ class CodeAgent(MultiStepAgent):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
-            model_output_for_parsing = self.remove_tags('thoughts', model_output)
+            model_output_for_parsing = re.sub(r'`<(/?[^<>]+)>`', r'`\1`', model_output) # remove escaped tags
+            model_output_for_parsing = self.remove_tags('thoughts', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('plans', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('freewill', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
