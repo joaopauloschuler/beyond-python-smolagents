@@ -28,6 +28,7 @@ limitations under the License.
 ### Coding task examples
 * [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
 * [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/php/php-single-file-01.ipynb)
+* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/java/java-single-file-01.ipynb)
 * [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
