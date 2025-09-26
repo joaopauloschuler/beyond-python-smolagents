@@ -484,7 +484,25 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 
 @tool
 def source_code_to_string(folder_name: str, 
-    allowed_extensions: tuple = ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp'),
+    allowed_extensions: tuple = (
+        '.ada',
+        '.asm', '.s',
+        '.c', '.cc', '.cs', '.cpp', '.h', '.hpp', '.go', '.rs', '.swift',
+        '.cob', '.cbl',
+        '.dart', '.lua',
+        '.f', '.f90',
+        '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
+        '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
+        '.java', '.kt', '.kts', '.scala',
+        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
+        '.php', 
+        '.py', '.ipynb',
+        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
+        '.r', '.R', '.m', '.sql',
+        '.txt', '.csv', '.md',
+        '.toml', '.ini', '.cfg',
+        '.xml', '.json', '.yml', '.yaml',
+    ),
     remove_pascal_comments: bool = False,
     exclude_list: tuple = ('excluded_folder','excluded_file.pas')) -> str:
     """
@@ -497,7 +515,7 @@ def source_code_to_string(folder_name: str,
 
     Args:
         folder_name: The path to the root folder to scan.
-        allowed_extensions: tuple of allowed file extensions to scan. Defaults to ('.py', '.txt', '.pas', '.inc', '.md', '.pp', '.lpr', '.dpr', '.lfm', '.dfm', '.php', '.c', '.cc', '.cpp').
+        allowed_extensions: tuple of allowed file extensions to scan.
         remove_pascal_comments: if true, removes pascal comments
         exclude_list: list of files or folders that will not be included
     Returns:

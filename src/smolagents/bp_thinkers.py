@@ -653,6 +653,16 @@ The 3 solutions are given in the folders:
 * solution2/
 * solution3/
 
+The contents of these folders are given in the tags:
+<solution1></solution1>
+<solution2></solution2>
+<solution3></solution3>
+
+This is the contents:
+<solution1>"""+source_code_to_string('solution1/')+"""</solution1>
+<solution2>"""+source_code_to_string('solution2/')+"""</solution2>
+<solution3>"""+source_code_to_string('solution3/')+"""</solution3>
+
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
 You'll finish your task with something similar to:
