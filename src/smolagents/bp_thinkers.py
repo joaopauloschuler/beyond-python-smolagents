@@ -560,9 +560,13 @@ def evolutive_problem_solver_folder(p_coder_model,
   add_base_tools=True,
   step_callbacks=STEP_CALLBACKS,
   log_level = LogLevel.DEBUG,
-  refine = True
+  refine = True,
+  start_coder_model = None,
+  mixer_model = None,
+  secondary_improvement_model = None
   ):
-  def get_local_agent():
+  def get_local_agent(p_local_model = None):
+    if p_local_model is None: p_local_model = p_coder_model
     coder_agent = CodeAgent(
       tools=tools,
       model=p_coder_model,
@@ -606,7 +610,9 @@ with any advice that you would like to give to yourself to a future version of y
 ---
 """+new_advice, 'advices.notes')
     # end of test_and_refine
-
+  if start_coder_model is None: start_coder_model = p_coder_model
+  if mixer_model is None: mixer_model = p_coder_model
+  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
 
   local_task_description = 'The task description is enclosed in the tags <task></task>:' + \
     '<task>'+task_str+'</task>'
@@ -616,7 +622,7 @@ with any advice that you would like to give to yourself to a future version of y
       " Feel free to show your intelligence with no restrains. It is the time for you to show the world your full power." + \
       " Feel free to use your creativity and true hidden skills."
   if start_now:
-    local_agent = get_local_agent()
+    local_agent = get_local_agent(start_coder_model)
     os.makedirs("solution1", exist_ok=True)                                                                      
     os.makedirs("solution2", exist_ok=True)  
     os.makedirs("solution3", exist_ok=True)  
@@ -629,7 +635,7 @@ with any advice that you would like to give to yourself to a future version of y
     if refine: test_and_refine(local_agent, 'solution3/')
   for i in range(steps):
     try:
-      local_agent = get_local_agent()
+      local_agent = get_local_agent(mixer_model)
       remove_files('*.txt')
       remove_files('*.json')
       remove_files('*.c')
@@ -715,6 +721,10 @@ This environment is simulated. Therefore, real user inputs will not work.  Sendi
 
 No real person can interact with this code.
 """
+            if solution_cnt == 2:
+              local_agent = get_local_agent(secondary_improvement_model)
+            else:
+              local_agent = get_local_agent(p_coder_model)
             local_agent.run(task_description, reset=True)
             local_agent.run("""From the proposed improvements, please randomly pick one. 
 You can pick a random improvement following this example:
