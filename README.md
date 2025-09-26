@@ -18,16 +18,17 @@ limitations under the License.
 * [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
 * [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
 
-## Ready to run examples
+## Google colab ready to run examples 
 
 ### Writing task examples
-* [Google Colab - Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
-* [Google Colab - Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
-* [Google Colab - Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
+* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
+* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
+* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
 
 ### Coding task examples
-* [Google Colab - Code a task manager in free pascal - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
-* [Google Colab - Source code documentation task - Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
+* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/cpp/cpp-single-file-01.ipynb) 
+* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
+* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ## Feature list
 * 👥 Collaborate across multiple agents to solve complex problems.
