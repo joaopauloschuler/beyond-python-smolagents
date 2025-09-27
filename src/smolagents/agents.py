@@ -1827,6 +1827,7 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('freewill', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
+            model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
             model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
             #v1.19 compatibility
