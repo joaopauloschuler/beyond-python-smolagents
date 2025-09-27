@@ -65,6 +65,35 @@ def is_valid_python_code(code_string):
         result = False
     return result
 
+def fix_nested_tags(tagname, text):
+    """
+    Replaces outer <tagname> opening tags with "tagname" text,
+    keeping only the innermost <tagname></tagname> pair as actual tags.
+    
+    Rule: If you find 2 opening tags <tagname> without a closing tag in the middle,
+    the first tag should be replaced by "tagname".
+    """
+    result = text
+    tagname_len = len(tagname)
+    
+    # Keep replacing until no more replacements are needed
+    while True:
+        # Look for pattern: <run> followed eventually by another <run> 
+        # with no </run> in between
+        pattern = r'<'+tagname+r'>((?:(?!</'+tagname+r').)*?)<'+tagname+r'>'
+        match = re.search(pattern, result, re.DOTALL)
+        
+        if not match:
+            break
+            
+        # Replace the FIRST <run> with "run"
+        start_pos = match.start()
+        end_of_first_tag = start_pos + tagname_len + 2  # Length of '<run>'
+        
+        result = result[:start_pos] + '"'+tagname+'"' + result[end_of_first_tag:]
+    
+    return result
+
 def bp_parse_code_blobs(text: str) -> str:
     """Extract code blocs from the LLM's output.
 
