@@ -194,7 +194,7 @@ def force_directories(file_path: str) -> None:
       os.makedirs(directory_path, exist_ok=True)
 
 @tool
-def run_os_command(str_command: str, timeout: int = 60) -> str:
+def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 536870912) -> str:
     """
 Runs an OS command and returns the output.
 This implementation uses Popen with shell=False.
@@ -212,7 +212,8 @@ You can use run_os_command to run php code. This is an example:
 <?php echo "hello"; ?>
 </savetofile>
 <runcode>
-print(run_os_command("php hello.php", timeout=60))
+# 60 seconds of timeout and 512MB of max memory
+print(run_os_command("php hello.php", timeout=60, max_memory=512*1024*1024))
 </runcode>
 </example>
 
@@ -220,9 +221,10 @@ As you can see in the above command, you can use any computer language that is a
 
     Args:
       str_command: str
-      timeout: int
+      timeout: int seconds
+      max_memory: int bytes
     """
-    command = shlex.split(str_command)
+    command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
     result = ""
     outs = None
     errs = None
