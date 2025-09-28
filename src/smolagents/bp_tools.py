@@ -229,7 +229,7 @@ As you can see in the above command, you can use any computer language that is a
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=False)
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
         try:
             outs, errs = proc.communicate(input="", timeout=timeout)
         except subprocess.TimeoutExpired:
