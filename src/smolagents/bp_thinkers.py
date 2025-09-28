@@ -690,6 +690,7 @@ When you have finished, call the function <runcode>final_answer("Task completed!
           local_agent.run(task_description, reset=False)
           if refine: test_and_refine(local_agent, solution_file)
           # when mixing, we don't try to pick the best of 3 solutions.
+          copy_folder_contents(solution_file, 'best_solution_mixed_'+str(i))
           continue
 
       task_description="""Thank you very much.
@@ -704,6 +705,7 @@ If you believe that the solution 3 is the best, you'll call the function <runcod
         best_solution = selected_solution
         remove_folder_contents('best_solution')
         copy_folder_contents(best_solution, 'best_solution')
+        copy_folder_contents(best_solution, 'best_solution_'+str(i))
         remove_folder_contents('solution1')
         remove_folder_contents('solution2')
         remove_folder_contents('solution3')
