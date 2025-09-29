@@ -43,7 +43,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:"]
+STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:", "</final_answer>"]
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -1785,6 +1785,8 @@ class CodeAgent(MultiStepAgent):
                 model_output = model_output + '</runcode>'
             if ('<code>' in model_output) and not('</code>' in model_output):
                 model_output = model_output + '</code>'
+            if ('<final_answer>' in model_output) and not('</final_answer>' in model_output):
+                model_output = model_output + '</final_answer>'
             memory_step.model_output_message = model_output
             str_len = len(model_output)
             str_len_str = str(str_len)
