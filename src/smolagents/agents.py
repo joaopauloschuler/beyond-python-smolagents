@@ -29,7 +29,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_last_markers
+from .bp_tools import get_file_size, force_directories, remove_after_markers
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 
@@ -1779,13 +1779,15 @@ class CodeAgent(MultiStepAgent):
         saved_files = []
 
         if model_output is not None:
-            model_output = remove_after_last_markers(str(model_output), STOP_SEQUENCES)
-            str_len = len(model_output)
-            str_len_str = str(str_len)
+            model_output = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', str(model_output)) # remove escaped tags
+            model_output = remove_after_markers(model_output, STOP_SEQUENCES, True)
             if ('<runcode>' in model_output) and not('</runcode>' in model_output):
                 model_output = model_output + '</runcode>'
             if ('<code>' in model_output) and not('</code>' in model_output):
                 model_output = model_output + '</code>'
+            memory_step.model_output_message = model_output
+            str_len = len(model_output)
+            str_len_str = str(str_len)
             self.logger.log_markdown(
                 content=model_output,
                 title="Output of the LLM with "+str_len_str+" chars:",
@@ -1801,8 +1803,7 @@ class CodeAgent(MultiStepAgent):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
-            model_output_for_parsing = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', model_output) # remove escaped tags
-            model_output_for_parsing = self.remove_tags('thoughts', model_output_for_parsing)
+            model_output_for_parsing = self.remove_tags('thoughts', model_output)
             model_output_for_parsing = self.remove_tags('plans', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('freewill', model_output_for_parsing)
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)

@@ -171,11 +171,12 @@ def is_file(filename: str) -> bool:
     """
     return os.path.isfile(filename)
 
-def remove_after_last_markers(text, stop_sequences=["</runcode>", "</code>", "Calling tools:"]):
+def remove_after_markers(text, stop_sequences=["</runcode>", "</code>", "Calling tools:"], after_first=True):
     """
     Args:
         text (str): The input string to process
         stop_sequences (list): List of strings to search for as stop markers
+        after_first (bool): True means that it removes after the first. False means that it removes after last.
 
     Returns:
         str: The string with content after the last marker removed
@@ -190,7 +191,10 @@ def remove_after_last_markers(text, stop_sequences=["</runcode>", "</code>", "Ca
     valid_positions = []
 
     for sequence in stop_sequences:
-        pos = text.rfind(sequence)
+        if (after_first):
+            pos = text.find(sequence)
+        else:
+            pos = text.rfind(sequence)
         if pos != -1:
             valid_positions.append(pos)
 
