@@ -195,7 +195,7 @@ def remove_after_last_markers(text, stop_sequences=["</runcode>", "</code>", "Ca
             valid_positions.append(pos)
 
     if valid_positions:
-        cut_position = min(valid_positions)  # Use max for last occurrence
+        cut_position = min(valid_positions)  # Use min for the first occurrence
         return text[:cut_position]
 
     return text
