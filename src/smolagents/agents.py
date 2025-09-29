@@ -29,7 +29,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size
+from .bp_tools import get_file_size, force_directories, remove_after_last_markers
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 
@@ -43,6 +43,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
+STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:"]
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -99,27 +100,6 @@ from .utils import (
 
 
 logger = getLogger(__name__)
-
-def force_directories(file_path: str):
-    """
-    Extracts the directory path from a full file path and creates
-    the directory structure if it does not already exist.
-
-    Args:
-        file_path: The full path to a file (e.g., '/path/to/some/directory/file.txt').
-                   Can be a relative or absolute path.
-    """
-    # Use os.path.dirname() to get the directory part of the path.
-    # This works for both files and directories (if path ends with a slash).
-    directory_path = os.path.dirname(file_path)
-
-    # If the path ends with a directory separator or refers to the current
-    # directory or root, dirname might return an empty string or '.'.
-    # os.makedirs handles these cases correctly.
-    # os.makedirs() with exist_ok=True will create the directories recursively
-    # if they don't exist, and will do nothing if they already exist.
-    if directory_path: # Only attempt to create if directory_path is not empty
-      os.makedirs(directory_path, exist_ok=True)
 
 def get_variable_names(self, template: str) -> set[str]:
     pattern = re.compile(r"\{\{([^{}]+)\}\}")
@@ -1727,7 +1707,7 @@ class CodeAgent(MultiStepAgent):
         input_messages = memory_messages.copy()
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
-        stop_sequences = ["Observation:", "Calling tools:"]
+        stop_sequences = STOP_SEQUENCES
         if self.code_block_tags[1] not in self.code_block_tags[0]:
             # If the closing tag is contained in the opening tag, adding it as a stop sequence would cut short any code generation
             stop_sequences.append(self.code_block_tags[1])
@@ -1744,7 +1724,7 @@ class CodeAgent(MultiStepAgent):
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
                             self.posepend_last_message(input_messages),
-                            stop_sequences=["</runcode>","</code>","Calling tools:"],
+                            stop_sequences = STOP_SEQUENCES,
                             **additional_args,
                         )
                         output_text = ""
@@ -1772,7 +1752,7 @@ class CodeAgent(MultiStepAgent):
                     else:
                         chat_message: ChatMessage = self.model(
                             self.posepend_last_message(input_messages),
-                            stop_sequences=["</runcode>","</code>","Calling tools:"],
+                            stop_sequences = STOP_SEQUENCES,
                             **additional_args,
                         )
                         memory_step.model_output_message = chat_message
@@ -1799,7 +1779,7 @@ class CodeAgent(MultiStepAgent):
         saved_files = []
 
         if model_output is not None:
-            model_output = str(model_output)
+            model_output = remove_after_last_markers(str(model_output), STOP_SEQUENCES)
             str_len = len(model_output)
             str_len_str = str(str_len)
             if ('<runcode>' in model_output) and not('</runcode>' in model_output):

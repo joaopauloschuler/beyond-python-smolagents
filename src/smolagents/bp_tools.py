@@ -171,6 +171,35 @@ def is_file(filename: str) -> bool:
     """
     return os.path.isfile(filename)
 
+def remove_after_last_markers(text, stop_sequences=["</runcode>", "</code>", "Calling tools:"]):
+    """
+    Args:
+        text (str): The input string to process
+        stop_sequences (list): List of strings to search for as stop markers
+
+    Returns:
+        str: The string with content after the last marker removed
+    """
+    if not text or not isinstance(text, str):
+        return text
+
+    if not stop_sequences:
+        return text
+
+    # Find positions of LAST occurrence of all stop sequences
+    valid_positions = []
+
+    for sequence in stop_sequences:
+        pos = text.rfind(sequence)
+        if pos != -1:
+            valid_positions.append(pos)
+
+    if valid_positions:
+        cut_position = min(valid_positions)  # Use max for last occurrence
+        return text[:cut_position]
+
+    return text
+
 @tool
 def force_directories(file_path: str) -> None:
     """
