@@ -16,13 +16,22 @@ limitations under the License.
 # Beyond Python Smolagents
 **Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities with 2 main functions that you can easily call:
 * [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
+
+  [![Watch the video](https://img.youtube.com/vi/oQ2GdrtWR94/0.jpg)](https://youtu.be/oQ2GdrtWR94)
+
 * [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
+
+  [![Watch the video](https://img.youtube.com/vi/XuFL3PQGQkc/0.jpg)](https://youtu.be/XuFL3PQGQkc)
+
+  [![Watch the video](https://img.youtube.com/vi/25uJ0VHDKZE/0.jpg)](https://youtu.be/25uJ0VHDKZE)
 
 ## Google colab ready to run examples 
 
 ### Writing task examples
 * [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
 * [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
+
+  [![Watch the video](https://img.youtube.com/vi/oQ2GdrtWR94/0.jpg)](https://youtu.be/oQ2GdrtWR94)
 * [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
 
 ### Coding task examples
