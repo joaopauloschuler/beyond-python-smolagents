@@ -17,7 +17,7 @@ limitations under the License.
 **Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities with 2 main functions that you can easily call:
 * [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
 
-  [![Watch the video](https://img.youtube.com/vi/oQ2GdrtWR94/0.jpg)](https://youtu.be/oQ2GdrtWR94)
+  [![Watch the video](docs/img/writing-process.jpg?raw=true)](https://youtu.be/oQ2GdrtWR94)
 
 * [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
 
