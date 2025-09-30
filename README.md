@@ -21,9 +21,9 @@ limitations under the License.
 
 * [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
 
-  [![Watch the video](https://img.youtube.com/vi/XuFL3PQGQkc/0.jpg)](https://youtu.be/XuFL3PQGQkc)
+  [![Watch the video](docs/img/evol.jpg?raw=true)](https://youtu.be/XuFL3PQGQkc)
 
-  [![Watch the video](https://img.youtube.com/vi/25uJ0VHDKZE/0.jpg)](https://youtu.be/25uJ0VHDKZE)
+  [![Watch the video](docs/img/monologue.jpg?raw=true)](https://youtu.be/25uJ0VHDKZE)
 
 ## Google colab ready to run examples 
 
