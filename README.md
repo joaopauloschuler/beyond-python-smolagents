@@ -30,11 +30,10 @@ limitations under the License.
 ### Writing task examples
 * [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
 * [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
-
-  [![Watch the video](https://img.youtube.com/vi/oQ2GdrtWR94/0.jpg)](https://youtu.be/oQ2GdrtWR94)
 * [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
 
 ### Coding task examples
+  [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
 * [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
 * [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/php/php-single-file-01.ipynb)
 * [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/java/java-single-file-01.ipynb)
