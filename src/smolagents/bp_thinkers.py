@@ -279,7 +279,11 @@ with any advice that you would like to give to yourself to a future version of y
       " Please, try to produce a solution that is as extensive, detailed and rich as you can." + \
       " Feel free to show your intelligence with no restrains. It is the time for you to show the world your full power." + \
       " Feel free to use your creativity and true hidden skills."
+  Path('best_solution.best').unlink(missing_ok=True)
   if start_now:
+    Path('solution1'+fileext).unlink(missing_ok=True)
+    Path('solution2'+fileext).unlink(missing_ok=True)
+    Path('solution3'+fileext).unlink(missing_ok=True)
     local_agent = get_local_agent(start_coder_model)
     local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext, reset=True)
     if refine: test_and_refine(local_agent, 'solution1'+fileext)
