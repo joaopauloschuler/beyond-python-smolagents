@@ -219,7 +219,7 @@ if '_' in locals():
         logs = stdout_content
         last_value_str = str(self.globals_dict['_last_value'])
         last_value_str_len = len(last_value_str)
-        if (last_value_str_len > 0): logs += "\nLast value:\n" + last_value_str 
+        if ( (last_value_str_len > 0) and (self.globals_dict['_last_value'] is not None)): logs += "\nLast value:\n" + last_value_str 
         if stderr_content:
             logs += "\nStderr:\n" + stderr_content
         # print('Logs', logs)
