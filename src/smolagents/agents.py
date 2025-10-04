@@ -1938,7 +1938,7 @@ You can combine the above to be able to run very large portions of python code i
         #     text_file.write(code_action)
         # code_action = "exec(load_string_from_file('tmp.py'))"
 
-        is_final_answer = False
+        observation = ''
         try:
             code_output = self.python_executor(code_action)
             code_output.logs = truncate_content(code_output.logs, 20000) # execution log is truncated to 20K
@@ -1948,7 +1948,7 @@ You can combine the above to be able to run very large portions of python code i
                     Text("Execution logs:", style="bold"),
                     Text(code_output.logs),
                 ]
-            observation = "Execution logs:\n" + code_output.logs
+                observation = "Execution logs:\n" + code_output.logs
         except Exception as e:
             if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
                 code_output.logs = str(self.python_executor.state["_print_outputs"])
@@ -1968,7 +1968,8 @@ You can combine the above to be able to run very large portions of python code i
             raise AgentExecutionError(error_msg, self.logger)
 
         truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
-        observation += "Last output from code snippet:\n" + truncated_output
+        if (len(truncated_output) > 0):
+            observation += "Last output from code snippet:\n" + truncated_output
         memory_step.observations = observation
 
         if not code_output.is_final_answer:
