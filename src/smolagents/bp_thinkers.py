@@ -187,6 +187,20 @@ When you finish, you can use this example (if you like):
 final_answer('I have finished the task. YAY!')
 </runcode>
 </example>
+
+In the case that you are asked for a random choice, I have an excellent idea to you. You can follow this example:
+<example>
+<runcode>
+import random
+improvements = [
+  "Go for a walk in the park",
+  "Read a fascinating book",
+  "Cook a delicious meal",
+]
+final_answer(random.choice(improvements))
+</runcode>
+</example>
+
 When the user asks you to run something with <runcode>...</runcode>, it means that
 the user wants you to respond with <runcode>...</runcode> so the commands
 will run in his device. If you try to run <runcode> or <savetofile> at your end, you will fail.
@@ -471,6 +485,11 @@ def fast_solver(p_coder_model,
   if p_coder_model2 is None: p_coder_model2 = p_coder_model
   if p_coder_model3 is None: p_coder_model3 = p_coder_model
   if p_coder_model_final is None: p_coder_model_final = p_coder_model
+  final_file_name = 'final_solution'+fileext
+  Path('solution1'+fileext).unlink(missing_ok=True)
+  Path('solution2'+fileext).unlink(missing_ok=True)
+  Path('solution3'+fileext).unlink(missing_ok=True)
+  Path(final_file_name).unlink(missing_ok=True)
   after_finish_description=""" .
 After you finish the task, you will respond with:
 <runcode>
@@ -482,7 +501,6 @@ final_answer("I HAVE FINISHED! YAY!")
       " Please, try to produce a solution that is as extensive, detailed and rich as you can." + \
       " Feel free to show your intelligence with no restrains. It is the time for you to show the world your full power." + \
       " Feel free to use your creativity and true hidden skills."
-  final_file_name = 'final_solution'+fileext
   local_agent = get_local_agent(p_coder_model)
   local_agent.run(local_task_description + motivation + ' Save the solution into the file solution1'+fileext+after_finish_description, reset=True)
   if (not os.path.isfile('solution1'+fileext)): local_agent.run('Please save the solution into the file solution1'+fileext+after_finish_description, reset=False)
