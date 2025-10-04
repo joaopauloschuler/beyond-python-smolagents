@@ -1970,17 +1970,17 @@ You can combine the above to be able to run very large portions of python code i
         truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
         if (len(truncated_output) > 0):
             observation += "Last output from code snippet:\n" + truncated_output
-        memory_step.observations = observation
+            if not code_output.is_final_answer:
+                execution_outputs_console += [
+                    Text(
+                        f"Out: {truncated_output}",
+                    ),
+                ]
 
-        if not code_output.is_final_answer:
-            execution_outputs_console += [
-                Text(
-                    f"Out: {truncated_output}",
-                ),
-            ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
-        memory_step.action_output = code_output.output
-        yield ActionOutput(output=code_output.output, is_final_answer=code_output.is_final_answer)
+        memory_step.observations = observation
+        memory_step.action_output = truncated_output
+        yield ActionOutput(output=truncated_output, is_final_answer=code_output.is_final_answer)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.
