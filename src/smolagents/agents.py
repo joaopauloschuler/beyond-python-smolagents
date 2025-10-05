@@ -1967,15 +1967,18 @@ You can combine the above to be able to run very large portions of python code i
                 )
             raise AgentExecutionError(error_msg, self.logger)
 
-        truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
-        if (len(truncated_output) > 0):
-            observation += "Last output from code snippet:\n" + truncated_output
-            if not code_output.is_final_answer:
-                execution_outputs_console += [
-                    Text(
-                        f"Out: {truncated_output}",
-                    ),
-                ]
+        if (code_output.output is not None) and (code_output.output != "None"):
+            truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
+            if (len(truncated_output) > 0):
+                observation += "Last output from code snippet:\n" + truncated_output
+                if not code_output.is_final_answer:
+                    execution_outputs_console += [
+                        Text(
+                            f"Out: {truncated_output}",
+                        ),
+                    ]
+        else:
+            truncated_output = ''
 
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.observations = observation
