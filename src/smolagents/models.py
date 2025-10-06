@@ -296,6 +296,7 @@ def get_clean_message_list(
 
         if role in role_conversions:
             message.role = role_conversions[role]  # type: ignore
+        if flatten_messages_as_text: message.role = message.role.value
         # encode images if needed
         if isinstance(message.content, list):
             for element in message.content:
@@ -1598,7 +1599,13 @@ class OpenAIServerModel(ApiModel):
             **kwargs,
         )
         self._apply_rate_limit()
-        response = self.client.chat.completions.create(**completion_kwargs)
+        if self.flatten_messages_as_text:
+          response = self.client.chat.completions.create(
+            model=completion_kwargs['model'],
+            messages=completion_kwargs['messages'])
+        else:
+          response = self.client.chat.completions.create(**completion_kwargs)
+        
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
