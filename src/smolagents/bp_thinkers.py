@@ -224,7 +224,8 @@ def evolutive_problem_solver(p_coder_model,
   refine = True,
   start_coder_model = None,
   mixer_model = None,
-  secondary_improvement_model = None
+  secondary_improvement_model = None,
+  only_bigger_solution = True
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -340,9 +341,10 @@ Save the new solution into the file """+solution_file+""".
 When you have finished, call the function <runcode>final_answer("Task completed! YAY!")</runcode> please."""
           local_agent.run(task_description, reset=False)
           if refine: test_and_refine(local_agent, solution_file)
-          # when mixing, we don't try to pick the best of 3 solutions.
-          shutil.copyfile(solution_file, 'best_solution_mixed_'+str(i)+fileext)
-          shutil.copyfile(solution_file, 'best_solution.best')
+          if (get_file_size(solution_file) > get_file_size('best_solution.best')) or (not only_bigger_solution):
+            # when mixing, we don't try to pick the best of 3 solutions.
+            shutil.copyfile(solution_file, 'best_solution_mixed_'+str(i)+fileext)
+            shutil.copyfile(solution_file, 'best_solution.best')
           continue
 
       task_description="""Thank you very much.
@@ -355,7 +357,8 @@ If you believe that the solution 3 is the best, you'll call the function <runcod
         selected_solution = 'solution3'
       if selected_solution in valid_solutions:
         best_solution = selected_solution+fileext
-        shutil.copyfile(best_solution, 'best_solution.best')
+        if (get_file_size(best_solution) > get_file_size('best_solution.best')) or (not only_bigger_solution):
+          shutil.copyfile(best_solution, 'best_solution.best')
         if i<steps-1:
           # the past best solution is always the solution3.py
           # !cp best_solution.py solution3.py

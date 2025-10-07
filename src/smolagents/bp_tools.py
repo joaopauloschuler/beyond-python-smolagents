@@ -257,7 +257,10 @@ As you can see in the above command, you can use any computer language that is a
       timeout: int seconds
       max_memory: int bytes
     """
-    command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
+    if (max_memory>0):
+        command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
+    else:
+        command = shlex.split(str_command)
     result = ""
     outs = None
     errs = None
