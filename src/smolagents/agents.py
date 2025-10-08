@@ -1772,7 +1772,10 @@ class CodeAgent(MultiStepAgent):
             memory_step.token_usage = chat_message.token_usage
             memory_step.model_output = model_output
         except Exception as e:
-            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
+            error_message = f"Error in generating model output:\n{e}"
+            if (not self.model.flatten_messages_as_text):
+                error_message += f"\nConsider using `flatten_messages_as_text=True` when creating the model."
+            raise AgentGenerationError(error_message, self.logger) from e
         
         str_len = 0
         str_len_str = '0'
