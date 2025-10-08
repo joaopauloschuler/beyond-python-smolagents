@@ -225,7 +225,7 @@ def evolutive_problem_solver(p_coder_model,
   start_coder_model = None,
   mixer_model = None,
   secondary_improvement_model = None,
-  only_bigger_solution = True
+  only_bigger_solution = False
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
