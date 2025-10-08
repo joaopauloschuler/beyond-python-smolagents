@@ -364,6 +364,180 @@ print(get_line_from_file('solution1/src/jpmmath.pas', 301))
         raise Exception(f"An unexpected error occurred: {e}")
 
 @tool
+def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> None:
+    """
+    Replaces a specified line in a text file with new content.
+
+    This function reads the entire file, replaces the specified line with new content,
+    and writes the modified content back to the file. If new_content contains newline
+    characters, it will be split into multiple lines that replace the single original line.
+
+    Example usage:
+        # Replace line 301 with a corrected version
+        replace_line_in_file('solution1/src/jpmmath.pas', 301, 'function Result: Integer;')
+        
+        # Replace line 10 with multiple lines
+        replace_line_in_file('test.txt', 10, 'Line 10a\\nLine 10b\\nLine 10c')
+        
+        # Fix a compiler error
+        error_line = get_line_from_file('solution1/src/jpmmath.pas', 301)
+        print(f"Original: {error_line}")
+        replace_line_in_file('solution1/src/jpmmath.pas', 301, '  Result := 0;')
+
+    Args:
+        file_name: str The path to the text file to modify.
+        line_number: int The 1-based index of the line to replace.
+                         For example, 1 for the first line, 2 for the second, etc.
+        new_content: str The new content to replace the line with.
+                        Can contain newline characters (\\n) to insert multiple lines.
+
+    Returns:
+        None: The function modifies the file in place.
+
+    Raises:
+        ValueError: If file_name is not a valid string or line_number is not
+                   a positive integer.
+        TypeError: If line_number is not an integer or new_content is not a string.
+        FileNotFoundError: If the specified file does not exist.
+        IndexError: If the line_number is out of the bounds of the file.
+        IOError: For other potential I/O errors during file reading or writing.
+        PermissionError: If the program doesn't have write permission for the file.
+    """
+    # 1. Input Validation
+    if not isinstance(file_name, str) or not file_name.strip():
+        raise ValueError("file_name must be a non-empty string.")
+    if not isinstance(line_number, int):
+        raise TypeError("line_number must be an integer.")
+    if line_number <= 0:
+        raise ValueError("line_number must be a positive integer (1-based).")
+    if not isinstance(new_content, str):
+        raise TypeError("new_content must be a string.")
+
+    try:
+        # 2. Read the entire file
+        with open(file_name, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 3. Validate line_number is within bounds
+        if line_number > len(lines):
+            raise IndexError(
+                f"Line number {line_number} is out of bounds for file '{file_name}' "
+                f"(file has {len(lines)} lines)."
+            )
+
+        # 4. Prepare the replacement - ensure it ends with \n for proper file format
+        if not new_content.endswith('\n'):
+            new_content += '\n'
+
+        # 5. Replace the specified line (convert to 0-based index)
+        # If new_content contains \n characters, it will be written as-is,
+        # effectively replacing one line with potentially multiple lines
+        lines[line_number - 1] = new_content
+
+        # 6. Write the modified content back to the file
+        with open(file_name, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: File '{file_name}' not found.")
+    except PermissionError as e:
+        raise PermissionError(f"Permission denied: Cannot write to file '{file_name}': {e}")
+    except IOError as e:
+        raise IOError(f"An I/O error occurred while accessing file '{file_name}': {e}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {e}")
+
+@tool
+def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -> None:
+    """
+    Inserts new content before a specified line in a text file.
+
+    This function reads the entire file, inserts new content before the specified line,
+    and writes the modified content back to the file. The original line at line_number
+    and all subsequent lines are shifted down. If new_content contains newline
+    characters, multiple lines will be inserted.
+
+    Example usage:
+        # Insert a new line before line 301
+        insert_lines_into_file('solution1/src/jpmmath.pas', 301, 'var Result: Integer;')
+        
+        # Insert multiple lines before line 10
+        insert_lines_into_file('test.txt', 10, 'Line 9a\\nLine 9b\\nLine 9c')
+        
+        # Insert at the beginning of the file
+        insert_lines_into_file('test.txt', 1, '// File header comment')
+        
+        # Append to the end of the file (if file has 100 lines, use 101)
+        insert_lines_into_file('test.txt', 101, 'New last line')
+
+    Args:
+        file_name: str The path to the text file to modify.
+        line_number: int The 1-based index before which to insert.
+                         For example, 1 inserts at the beginning,
+                         2 inserts before the current line 2 (making it the new line 2),
+                         len(lines)+1 appends to the end of the file.
+        new_content: str The content to insert.
+                        Can contain newline characters (\\n) to insert multiple lines.
+
+    Returns:
+        None: The function modifies the file in place.
+
+    Raises:
+        ValueError: If file_name is not a valid string or line_number is not
+                   a positive integer.
+        TypeError: If line_number is not an integer or new_content is not a string.
+        FileNotFoundError: If the specified file does not exist.
+        IndexError: If the line_number is out of the valid range (1 to len(lines)+1).
+        IOError: For other potential I/O errors during file reading or writing.
+        PermissionError: If the program doesn't have write permission for the file.
+    """
+    # 1. Input Validation
+    if not isinstance(file_name, str) or not file_name.strip():
+        raise ValueError("file_name must be a non-empty string.")
+    if not isinstance(line_number, int):
+        raise TypeError("line_number must be an integer.")
+    if line_number <= 0:
+        raise ValueError("line_number must be a positive integer (1-based).")
+    if not isinstance(new_content, str):
+        raise TypeError("new_content must be a string.")
+
+    try:
+        # 2. Read the entire file
+        with open(file_name, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 3. Validate line_number is within bounds
+        # For insertion, valid range is 1 to len(lines)+1
+        # line_number = len(lines)+1 means append to end
+        if line_number > len(lines) + 1:
+            raise IndexError(
+                f"Line number {line_number} is out of bounds for insertion in file '{file_name}' "
+                f"(file has {len(lines)} lines, valid range is 1-{len(lines) + 1})."
+            )
+
+        # 4. Prepare the content to insert - ensure it ends with \n
+        if not new_content.endswith('\n'):
+            new_content += '\n'
+
+        # 5. Insert the new content before the specified line (convert to 0-based index)
+        # If new_content contains \n characters, it will be written as-is,
+        # effectively inserting multiple lines
+        lines.insert(line_number - 1, new_content)
+
+        # 6. Write the modified content back to the file
+        with open(file_name, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: File '{file_name}' not found.")
+    except PermissionError as e:
+        raise PermissionError(f"Permission denied: Cannot write to file '{file_name}': {e}")
+    except IOError as e:
+        raise IOError(f"An I/O error occurred while accessing file '{file_name}': {e}")
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {e}")
+
+@tool
 def run_php_file(filename: str, timeout: int = 60) -> str:
     """
 Runs a PHP file and returns the output.
