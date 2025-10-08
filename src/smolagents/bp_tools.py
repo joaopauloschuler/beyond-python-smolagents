@@ -300,6 +300,18 @@ def print_source_code_lines(filename: str, start_line: int, end_line: int) -> No
       print(f"{i+1}: {lines[i]}")
 
 @tool
+def get_file_lines(filename: str) -> int:
+  """ 
+  This tool returns the number of lines in a text file.
+
+  Args:
+    filename: str The path to the text file.
+  """
+  file_content = load_string_from_file(filename)
+  lines = file_content.splitlines()
+  return len(lines)
+
+@tool
 def get_line_from_file(file_name: str, line_number: int) -> str:
     """
     Reads a specified line from a text file.

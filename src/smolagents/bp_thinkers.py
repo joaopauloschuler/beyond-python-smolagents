@@ -314,6 +314,10 @@ These are the solutions:
 <solution2>"""+load_string_from_file('solution2'+fileext)+"""</solution2>
 <solution3>"""+load_string_from_file('solution3'+fileext)+"""</solution3>
 
+The solution 1 has """+str(get_file_lines('solution1'+fileext))+""" text lines.
+The solution 2 has """+str(get_file_lines('solution2'+fileext))+""" text lines.
+The solution 3 has """+str(get_file_lines('solution3'+fileext))+""" text lines.
+
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
 You'll finish your task with something similar to:
