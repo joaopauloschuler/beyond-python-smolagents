@@ -1201,6 +1201,15 @@ def trim_right_lines(multi_line_string: str) -> str:
   trimmed_string = '\n'.join(trimmed_lines)
   return trimmed_string
 
+@tool
+def trim_right_lines_in_file(filename: str) -> None:
+  """
+  This function will do a right trim in all lines of the file.
+  Args:
+    filename: str
+  """
+  multi_line_string = load_string_from_file(filename)
+  save_string_to_file(trim_right_lines(multi_line_string), filename)
 
 class Summarize(Tool):
     name = "summarize"
