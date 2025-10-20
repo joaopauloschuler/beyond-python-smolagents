@@ -805,3 +805,158 @@ final_answer("Task completed! YAY!")
     except Exception as e:
       print(f"Exception: {e}", "at step", i)
   return True # load_string_from_file('best_solution.best')
+
+def kb_generator(p_coder_model,
+  task_str,
+  agent_steps:int,
+  paper_num:int,
+  system_prompt = DEFAULT_THINKER_SYSTEM_PROMPT,
+  fileext:str='.md',
+  start_now=True,
+  tools=DEFAULT_THINKER_TOOLS,
+  executor_type='exec',
+  add_base_tools=True,
+  step_callbacks=STEP_CALLBACKS,
+  log_level = LogLevel.DEBUG,
+  refine = True,
+  start_coder_model = None,
+  mixer_model = None,
+  secondary_improvement_model = None,
+  folder = 'solutions'
+  ):
+  def get_local_agent(p_local_model = None):
+    if p_local_model is None: p_local_model = p_coder_model
+    coder_agent = CodeAgent(
+      tools=tools,
+      model=p_coder_model,
+      additional_authorized_imports=['*'],
+      add_base_tools=add_base_tools,
+      max_steps=agent_steps,
+      step_callbacks=step_callbacks,
+      executor_type=executor_type
+      )
+    coder_agent.set_system_prompt(system_prompt)
+    coder_agent.logger.log_level = log_level
+    return coder_agent
+  def local_fast_solver(local_task, local_file_ext:str = '.md'):
+      return fast_solver(p_coder_model,
+        local_task,
+        agent_steps = agent_steps,
+        system_prompt = system_prompt,
+        fileext = local_file_ext,
+        tools = tools,
+        executor_type = executor_type,
+        add_base_tools = add_base_tools,
+        step_callbacks = step_callbacks,
+        log_level = log_level,
+        p_coder_model2 = secondary_improvement_model,
+        p_coder_model3 = start_coder_model,
+        p_coder_model_final = mixer_model
+        )
+  if start_coder_model is None: start_coder_model = p_coder_model
+  if mixer_model is None: mixer_model = p_coder_model
+  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
+  resume_fileext = fileext+'-resumed'
+  os.makedirs(folder, exist_ok=True)
+  for i in range(paper_num):
+    local_agent = get_local_agent(p_coder_model)
+    resumed_src = source_code_to_string(folder, allowed_extensions=(resume_fileext,))
+
+    local_task_description = """The main task description is enclosed in the tags <task></task>:
+<task>"""+task_str+"""
+In the tags <file></file>, there is a resume of the knowledge that you have already produced in previous runs:
+"""+resumed_src+"""
+</task>"""
+    resumed_src_len = len(resumed_src)
+    print("The length of the abstracts is:", resumed_src_len)
+    improvement = "new knowledge"
+    if (improvement == "new knowledge"):
+      task_description = local_task_description + """Your next step is to list interesting topics that have not been yet covered in the <file></file> tags."""
+      local_agent.run(task_description, reset=True)
+      task_description = """From the proposed list of topics, please randomly pick a topic following this example:
+<runcode>
+import random
+topics = [
+  "Topic 1",
+  "Topic 2",
+  "Topic 3",
+]
+final_answer(random.choice(topics))
+</runcode>"""
+      topic = local_agent.run(task_description, reset=False)
+      file_name = folder+'/'+create_filename(topic, fileext)
+      file_name_resume = file_name.replace(fileext,resume_fileext)
+      print("The file name is:", file_name)
+      print("The file name resume is:", file_name_resume)
+      new_kb_task = "Write in the "+fileext+" format about '"+topic+"'. This task is a subtask inside of a bigger task: <biggertask>"+task_str+"</biggertask>."
+      outpt_text = local_fast_solver(new_kb_task, fileext)
+      shutil.copyfile('final_solution'+fileext, file_name)
+      new_kb_task = "This task is a subtask inside of a bigger task: <biggertask>"+task_str+"""</biggertask>.
+In this step, your task is to write a short abstract of the the content found inside of the tags <file></file>.
+Do not include references in the abstract.
+<file>"""+outpt_text+"""</file>
+Write in the """+fileext+""" format."""
+      outpt_text = local_fast_solver(new_kb_task, fileext)
+      shutil.copyfile('final_solution'+fileext, file_name_resume)
+
+def kb_updater(p_coder_model,
+  task_str,
+  agent_steps:int,
+  system_prompt = DEFAULT_THINKER_SYSTEM_PROMPT,
+  fileext:str='.md',
+  start_now=True,
+  tools=DEFAULT_THINKER_TOOLS,
+  executor_type='exec',
+  add_base_tools=True,
+  step_callbacks=STEP_CALLBACKS,
+  log_level = LogLevel.DEBUG,
+  refine = True,
+  start_coder_model = None,
+  mixer_model = None,
+  secondary_improvement_model = None,
+  folder = 'solutions'
+  ):
+  def local_fast_solver(local_task, local_file_ext:str = '.md'):
+      return fast_solver(p_coder_model,
+        local_task,
+        agent_steps = agent_steps,
+        system_prompt = system_prompt,
+        fileext = local_file_ext,
+        tools = tools,
+        executor_type = executor_type,
+        add_base_tools = add_base_tools,
+        step_callbacks = step_callbacks,
+        log_level = log_level,
+        p_coder_model2 = secondary_improvement_model,
+        p_coder_model3 = start_coder_model,
+        p_coder_model_final = mixer_model
+        )
+  if start_coder_model is None: start_coder_model = p_coder_model
+  if mixer_model is None: mixer_model = p_coder_model
+  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
+  resume_fileext = fileext+'-resumed'
+  os.makedirs(folder, exist_ok=True)
+  a_files = get_files_in_folder(folder=folder, fileext=fileext)
+  for local_file_to_improve in a_files:
+      file_to_improve = folder+'/'+local_file_to_improve
+      file_name_resume = file_to_improve.replace(fileext,resume_fileext)
+      print("The file to improve is:", file_to_improve)
+      existing_text = load_string_from_file(file_to_improve)
+      existing_text_len = len(existing_text)
+      if existing_text_len == 0:
+        print("ERROR: The length of the existing file is:", existing_text_len)
+        continue
+      print("The length of the existing text is:", existing_text_len)
+      existing_abstract = load_string_from_file(file_name_resume)
+      new_kb_task = "This task is a subtask inside of a bigger task: <biggertask>"+task_str+"""</biggertask>.
+In this step, your will update the existing text inside of the tags <text></text>:
+<text>"""+existing_text+"""</text>
+Your goal is to improve it, make it better, include better references or make it more interesting."""
+      outpt_text = local_fast_solver(new_kb_task, fileext)
+      shutil.copyfile('final_solution'+fileext, file_to_improve)
+      new_kb_task = "This task is a subtask inside of a bigger task: <biggertask>"+task_str+"""</biggertask>.
+  In this step, your task is to write a short abstract of the the content found inside of the tags <file></file>.
+  <file>"""+outpt_text+"""</file>
+  Write in the """+fileext+""" format."""
+      outpt_text = local_fast_solver(new_kb_task, fileext)
+      shutil.copyfile('final_solution'+fileext, file_name_resume)

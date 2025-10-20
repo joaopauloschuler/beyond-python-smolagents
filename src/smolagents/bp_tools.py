@@ -6,6 +6,7 @@ import os
 import subprocess
 import shlex
 import re
+from slugify import slugify
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -1465,3 +1466,24 @@ You will provide the relevant information following this example:
 """
             result = self.agent.run(task_str, reset=restart_chat)
             return result
+
+@tool
+def get_files_in_folder(folder:str='solutions', fileext:str='.md'):
+  """
+  This function will return a list of files in a folder with a given file extension.
+  Args:
+    folder: str
+    fileext: str
+  """
+  return [f for f in os.listdir(folder) if f.endswith(fileext)]
+
+@tool
+def create_filename(topic:str, extension:str=".md"):
+    """
+    This function will create a filename from a topic (unformatted string) and an extension.
+    Args:
+      topic: str
+      extension: str
+    """
+    filename = slugify(topic, separator='_')
+    return filename + extension
