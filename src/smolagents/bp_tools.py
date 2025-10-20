@@ -1468,22 +1468,26 @@ You will provide the relevant information following this example:
             return result
 
 @tool
-def get_files_in_folder(folder:str='solutions', fileext:str='.md'):
+def get_files_in_folder(folder:str='solutions', fileext:str='.md') -> list:
   """
   This function will return a list of files in a folder with a given file extension.
   Args:
     folder: str
     fileext: str
+  Returns:
+    list: A list of filenames that match the specified extension
   """
   return [f for f in os.listdir(folder) if f.endswith(fileext)]
 
 @tool
-def create_filename(topic:str, extension:str=".md"):
+def create_filename(topic:str, extension:str=".md") -> str:
     """
     This function will create a filename from a topic (unformatted string) and an extension.
     Args:
       topic: str
       extension: str
+    Returns:
+      str: The generated filename with the specified extension
     """
     filename = slugify(topic, separator='_')
     return filename + extension
