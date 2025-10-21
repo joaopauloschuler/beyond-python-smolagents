@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Votre Entreprise</title>
+  <style>
+    * {margin:0; padding:0; box-sizing:border-box; font-family: Arial, sans-serif;}
+    body {background-color:#121212; color:#f0f0f0; transition: background 0.3s, color 0.3s;}
+    a {text-decoration:none; color:#f0f0f0;}
+    header {display:flex; justify-content:space-between; align-items:center; padding:20px; background-color:#1a1a1a;}
+    nav a {margin: 0 15px; font-weight:bold;}
+    .lang-switcher {cursor:pointer; padding:5px 10px; border:1px solid #f0f0f0; border-radius:5px;}
+    .hero {display:flex; flex-direction:column; align-items:center; justify-content:center; height:80vh; text-align:center; padding:0 20px;}
+    .hero h1 {font-size:3rem; margin-bottom:20px;}
+    .hero button {padding:10px 20px; background:#00b894; border:none; color:#fff; cursor:pointer; border-radius:5px;}
+    section {padding:80px 20px; max-width:1200px; margin:0 auto;}
+    .services {display:flex; flex-wrap:wrap; gap:20px; justify-content:center;}
+    .card {background:#1f1f1f; padding:20px; border-radius:10px; width:250px; text-align:center;}
+    form {display:flex; flex-direction:column; gap:15px; max-width:500px; margin:0 auto;}
+    input, textarea {padding:10px; border-radius:5px; border:none; background:#2a2a2a; color:#f0f0f0;}
+    button.submit {background:#00b894; color:#fff; border:none; padding:10px; border-radius:5px; cursor:pointer;}
+    footer {text-align:center; padding:20px; background:#1a1a1a;}
+    @media (max-width:768px) {
+      .services {flex-direction:column; align-items:center;}
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="logo.png" alt="Logo" height="50">
+    <nav>
+      <a href="#accueil" data-fr="Accueil" data-en="Home">Accueil</a>
+      <a href="#services" data-fr="Services" data-en="Services">Services</a>
+      <a href="#apropos" data-fr="À propos" data-en="About">À propos</a>
+      <a href="#contact" data-fr="Contact" data-en="Contact">Contact</a>
+    </nav>
+    <div class="lang-switcher" id="langSwitcher">EN</div>
+  </header>
+
+  <section class="hero" id="accueil">
+    <h1 data-fr="Bienvenue chez Votre Entreprise" data-en="Welcome to Your Company">Bienvenue chez Votre Entreprise</h1>
+    <p data-fr="Nous fournissons des solutions professionnelles pour vos besoins." data-en="We provide professional solutions for your needs.">
+      Nous fournissons des solutions professionnelles pour vos besoins.
+    </p>
+    <button data-fr="Nous contacter" data-en="Contact Us">Nous contacter</button>
+  </section>
+
+  <section class="services" id="services">
+    <div class="card">
+      <h2 data-fr="Service 1" data-en="Service 1">Service 1</h2>
+      <p data-fr="Description du service 1." data-en="Description of service 1.">Description du service 1.</p>
+    </div>
+    <div class="card">
+      <h2 data-fr="Service 2" data-en="Service 2">Service 2</h2>
+      <p data-fr="Description du service 2." data-en="Description of service 2.">Description du service 2.</p>
+    </div>
+    <div class="card">
+      <h2 data-fr="Service 3" data-en="Service 3">Service 3</h2>
+      <p data-fr="Description du service 3." data-en="Description of service 3.">Description du service 3.</p>
+    </div>
+  </section>
+
+  <section id="apropos">
+    <h2 data-fr="À propos de nous" data-en="About Us">À propos de nous</h2>
+    <p data-fr="Votre entreprise est dédiée à fournir les meilleures solutions pour vos besoins." data-en="Your company is dedicated to providing the best solutions for your needs.">
+      Votre entreprise est dédiée à fournir les meilleures solutions pour vos besoins.
+    </p>
+  </section>
+
+  <section id="contact">
+    <h2 data-fr="Contactez-nous" data-en="Contact Us">Contactez-nous</h2>
+    <form>
+      <input type="text" placeholder="Nom" data-fr-placeholder="Nom" data-en-placeholder="Name" required>
+      <input type="email" placeholder="Email" data-fr-placeholder="Email" data-en-placeholder="Email" required>
+      <textarea placeholder="Message" data-fr-placeholder="Message" data-en-placeholder="Message" rows="5" required></textarea>
+      <button class="submit" data-fr="Envoyer" data-en="Send">Envoyer</button>
+    </form>
+  </section>
+
+  <footer>
+    &copy; 2025 Votre Entreprise. Tous droits réservés.
+  </footer>
+
+  <script>
+    const switcher = document.getElementById('langSwitcher');
+    let currentLang = 'fr';
+
+    switcher.addEventListener('click', () => {
+      currentLang = currentLang === 'fr' ? 'en' : 'fr';
+      switcher.textContent = currentLang === 'fr' ? 'EN' : 'FR';
+
+      document.querySelectorAll('[data-fr]').forEach(el => {
+        if(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'){
+          el.placeholder = el.getAttribute(`data-${currentLang}-placeholder`);
+        } else {
+          el.textContent = el.getAttribute(`data-${currentLang}`);
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
