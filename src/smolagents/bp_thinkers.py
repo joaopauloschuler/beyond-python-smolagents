@@ -673,6 +673,16 @@ with any advice that you would like to give to yourself to a future version of y
       remove_files('*.c')
       remove_files('*.pas')
       print('Evolutive problem solver is starting:', i)
+      
+      # Context-efficient: Provide structure and metrics instead of full content
+      solution1_tree = list_directory_tree('solution1/', max_depth=3, show_files=True)
+      solution2_tree = list_directory_tree('solution2/', max_depth=3, show_files=True)
+      solution3_tree = list_directory_tree('solution3/', max_depth=3, show_files=True)
+      
+      solution1_metrics = count_lines_of_code('solution1/')
+      solution2_metrics = count_lines_of_code('solution2/')
+      solution3_metrics = count_lines_of_code('solution3/')
+      
       task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
 Please explain the advantages and disvantages of each solution.
@@ -680,22 +690,41 @@ This environment is simulated. Therefore, real user inputs will not work.
 No real person can interact with this code.
 The more features, the better it is. Always give preference to source
 codes with more features.
-The 3 solutions are given in the folders:
+
+The 3 solutions are located in these folders:
 * solution1/
 * solution2/
 * solution3/
 
-The contents of these folders are given in the tags:
-<solution1></solution1>
-<solution2></solution2>
-<solution3></solution3>
+To help you evaluate them efficiently, here's the structure and metrics for each solution:
 
-This is the contents:
-<solution1>"""+source_code_to_string('solution1/')+"""</solution1>
-<solution2>"""+source_code_to_string('solution2/')+"""</solution2>
-<solution3>"""+source_code_to_string('solution3/')+"""</solution3>
+<solution1_structure>
+"""+solution1_tree+"""
+Lines of code metrics: """+str(solution1_metrics)+"""
+</solution1_structure>
 
-YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
+<solution2_structure>
+"""+solution2_tree+"""
+Lines of code metrics: """+str(solution2_metrics)+"""
+</solution2_structure>
+
+<solution3_structure>
+"""+solution3_tree+"""
+Lines of code metrics: """+str(solution3_metrics)+"""
+</solution3_structure>
+
+You have access to context-efficient tools to inspect the solutions:
+- Use list_directory_tree(folder, max_depth, show_files) to see folder structure
+- Use search_in_files(folder, pattern, file_extensions) to find specific code patterns
+- Use extract_function_signatures(filename, language) to see APIs without full implementation
+- Use get_file_info(filepath) to check file sizes before loading
+- Use load_string_from_file(filename) ONLY when you really need to see full file content
+- Use count_lines_of_code(folder) to understand project scale
+
+Evaluate the solutions based on their structure, organization, and scale. You can inspect specific
+files if needed, but try to use the context-efficient tools first.
+
+YOUR TASK IS PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
 You'll finish your task with something similar to:
 <runcode>
