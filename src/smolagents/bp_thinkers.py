@@ -9,10 +9,13 @@ STEP_CALLBACKS = []
 
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
-  print_source_code_lines, get_line_from_file,
+  print_source_code_lines, get_line_from_file, get_file_lines,
   source_code_to_string, string_to_source_code,
   run_os_command, replace_on_file, replace_on_file_with_files,
-  get_file_size, load_string_from_file, save_string_to_file, append_string_to_file]
+  get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
+  list_directory_tree, search_in_files, get_file_info, list_directory,
+  extract_function_signatures, compare_files, count_lines_of_code,
+  mkdir, delete_file, delete_directory]
 
 #TODO: include force_directories into the DEFAULT_THINKER_TOOLS (it now fails adding)
 
