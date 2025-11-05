@@ -1468,22 +1468,487 @@ You will provide the relevant information following this example:
             return result
 
 @tool
-def get_files_in_folder(folder:str='solutions', fileext:str='.md'):
+def get_files_in_folder(folder:str='solutions', fileext:str='.md') -> list:
   """
   This function will return a list of files in a folder with a given file extension.
   Args:
     folder: str
     fileext: str
+  Returns:
+    list: A list of filenames that match the specified extension
   """
   return [f for f in os.listdir(folder) if f.endswith(fileext)]
 
 @tool
-def create_filename(topic:str, extension:str=".md"):
+def create_filename(topic:str, extension:str=".md") -> str:
     """
     This function will create a filename from a topic (unformatted string) and an extension.
     Args:
       topic: str
       extension: str
+    Returns:
+      str: The generated filename with the specified extension
     """
     filename = slugify(topic, separator='_')
     return filename + extension
+
+@tool
+def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool = True) -> str:
+    """
+    Creates a tree-like view of a directory structure. This is useful for understanding
+    project structure without loading all file contents, saving context.
+    
+    Example output:
+    project/
+    ├── src/
+    │   ├── main.py
+    │   └── utils.py
+    └── tests/
+        └── test_main.py
+    
+    Args:
+        folder_path: str The root folder path to visualize
+        max_depth: int Maximum depth to traverse (default 3)
+        show_files: bool Whether to show files or only directories (default True)
+    
+    Returns:
+        str: A string representation of the directory tree
+    """
+    if not os.path.isdir(folder_path):
+        return f"Error: '{folder_path}' is not a valid directory"
+    
+    lines = []
+    
+    def add_tree_lines(current_path, prefix="", depth=0):
+        if depth > max_depth:
+            return
+        
+        try:
+            items = sorted(os.listdir(current_path))
+        except PermissionError:
+            return
+        
+        # Filter out hidden files/folders starting with '.'
+        items = [item for item in items if not item.startswith('.')]
+        
+        # Separate directories and files
+        dirs = [item for item in items if os.path.isdir(os.path.join(current_path, item))]
+        files = [item for item in items if os.path.isfile(os.path.join(current_path, item))] if show_files else []
+        
+        all_items = dirs + files
+        
+        for i, item in enumerate(all_items):
+            is_last = i == len(all_items) - 1
+            item_path = os.path.join(current_path, item)
+            
+            # Choose the appropriate tree characters
+            connector = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{connector}{item}{'/' if os.path.isdir(item_path) else ''}")
+            
+            # Recurse into subdirectories
+            if os.path.isdir(item_path):
+                extension = "    " if is_last else "│   "
+                add_tree_lines(item_path, prefix + extension, depth + 1)
+    
+    # Add root folder
+    lines.append(f"{os.path.basename(folder_path)}/")
+    add_tree_lines(folder_path, "", 0)
+    
+    return "\n".join(lines)
+
+@tool
+def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
+                    case_sensitive: bool = False, max_results: int = 50) -> str:
+    """
+    Searches for a pattern in files within a folder and its subfolders.
+    Returns matching lines with file paths and line numbers. This is much more efficient
+    than loading all files when you need to find specific code patterns.
+    
+    Args:
+        folder_path: str The root folder to search in
+        search_pattern: str The text pattern to search for
+        file_extensions: tuple Optional tuple of file extensions to search (e.g., ('.py', '.js'))
+                        If None, searches all text files
+        case_sensitive: bool Whether the search should be case-sensitive (default False)
+        max_results: int Maximum number of results to return (default 50)
+    
+    Returns:
+        str: Search results formatted as "filepath:line_number: line_content"
+    """
+    if not os.path.isdir(folder_path):
+        return f"Error: '{folder_path}' is not a valid directory"
+    
+    results = []
+    count = 0
+    
+    # Prepare search pattern
+    pattern = search_pattern if case_sensitive else search_pattern.lower()
+    
+    for root, _, files in os.walk(folder_path):
+        # Skip hidden directories
+        if any(part.startswith('.') for part in root.split(os.sep)):
+            continue
+            
+        for filename in files:
+            # Skip hidden files
+            if filename.startswith('.'):
+                continue
+            
+            # Filter by extension if specified
+            if file_extensions:
+                if not any(filename.endswith(ext) for ext in file_extensions):
+                    continue
+            
+            filepath = os.path.join(root, filename)
+            
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    for line_num, line in enumerate(f, 1):
+                        search_line = line if case_sensitive else line.lower()
+                        if pattern in search_line:
+                            results.append(f"{filepath}:{line_num}: {line.rstrip()}")
+                            count += 1
+                            if count >= max_results:
+                                results.append(f"\n... (stopped at {max_results} results)")
+                                return "\n".join(results)
+            except (UnicodeDecodeError, PermissionError, IOError):
+                # Skip files that can't be read
+                continue
+    
+    if not results:
+        return f"No matches found for '{search_pattern}' in '{folder_path}'"
+    
+    return "\n".join(results)
+
+@tool
+def read_file_range(filename: str, start_byte: int, end_byte: int) -> str:
+    """
+    Reads a specific byte range from a file. This is useful for very large files
+    where you only need to inspect a portion, saving memory and context.
+    
+    Args:
+        filename: str The file path
+        start_byte: int The starting byte position (0-indexed)
+        end_byte: int The ending byte position (exclusive)
+    
+    Returns:
+        str: The content from the specified byte range
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+    
+    if start_byte < 0 or end_byte < 0:
+        raise ValueError("Byte positions must be non-negative")
+    
+    if start_byte >= end_byte:
+        raise ValueError("start_byte must be less than end_byte")
+    
+    try:
+        with open(filename, 'rb') as f:
+            f.seek(start_byte)
+            bytes_to_read = end_byte - start_byte
+            content = f.read(bytes_to_read)
+            return content.decode('utf-8', errors='replace')
+    except Exception as e:
+        raise IOError(f"Error reading file range: {e}")
+
+@tool
+def get_file_info(filepath: str) -> dict:
+    """
+    Gets metadata about a file without reading its content. This is efficient
+    for checking file properties before deciding whether to load the full content.
+    
+    Args:
+        filepath: str The file path
+    
+    Returns:
+        dict: Dictionary containing file metadata (size, modified_time, is_file, is_dir, exists)
+    """
+    info = {
+        'exists': os.path.exists(filepath),
+        'is_file': os.path.isfile(filepath),
+        'is_dir': os.path.isdir(filepath),
+        'size_bytes': 0,
+        'modified_time': None,
+        'readable': False,
+        'writable': False
+    }
+    
+    if info['exists']:
+        try:
+            stat_info = os.stat(filepath)
+            info['size_bytes'] = stat_info.st_size
+            info['modified_time'] = stat_info.st_mtime
+            info['readable'] = os.access(filepath, os.R_OK)
+            info['writable'] = os.access(filepath, os.W_OK)
+        except (PermissionError, OSError):
+            pass
+    
+    return info
+
+@tool
+def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False, 
+                   files_only: bool = False, dirs_only: bool = False) -> list:
+    """
+    Lists files and directories in a folder with optional filtering.
+    More flexible than get_files_in_folder with pattern matching support.
+    
+    Args:
+        folder_path: str The folder path to list
+        pattern: str Glob pattern to match (default "*" for all)
+        recursive: bool Whether to search recursively (default False)
+        files_only: bool Return only files (default False)
+        dirs_only: bool Return only directories (default False)
+    
+    Returns:
+        list: List of matching paths
+    """
+    if not os.path.isdir(folder_path):
+        return []
+    
+    import glob
+    
+    if recursive:
+        search_pattern = os.path.join(folder_path, "**", pattern)
+        matches = glob.glob(search_pattern, recursive=True)
+    else:
+        search_pattern = os.path.join(folder_path, pattern)
+        matches = glob.glob(search_pattern)
+    
+    # Filter based on type
+    if files_only:
+        matches = [m for m in matches if os.path.isfile(m)]
+    elif dirs_only:
+        matches = [m for m in matches if os.path.isdir(m)]
+    
+    return sorted(matches)
+
+@tool
+def mkdir(directory_path: str, parents: bool = True) -> bool:
+    """
+    Creates a directory. If parents=True, creates intermediate directories as needed.
+    
+    Args:
+        directory_path: str The directory path to create
+        parents: bool Whether to create parent directories (default True)
+    
+    Returns:
+        bool: True if successful, raises exception otherwise
+    """
+    try:
+        if parents:
+            os.makedirs(directory_path, exist_ok=True)
+        else:
+            os.mkdir(directory_path)
+        return True
+    except Exception as e:
+        raise OSError(f"Failed to create directory '{directory_path}': {e}")
+
+@tool
+def extract_function_signatures(filename: str, language: str = "python") -> str:
+    """
+    Extracts function and class signatures from a source code file without loading
+    the full implementation. This helps understand code structure efficiently.
+    
+    Currently supports: python, javascript, java, php
+    
+    Args:
+        filename: str The source code file path
+        language: str The programming language (default "python")
+    
+    Returns:
+        str: Extracted signatures, one per line
+    """
+    if not os.path.isfile(filename):
+        return f"Error: File '{filename}' not found"
+    
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except Exception as e:
+        return f"Error reading file: {e}"
+    
+    signatures = []
+    
+    if language.lower() == "python":
+        # Match Python function and class definitions
+        import re
+        # Match def function_name(...): and class ClassName(...):
+        pattern = r'^([ \t]*)(def|class)\s+(\w+)\s*(\([^)]*\))?\s*:'
+        for match in re.finditer(pattern, content, re.MULTILINE):
+            indent = match.group(1)
+            keyword = match.group(2)
+            name = match.group(3)
+            params = match.group(4) or ""
+            signatures.append(f"{indent}{keyword} {name}{params}:")
+    
+    elif language.lower() in ["javascript", "js", "typescript", "ts"]:
+        # Match JavaScript/TypeScript function declarations
+        import re
+        # function name(...), async function name(...), name(...) {, const name = (...) =>
+        patterns = [
+            r'^([ \t]*)(async\s+)?function\s+(\w+)\s*(\([^)]*\))',
+            r'^([ \t]*)(\w+)\s*(\([^)]*\))\s*\{',
+            r'^([ \t]*)(const|let|var)\s+(\w+)\s*=\s*(\([^)]*\))\s*=>'
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                signatures.append(match.group(0).split('{')[0].strip())
+    
+    elif language.lower() == "java":
+        # Match Java method declarations
+        import re
+        pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
+        for match in re.finditer(pattern, content, re.MULTILINE):
+            signatures.append(match.group(0).strip())
+    
+    elif language.lower() == "php":
+        # Match PHP function declarations
+        import re
+        pattern = r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
+        for match in re.finditer(pattern, content, re.MULTILINE):
+            signatures.append(match.group(0).strip())
+    
+    else:
+        return f"Error: Language '{language}' not supported. Supported: python, javascript, java, php"
+    
+    if not signatures:
+        return f"No function/class signatures found in '{filename}'"
+    
+    return "\n".join(signatures)
+
+@tool
+def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
+    """
+    Compares two files and shows the differences in a unified diff format.
+    Useful for understanding what changed between versions.
+    
+    Args:
+        file1: str Path to the first file
+        file2: str Path to the second file
+        context_lines: int Number of context lines to show around differences (default 3)
+    
+    Returns:
+        str: Unified diff output
+    """
+    if not os.path.isfile(file1):
+        return f"Error: File '{file1}' not found"
+    if not os.path.isfile(file2):
+        return f"Error: File '{file2}' not found"
+    
+    try:
+        with open(file1, 'r', encoding='utf-8') as f:
+            lines1 = f.readlines()
+        with open(file2, 'r', encoding='utf-8') as f:
+            lines2 = f.readlines()
+    except Exception as e:
+        return f"Error reading files: {e}"
+    
+    import difflib
+    diff = difflib.unified_diff(
+        lines1, lines2,
+        fromfile=file1,
+        tofile=file2,
+        lineterm='',
+        n=context_lines
+    )
+    
+    diff_output = '\n'.join(diff)
+    
+    if not diff_output:
+        return "Files are identical"
+    
+    return diff_output
+
+@tool
+def delete_file(filepath: str) -> bool:
+    """
+    Deletes a file from the filesystem.
+    
+    Args:
+        filepath: str Path to the file to delete
+    
+    Returns:
+        bool: True if successful
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File '{filepath}' not found")
+    
+    if os.path.isdir(filepath):
+        raise IsADirectoryError(f"'{filepath}' is a directory, use delete_directory instead")
+    
+    try:
+        os.remove(filepath)
+        return True
+    except Exception as e:
+        raise OSError(f"Failed to delete file '{filepath}': {e}")
+
+@tool
+def delete_directory(directory_path: str, recursive: bool = False) -> bool:
+    """
+    Deletes a directory. If recursive=True, deletes the directory and all its contents.
+    
+    Args:
+        directory_path: str Path to the directory to delete
+        recursive: bool Whether to delete recursively (default False)
+    
+    Returns:
+        bool: True if successful
+    """
+    if not os.path.exists(directory_path):
+        raise FileNotFoundError(f"Directory '{directory_path}' not found")
+    
+    if not os.path.isdir(directory_path):
+        raise NotADirectoryError(f"'{directory_path}' is not a directory")
+    
+    try:
+        if recursive:
+            import shutil
+            shutil.rmtree(directory_path)
+        else:
+            os.rmdir(directory_path)
+        return True
+    except Exception as e:
+        raise OSError(f"Failed to delete directory '{directory_path}': {e}")
+
+@tool
+def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js', '.java', '.cpp', '.c', '.php', '.rb')) -> dict:
+    """
+    Counts lines of code in a project, broken down by file type.
+    Helps understand project size and composition without loading all files.
+    
+    Args:
+        folder_path: str Root folder to analyze
+        file_extensions: tuple File extensions to count (default common programming languages)
+    
+    Returns:
+        dict: Dictionary with file extension as key and line count as value
+    """
+    if not os.path.isdir(folder_path):
+        return {"error": f"'{folder_path}' is not a valid directory"}
+    
+    counts = {}
+    total_lines = 0
+    
+    for root, _, files in os.walk(folder_path):
+        # Skip hidden directories
+        if any(part.startswith('.') for part in root.split(os.sep)):
+            continue
+        
+        for filename in files:
+            if filename.startswith('.'):
+                continue
+            
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in file_extensions:
+                filepath = os.path.join(root, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        line_count = sum(1 for _ in f)
+                        counts[ext] = counts.get(ext, 0) + line_count
+                        total_lines += line_count
+                except (UnicodeDecodeError, PermissionError, IOError):
+                    continue
+    
+    counts['_total'] = total_lines
+    return counts
