@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZimProps - Find Your Perfect Rental in Zimbabwe</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; }
+        
+        /* Header */
+        .header { background: #0066cc; color: white; padding: 1rem 0; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+        .logo { font-size: 1.8rem; font-weight: bold; }
+        
+        /* Hero Section */
+        .hero { 
+            background: linear-gradient(rgba(0,102,204,0.8), rgba(0,102,204,0.9)), 
+                       url('https://images.unsplash.com/photo-1560518883-ce09059eeffa?ixlib=rb-4.0.3');
+            background-size: cover; background-position: center;
+            color: white; padding: 4rem 0; text-align: center;
+        }
+        .hero h1 { font-size: 2.5rem; margin-bottom: 1rem; }
+        .hero p { font-size: 1.2rem; margin-bottom: 2rem; }
+        
+        /* Buttons */
+        .btn { 
+            display: inline-block; padding: 12px 30px; 
+            background: #ff6b00; color: white; 
+            text-decoration: none; border-radius: 5px;
+            font-weight: bold; margin: 0 10px;
+        }
+        .btn-secondary { background: transparent; border: 2px solid white; }
+        
+        /* Forms */
+        .form-section { padding: 3rem 0; background: #f8f9fa; }
+        .form-container { 
+            max-width: 600px; margin: 0 auto; 
+            background: white; padding: 2rem; border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        input, select { 
+            width: 100%; padding: 10px; border: 1px solid #ddd; 
+            border-radius: 5px; font-size: 1rem;
+        }
+        .submit-btn { 
+            background: #0066cc; color: white; border: none; 
+            padding: 12px; width: 100%; font-size: 1.1rem; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="logo">ZimProps</div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1>Stop the Rental Hunt. Start Your Life.</h1>
+            <p>Find your perfect home in Zimbabwe, without the stress.</p>
+            <a href="#tenant-form" class="btn">✅ Yes, I Need a House!</a>
+            <a href="#landlord-form" class="btn btn-secondary">🏠 I Have a House to List</a>
+        </div>
+    </section>
+
+    <!-- Tenant Form -->
+    <section id="tenant-form" class="form-section">
+        <div class="form-container">
+            <h2>👤 Find Your Perfect Home</h2>
+            <form action="https://formsubmit.co/your-email@gmail.com" method="POST">
+                <input type="hidden" name="_subject" value="New Tenant Lead - ZimProps">
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" name="phone" required>
+                </div>
+                <div class="form-group">
+                    <label>What city are you looking in?</label>
+                    <select name="city" required>
+                        <option value="">Select City</option>
+                        <option value="Harare">Harare</option>
+                        <option value="Bulawayo">Bulawayo</option>
+                        <option value="Mutare">Mutare</option>
+                        <option value="Gweru">Gweru</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>What is your max budget? (USD)</label>
+                    <select name="budget" required>
+                        <option value="">Select Budget</option>
+                        <option value="100-300">$100 - $300</option>
+                        <option value="300-500">$300 - $500</option>
+                        <option value="500-800">$500 - $800</option>
+                        <option value="800+">$800+</option>
+                    </select>
+                </div>
+                <button type="submit" class="submit-btn">Join the Waitlist</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Landlord Form -->
+    <section id="landlord-form" class="form-section" style="background: white;">
+        <div class="form-container">
+            <h2>🏠 List Your Property Instantly</h2>
+            <form action="https://formsubmit.co/your-email@gmail.com" method="POST">
+                <input type="hidden" name="_subject" value="New Landlord Lead - ZimProps">
+                <div class="form-group">
+                    <label>Your Name</label>
+                    <input type="text" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" name="phone" required>
+                </div>
+                <div class="form-group">
+                    <label>City of Property</label>
+                    <select name="city" required>
+                        <option value="">Select City</option>
+                        <option value="Harare">Harare</option>
+                        <option value="Bulawayo">Bulawayo</option>
+                        <option value="Mutare">Mutare</option>
+                        <option value="Gweru">Gweru</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Type of Property</label>
+                    <select name="property_type" required>
+                        <option value="">Select Type</option>
+                        <option value="Apartment">Apartment</option>
+                        <option value="House">House</option>
+                        <option value="Cottage">Cottage</option>
+                        <option value="Room">Room</option>
+                    </select>
+                </div>
+                <button type="submit" class="submit-btn">Get Early Access</button>
+                <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
+                    After you apply, our team will contact you via WhatsApp to confirm your listing details.
+                </p>
+            </form>
+        </div>
+    </section>
+</body>
+</html>
