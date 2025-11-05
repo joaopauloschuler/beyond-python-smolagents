@@ -12,6 +12,8 @@ DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
   print_source_code_lines, get_line_from_file, get_file_lines,
+  read_file_range, insert_lines_into_file, replace_line_in_file,
+  remove_pascal_comments_from_string, pascal_interface_to_string,
   source_code_to_string, string_to_source_code,
   run_os_command, replace_on_file, replace_on_file_with_files,
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
