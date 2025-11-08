@@ -1,10 +1,11 @@
-import time
 import ast
-import re
-from textwrap import dedent
-import os
 import glob
+import os
+import re
 import shutil
+import time
+from textwrap import dedent
+
 
 def delay_execution_10(pagent, **kwargs) -> bool:
     """
@@ -55,7 +56,7 @@ def remove_files(file_filter):
 
 def is_valid_python_code(code_string):
     """Returns true if the string is a valid python code."""
-    result = False    
+    result = False
     try:
         ast.parse(code_string)
         return True
@@ -75,23 +76,23 @@ def fix_nested_tags(tagname, text):
     """
     result = text
     tagname_len = len(tagname)
-    
+
     # Keep replacing until no more replacements are needed
     while True:
-        # Look for pattern: <run> followed eventually by another <run> 
+        # Look for pattern: <run> followed eventually by another <run>
         # with no </run> in between
         pattern = r'<'+tagname+r'>((?:(?!</'+tagname+r').)*?)<'+tagname+r'>'
         match = re.search(pattern, result, re.DOTALL)
-        
+
         if not match:
             break
-            
+
         # Replace the FIRST <run> with "run"
         start_pos = match.start()
         end_of_first_tag = start_pos + tagname_len + 2  # Length of '<run>'
-        
+
         result = result[:start_pos] + '"'+tagname+'"' + result[end_of_first_tag:]
-    
+
     return result
 
 def bp_parse_code_blobs(text: str) -> str:
@@ -121,7 +122,7 @@ def bp_parse_code_blobs(text: str) -> str:
 
     raise ValueError(
         dedent(
-            f"""
+            """
             Your code snippet is invalid
             """
         ).strip()

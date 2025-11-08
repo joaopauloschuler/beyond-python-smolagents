@@ -1,16 +1,18 @@
-from .tools import *
-from .default_tools import DuckDuckGoSearchTool
+import shutil
+
+from .agents import *
 from .bp_tools import *
 from .bp_utils import *
-from .agents import *
-import shutil
+from .default_tools import DuckDuckGoSearchTool
+from .tools import *
+
 
 DEFAULT_THINKER_STEP_CALLBACKS = []
 DEFAULT_THINKER_MAX_STEPS = 50
 DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
 
 DEFAULT_THINKER_TOOLS = [
-  copy_file, is_file, 
+  copy_file, is_file,
   print_source_code_lines, get_line_from_file, get_file_lines,
   read_file_range, insert_lines_into_file, replace_line_in_file,
   remove_pascal_comments_from_string, pascal_interface_to_string,
@@ -364,7 +366,7 @@ If you believe that the solution 2 is the best, you'll call the function <runcod
 If you believe that the solution 3 is the best, you'll call the function <runcode>final_answer('solution3')</runcode>.
 """
       selected_solution = local_agent.run(task_description, reset=False)
-      if not(selected_solution in valid_solutions):
+      if selected_solution not in valid_solutions:
         selected_solution = 'solution3'
       if selected_solution in valid_solutions:
         best_solution = selected_solution+fileext
@@ -554,7 +556,7 @@ If one of the solutions is already perfect, you can just copy it into the final 
   local_agent.run(task_description, reset=True)
   if (not os.path.isfile(final_file_name)): local_agent.run('Please save the solution into the file '+\
     final_file_name+after_finish_description, reset=False)
-  return load_string_from_file(final_file_name)  
+  return load_string_from_file(final_file_name)
 
 def get_relevant_info_from_search_fast(coder_model, research_subject, agent_steps = 10, step_callbacks=[], log_level = LogLevel.ERROR):
   search_agent = CodeAgent(
@@ -661,9 +663,9 @@ with any advice that you would like to give to yourself to a future version of y
       " Feel free to use your creativity and true hidden skills."
   if start_now:
     local_agent = get_local_agent(start_coder_model)
-    os.makedirs("solution1", exist_ok=True)                                                                      
-    os.makedirs("solution2", exist_ok=True)  
-    os.makedirs("solution3", exist_ok=True)  
+    os.makedirs("solution1", exist_ok=True)
+    os.makedirs("solution2", exist_ok=True)
+    os.makedirs("solution3", exist_ok=True)
     os.makedirs("best_solution", exist_ok=True)
     local_agent.run(local_task_description + motivation + ' Save the solution into the folder solution1/. In the case that you save documentation, do not mention the folder solution1 on it as this is a temporary working folder.', reset=True)
     if refine: test_and_refine(local_agent, 'solution1/')
@@ -737,7 +739,7 @@ If you believe that the solution 2 is the best, you'll call the function <runcod
 If you believe that the solution 3 is the best, you'll call the function <runcode>final_answer('solution3')</runcode>.
 """
       selected_solution = local_agent.run(task_description, reset=False)
-      if not(selected_solution in valid_solutions):
+      if selected_solution not in valid_solutions:
         selected_solution = 'solution3'
       if selected_solution in valid_solutions:
         best_solution = selected_solution

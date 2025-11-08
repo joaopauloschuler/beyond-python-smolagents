@@ -1,12 +1,15 @@
 # beyond python tools
 
-from .tools import tool, Tool
-from .default_tools import VisitWebpageTool
 import os
-import subprocess
-import shlex
 import re
+import shlex
+import subprocess
+
 from slugify import slugify
+
+from .default_tools import VisitWebpageTool
+from .tools import Tool, tool
+
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -278,7 +281,7 @@ As you can see in the above command, you can use any computer language that is a
             outs, errs = proc.communicate()
     except Exception as e:
         result += f"ERROR: {e}"
-    
+
     if outs is not None: result += outs.decode('utf-8')
     if errs is not None: result += errs.decode('utf-8')
     return result
@@ -621,18 +624,18 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
     result = []
     i = 0
     length = len(code_string)
-    
+
     # State tracking
     in_string = False
     string_char = None  # ' or "
     brace_comment_depth = 0
     in_paren_comment = False
     in_line_comment = False
-    
+
     while i < length:
         char = code_string[i]
         next_char = code_string[i + 1] if i + 1 < length else None
-        
+
         # Handle string literals first
         if not (brace_comment_depth > 0 or in_paren_comment or in_line_comment):
             if not in_string and char in ["'", '"']:
@@ -654,13 +657,13 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
                     result.append(char)
                     i += 1
                     continue
-        
+
         # If we're in a string, just copy characters
         if in_string:
             result.append(char)
             i += 1
             continue
-        
+
         # Handle end of line comment
         if in_line_comment:
             if char in ['\n', '\r']:
@@ -668,7 +671,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
                 result.append(char)  # Preserve newlines
             i += 1
             continue
-        
+
         # Handle end of (* *) comment
         if in_paren_comment:
             if char == '*' and next_char == ')':
@@ -677,7 +680,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
                 continue
             i += 1
             continue
-        
+
         # Handle end of { } comment
         if brace_comment_depth > 0:
             if char == '}':
@@ -686,7 +689,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
                 brace_comment_depth += 1  # Handle nesting
             i += 1
             continue
-        
+
         # Check for start of comments (only when not in any comment or string)
         if char == '/' and next_char == '/':
             in_line_comment = True
@@ -700,15 +703,15 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
             in_paren_comment = True
             i += 2
             continue
-        
+
         # Normal character - add to result
         result.append(char)
         i += 1
-    
+
     return ''.join(result)
 
 @tool
-def source_code_to_string(folder_name: str, 
+def source_code_to_string(folder_name: str,
     allowed_extensions: tuple = (
         '.ada',
         '.asm', '.s',
@@ -719,10 +722,10 @@ def source_code_to_string(folder_name: str,
         '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
         '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
         '.java', '.kt', '.kts', '.scala',
-        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
-        '.php', 
+        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm',
+        '.php',
         '.py', '.ipynb',
-        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
+        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',
         '.r', '.R', '.m', '.sql',
         '.txt', '.csv', '.md',
         '.toml', '.ini', '.cfg',
@@ -753,7 +756,7 @@ def source_code_to_string(folder_name: str,
         return ""
 
     relevant_files_info = []
-   
+
     for root, _, files in os.walk(folder_name):
         for filename in files:
             filepath = os.path.join(root, filename)
@@ -768,7 +771,7 @@ def source_code_to_string(folder_name: str,
 
             if not_exclude and \
                 (file_extension_lower in allowed_extensions) and \
-                (not (filename in exclude_list)):
+                (filename not in exclude_list):
                 # Store full path for sorting, base filename for output tag, and extension
                 relevant_files_info.append({
                     'filepath': filepath,
@@ -1238,7 +1241,7 @@ class Summarize(Tool):
         task_str = 'Hello super-intelligence! Please provide a summary for the following as a string: '+ text_str
         result = self.agent.run(task_str, reset=restart_chat)
         return result
-    
+
 class SummarizeUrl(Tool):
     name = "summarize_url"
     description = """This subassistant will return the summary of a web page given its url as a string.
@@ -1266,7 +1269,7 @@ class SummarizeUrl(Tool):
         task_str = 'Hello super-intelligence! Please write all the information in plain English text without tags from the following as a string (do not use python code except for the final answer): '+ LocalVistWebPageTool(url)[:15000]
         result = self.agent.run(task_str, reset=restart_chat)
         return result
-    
+
 class SummarizeLocalFile(Tool):
         name = "summarize_local_file"
         description = """This function will return the summary of a local file.
@@ -1516,48 +1519,48 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
     """
     if not os.path.isdir(folder_path):
         return f"Error: '{folder_path}' is not a valid directory"
-    
+
     lines = []
-    
+
     def add_tree_lines(current_path, prefix="", depth=0):
         if depth > max_depth:
             return
-        
+
         try:
             items = sorted(os.listdir(current_path))
         except PermissionError:
             return
-        
+
         # Filter out hidden files/folders starting with '.'
         items = [item for item in items if not item.startswith('.')]
-        
+
         # Separate directories and files
         dirs = [item for item in items if os.path.isdir(os.path.join(current_path, item))]
         files = [item for item in items if os.path.isfile(os.path.join(current_path, item))] if show_files else []
-        
+
         all_items = dirs + files
-        
+
         for i, item in enumerate(all_items):
             is_last = i == len(all_items) - 1
             item_path = os.path.join(current_path, item)
-            
+
             # Choose the appropriate tree characters
             connector = "└── " if is_last else "├── "
             lines.append(f"{prefix}{connector}{item}{'/' if os.path.isdir(item_path) else ''}")
-            
+
             # Recurse into subdirectories
             if os.path.isdir(item_path):
                 extension = "    " if is_last else "│   "
                 add_tree_lines(item_path, prefix + extension, depth + 1)
-    
+
     # Add root folder
     lines.append(f"{os.path.basename(folder_path)}/")
     add_tree_lines(folder_path, "", 0)
-    
+
     return "\n".join(lines)
 
 @tool
-def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
+def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None,
                     case_sensitive: bool = False, max_results: int = 50) -> str:
     """
     Searches for a pattern in files within a folder and its subfolders.
@@ -1577,30 +1580,30 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
     """
     if not os.path.isdir(folder_path):
         return f"Error: '{folder_path}' is not a valid directory"
-    
+
     results = []
     count = 0
-    
+
     # Prepare search pattern
     pattern = search_pattern if case_sensitive else search_pattern.lower()
-    
+
     for root, _, files in os.walk(folder_path):
         # Skip hidden directories
         if any(part.startswith('.') for part in root.split(os.sep)):
             continue
-            
+
         for filename in files:
             # Skip hidden files
             if filename.startswith('.'):
                 continue
-            
+
             # Filter by extension if specified
             if file_extensions:
                 if not any(filename.endswith(ext) for ext in file_extensions):
                     continue
-            
+
             filepath = os.path.join(root, filename)
-            
+
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     for line_num, line in enumerate(f, 1):
@@ -1614,10 +1617,10 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
             except (UnicodeDecodeError, PermissionError, IOError):
                 # Skip files that can't be read
                 continue
-    
+
     if not results:
         return f"No matches found for '{search_pattern}' in '{folder_path}'"
-    
+
     return "\n".join(results)
 
 @tool
@@ -1636,13 +1639,13 @@ def read_file_range(filename: str, start_byte: int, end_byte: int) -> str:
     """
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
-    
+
     if start_byte < 0 or end_byte < 0:
         raise ValueError("Byte positions must be non-negative")
-    
+
     if start_byte >= end_byte:
         raise ValueError("start_byte must be less than end_byte")
-    
+
     try:
         with open(filename, 'rb') as f:
             f.seek(start_byte)
@@ -1673,7 +1676,7 @@ def get_file_info(filepath: str) -> dict:
         'readable': False,
         'writable': False
     }
-    
+
     if info['exists']:
         try:
             stat_info = os.stat(filepath)
@@ -1683,11 +1686,11 @@ def get_file_info(filepath: str) -> dict:
             info['writable'] = os.access(filepath, os.W_OK)
         except (PermissionError, OSError):
             pass
-    
+
     return info
 
 @tool
-def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False, 
+def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False,
                    files_only: bool = False, dirs_only: bool = False) -> list:
     """
     Lists files and directories in a folder with optional filtering.
@@ -1705,22 +1708,22 @@ def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False
     """
     if not os.path.isdir(folder_path):
         return []
-    
+
     import glob
-    
+
     if recursive:
         search_pattern = os.path.join(folder_path, "**", pattern)
         matches = glob.glob(search_pattern, recursive=True)
     else:
         search_pattern = os.path.join(folder_path, pattern)
         matches = glob.glob(search_pattern)
-    
+
     # Filter based on type
     if files_only:
         matches = [m for m in matches if os.path.isfile(m)]
     elif dirs_only:
         matches = [m for m in matches if os.path.isdir(m)]
-    
+
     return sorted(matches)
 
 @tool
@@ -1761,15 +1764,15 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     """
     if not os.path.isfile(filename):
         return f"Error: File '{filename}' not found"
-    
+
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
         return f"Error reading file: {e}"
-    
+
     signatures = []
-    
+
     if language.lower() == "python":
         # Match Python function and class definitions
         import re
@@ -1781,7 +1784,7 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             name = match.group(3)
             params = match.group(4) or ""
             signatures.append(f"{indent}{keyword} {name}{params}:")
-    
+
     elif language.lower() in ["javascript", "js", "typescript", "ts"]:
         # Match JavaScript/TypeScript function declarations
         import re
@@ -1794,27 +1797,27 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
                 signatures.append(match.group(0).split('{')[0].strip())
-    
+
     elif language.lower() == "java":
         # Match Java method declarations
         import re
         pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
         for match in re.finditer(pattern, content, re.MULTILINE):
             signatures.append(match.group(0).strip())
-    
+
     elif language.lower() == "php":
         # Match PHP function declarations
         import re
         pattern = r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
         for match in re.finditer(pattern, content, re.MULTILINE):
             signatures.append(match.group(0).strip())
-    
+
     else:
         return f"Error: Language '{language}' not supported. Supported: python, javascript, java, php"
-    
+
     if not signatures:
         return f"No function/class signatures found in '{filename}'"
-    
+
     return "\n".join(signatures)
 
 @tool
@@ -1835,7 +1838,7 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
         return f"Error: File '{file1}' not found"
     if not os.path.isfile(file2):
         return f"Error: File '{file2}' not found"
-    
+
     try:
         with open(file1, 'r', encoding='utf-8') as f:
             lines1 = f.readlines()
@@ -1843,7 +1846,7 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
             lines2 = f.readlines()
     except Exception as e:
         return f"Error reading files: {e}"
-    
+
     import difflib
     diff = difflib.unified_diff(
         lines1, lines2,
@@ -1852,12 +1855,12 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
         lineterm='',
         n=context_lines
     )
-    
+
     diff_output = '\n'.join(diff)
-    
+
     if not diff_output:
         return "Files are identical"
-    
+
     return diff_output
 
 @tool
@@ -1873,10 +1876,10 @@ def delete_file(filepath: str) -> bool:
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File '{filepath}' not found")
-    
+
     if os.path.isdir(filepath):
         raise IsADirectoryError(f"'{filepath}' is a directory, use delete_directory instead")
-    
+
     try:
         os.remove(filepath)
         return True
@@ -1897,10 +1900,10 @@ def delete_directory(directory_path: str, recursive: bool = False) -> bool:
     """
     if not os.path.exists(directory_path):
         raise FileNotFoundError(f"Directory '{directory_path}' not found")
-    
+
     if not os.path.isdir(directory_path):
         raise NotADirectoryError(f"'{directory_path}' is not a directory")
-    
+
     try:
         if recursive:
             import shutil
@@ -1926,19 +1929,19 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
     """
     if not os.path.isdir(folder_path):
         return {"error": f"'{folder_path}' is not a valid directory"}
-    
+
     counts = {}
     total_lines = 0
-    
+
     for root, _, files in os.walk(folder_path):
         # Skip hidden directories
         if any(part.startswith('.') for part in root.split(os.sep)):
             continue
-        
+
         for filename in files:
             if filename.startswith('.'):
                 continue
-            
+
             ext = os.path.splitext(filename)[1].lower()
             if ext in file_extensions:
                 filepath = os.path.join(root, filename)
@@ -1949,6 +1952,6 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
                         total_lines += line_count
                 except (UnicodeDecodeError, PermissionError, IOError):
                     continue
-    
+
     counts['_total'] = total_lines
     return counts
