@@ -487,10 +487,12 @@ def fast_solver(p_coder_model,
   p_coder_model3 = None,
   p_coder_model_final = None
   ):
-  def get_local_agent(local_model):
+  def get_local_agent(p_local_model=None):
+    if p_local_model is None:
+      p_local_model = p_coder_model
     coder_agent = CodeAgent(
       tools=tools,
-      model=local_model,
+      model=p_local_model,
       additional_authorized_imports=['*'],
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
@@ -605,7 +607,7 @@ def evolutive_problem_solver_folder(p_coder_model,
     if p_local_model is None: p_local_model = p_coder_model
     coder_agent = CodeAgent(
       tools=tools,
-      model=p_coder_model,
+      model=p_local_model,
       additional_authorized_imports=['*'],
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
@@ -714,7 +716,7 @@ DO NOT CODE ANYTHING EXCEPT FOR CALLING final_answer WITH TEXT INSIDE ONLY.
         task_description="""Thank you very much.
 Would we build something better or more interesting or more useful than each individual solution by mixing parts of them into a new solution?
 If you believe that mixing is a good idea, you'll call the function <runcode>final_answer('yes')</runcode>.
-If you believe that this is not a good idea, you'll call the function <runcode>final_answer('no')/<runcode>.
+If you believe that this is not a good idea, you'll call the function <runcode>final_answer('no')</runcode>.
 """
         should_mix = (local_agent.run(task_description, reset=False)=='yes')
         if should_mix:
