@@ -48,7 +48,11 @@ agent.run(
 <hfoption id="本地Transformers模型">
 
 ```python
+<<<<<<< HEAD
 # !pip install smolagents[transformers]
+=======
+# !pip install 'smolagents[transformers]'
+>>>>>>> upstream/v1.22-release
 from smolagents import CodeAgent, TransformersModel
 
 model_id = "meta-llama/Llama-3.2-3B-Instruct"
@@ -66,7 +70,11 @@ agent.run(
 要使用 `LiteLLMModel`，您需要设置环境变量 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`，或者在初始化时传递 `api_key` 变量。
 
 ```python
+<<<<<<< HEAD
 # !pip install smolagents[litellm]
+=======
+# !pip install 'smolagents[litellm]'
+>>>>>>> upstream/v1.22-release
 from smolagents import CodeAgent, LiteLLMModel
 
 model = LiteLLMModel(model_id="anthropic/claude-3-5-sonnet-latest", api_key="YOUR_ANTHROPIC_API_KEY") # 也可以使用 'gpt-4o'
@@ -80,7 +88,11 @@ agent.run(
 <hfoption id="Ollama">
 
 ```python
+<<<<<<< HEAD
 # !pip install smolagents[litellm]
+=======
+# !pip install 'smolagents[litellm]'
+>>>>>>> upstream/v1.22-release
 from smolagents import CodeAgent, LiteLLMModel
 
 model = LiteLLMModel(
@@ -104,7 +116,11 @@ agent.run(
 初始化 `AzureOpenAIServerModel` 实例时，需要传递模型部署名称，可选择以下任一种方式：1.传递 `azure_endpoint`、`api_key` 和 `api_version` 参数；2.设置环境变量 `AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_API_KEY` 和 `OPENAI_API_VERSION`
 
 ```python
+<<<<<<< HEAD
 # !pip install smolagents[openai]
+=======
+# !pip install 'smolagents[openai]'
+>>>>>>> upstream/v1.22-release
 from smolagents import CodeAgent, AzureOpenAIServerModel
 
 model = AzureOpenAIServerModel(model_id="gpt-4o-mini")
@@ -143,7 +159,11 @@ agent.run(
 <hfoption id="mlx-lm">
 
 ```python
+<<<<<<< HEAD
 # !pip install smolagents[mlx-lm]
+=======
+# !pip install 'smolagents[mlx-lm]'
+>>>>>>> upstream/v1.22-release
 from smolagents import CodeAgent, MLXModel
 
 mlx_model = MLXModel("mlx-community/Qwen2.5-Coder-32B-Instruct-4bit")

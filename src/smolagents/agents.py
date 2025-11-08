@@ -17,10 +17,10 @@
 import importlib
 import json
 import os
-import re
 import tempfile
 import textwrap
 import time
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,10 +28,6 @@ from dataclasses import dataclass
 from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
-from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers
-from .bp_utils import bp_parse_code_blobs, fix_nested_tags
-from .bp_utils import is_valid_python_code
 
 import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
@@ -43,7 +39,6 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:", "</final_answer>"]
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -80,7 +75,7 @@ from .monitoring import (
     LogLevel,
     Monitor,
 )
-from .remote_executors import DockerExecutor, E2BExecutor, WasmExecutor
+from .remote_executors import DockerExecutor, E2BExecutor, ModalExecutor, WasmExecutor
 from .tools import BaseTool, Tool, validate_tool_arguments
 from .utils import (
     AgentError,
@@ -100,10 +95,6 @@ from .utils import (
 
 
 logger = getLogger(__name__)
-
-def get_variable_names(self, template: str) -> set[str]:
-    pattern = re.compile(r"\{\{([^{}]+)\}\}")
-    return {match.group(1).strip() for match in pattern.finditer(template)}
 
 
 def populate_template(template: str, variables: dict[str, Any]) -> str:
@@ -206,16 +197,58 @@ class RunResult:
     Attributes:
         output (Any | None): The final output of the agent run, if available.
         state (Literal["success", "max_steps_error"]): The final state of the agent after the run.
-        messages (list[dict]): The agent's memory, as a list of messages.
+        steps (list[dict]): The agent's memory, as a list of steps.
         token_usage (TokenUsage | None): Count of tokens used during the run.
         timing (Timing): Timing details of the agent run: start time, end time, duration.
+        messages (list[dict]): The agent's memory, as a list of messages.
+            <Deprecated version="1.22.0">
+            Parameter 'messages' is deprecated and will be removed in version 1.25. Please use 'steps' instead.
+            </Deprecated>
     """
 
     output: Any | None
     state: Literal["success", "max_steps_error"]
-    messages: list[dict]
+    steps: list[dict]
     token_usage: TokenUsage | None
     timing: Timing
+
+    def __init__(self, output=None, state=None, steps=None, token_usage=None, timing=None, messages=None):
+        # Handle deprecated 'messages' parameter
+        if messages is not None:
+            if steps is not None:
+                raise ValueError("Cannot specify both 'messages' and 'steps' parameters. Use 'steps' instead.")
+            warnings.warn(
+                "Parameter 'messages' is deprecated and will be removed in version 1.25. Please use 'steps' instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            steps = messages
+
+        # Initialize with dataclass fields
+        self.output = output
+        self.state = state
+        self.steps = steps
+        self.token_usage = token_usage
+        self.timing = timing
+
+    @property
+    def messages(self):
+        """Backward compatibility property that returns steps."""
+        warnings.warn(
+            "Parameter 'messages' is deprecated and will be removed in version 1.25. Please use 'steps' instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return self.steps
+
+    def dict(self):
+        return {
+            "output": self.output,
+            "state": self.state,
+            "steps": self.steps,
+            "token_usage": self.token_usage.dict() if self.token_usage is not None else None,
+            "timing": self.timing.dict(),
+        }
 
 
 StreamEvent: TypeAlias = Union[
@@ -253,6 +286,7 @@ class MultiStepAgent(ABC):
             Each function should:
             - Take the final answer and the agent's memory as arguments.
             - Return a boolean indicating whether the final answer is valid.
+        return_full_result (`bool`, default `False`): Whether to return the full [`RunResult`] object or just the final answer output from the agent run.
     """
 
     def __init__(
@@ -404,7 +438,8 @@ class MultiStepAgent(ABC):
         images: list["PIL.Image.Image"] | None = None,
         additional_args: dict | None = None,
         max_steps: int | None = None,
-    ):
+        return_full_result: bool | None = None,
+    ) -> Any | RunResult:
         """
         Run the agent for the given task.
 
@@ -417,6 +452,8 @@ class MultiStepAgent(ABC):
             images (`list[PIL.Image.Image]`, *optional*): Image(s) objects.
             additional_args (`dict`, *optional*): Any other variables that you want to pass to the agent run, for instance images or dataframes. Give them clear names!
             max_steps (`int`, *optional*): Maximum number of steps the agent can take to solve the task. if not provided, will use the agent's default value.
+            return_full_result (`bool`, *optional*): Whether to return the full [`RunResult`] object or just the final answer output.
+                If `None` (default), the agent's `self.return_full_result` setting is used.
 
         Example:
         ```py
@@ -442,7 +479,7 @@ You have been provided with these additional arguments, that you can access dire
         self.logger.log_task(
             content=self.task.strip(),
             subtitle=f"{type(self.model).__name__} - {(self.model.model_id if hasattr(self.model, 'model_id') else '')}",
-            level=LogLevel.DEBUG,
+            level=LogLevel.INFO,
             title=self.name if hasattr(self, "name") else None,
         )
         self.memory.steps.append(TaskStep(task=self.task, task_images=images))
@@ -454,14 +491,16 @@ You have been provided with these additional arguments, that you can access dire
         if stream:
             # The steps are returned as they are executed through a generator to iterate on.
             return self._run_stream(task=self.task, max_steps=max_steps, images=images)
-        run_start_time = time.time()
-        # Outputs are returned only at the end. We only look at the last step.
 
+        run_start_time = time.time()
         steps = list(self._run_stream(task=self.task, max_steps=max_steps, images=images))
+
+        # Outputs are returned only at the end. We only look at the last step.
         assert isinstance(steps[-1], FinalAnswerStep)
         output = steps[-1].output
 
-        if self.return_full_result:
+        return_full_result = return_full_result if return_full_result is not None else self.return_full_result
+        if return_full_result:
             total_input_tokens = 0
             total_output_tokens = 0
             correct_token_usage = True
@@ -483,12 +522,12 @@ You have been provided with these additional arguments, that you can access dire
             else:
                 state = "success"
 
-            messages = self.memory.get_full_steps()
+            step_dicts = self.memory.get_full_steps()
 
             return RunResult(
                 output=output,
                 token_usage=token_usage,
-                messages=messages,
+                steps=step_dicts,
                 timing=Timing(start_time=run_start_time, end_time=time.time()),
                 state=state,
             )
@@ -562,7 +601,7 @@ You have been provided with these additional arguments, that you can access dire
                 self.step_number += 1
 
         if not returned_final_answer and self.step_number == max_steps + 1:
-            final_answer = self._handle_max_steps_reached(task, images)
+            final_answer = self._handle_max_steps_reached(task)
             yield action_step
         yield FinalAnswerStep(handle_agent_output_types(final_answer))
 
@@ -577,9 +616,9 @@ You have been provided with these additional arguments, that you can access dire
         memory_step.timing.end_time = time.time()
         self.step_callbacks.callback(memory_step, agent=self)
 
-    def _handle_max_steps_reached(self, task: str, images: list["PIL.Image.Image"]) -> Any:
+    def _handle_max_steps_reached(self, task: str) -> Any:
         action_step_start_time = time.time()
-        final_answer = self.provide_final_answer(task, images)
+        final_answer = self.provide_final_answer(task)
         final_memory_step = ActionStep(
             step_number=self.step_number,
             error=AgentMaxStepsError("Reached max steps.", self.logger),
@@ -620,20 +659,16 @@ You have been provided with these additional arguments, that you can access dire
                             plan_message_content += event.content
                             live.update(Markdown(plan_message_content))
                             if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
                                 input_tokens = event.token_usage.input_tokens
+                                output_tokens += event.token_usage.output_tokens
                         yield event
             else:
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
                 plan_message_content = plan_message.content
-                input_tokens, output_tokens = (
-                    (
-                        plan_message.token_usage.input_tokens,
-                        plan_message.token_usage.output_tokens,
-                    )
-                    if plan_message.token_usage
-                    else (None, None)
-                )
+                input_tokens, output_tokens = 0, 0
+                if plan_message.token_usage:
+                    input_tokens = plan_message.token_usage.input_tokens
+                    output_tokens = plan_message.token_usage.output_tokens
             plan = textwrap.dedent(
                 f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
             )
@@ -682,17 +717,16 @@ You have been provided with these additional arguments, that you can access dire
                             plan_message_content += event.content
                             live.update(Markdown(plan_message_content))
                             if event.token_usage:
-                                output_tokens += event.token_usage.output_tokens
                                 input_tokens = event.token_usage.input_tokens
+                                output_tokens += event.token_usage.output_tokens
                         yield event
             else:
                 plan_message = self.model.generate(input_messages, stop_sequences=["<end_plan>"])
                 plan_message_content = plan_message.content
-                if plan_message.token_usage is not None:
-                    input_tokens, output_tokens = (
-                        plan_message.token_usage.input_tokens,
-                        plan_message.token_usage.output_tokens,
-                    )
+                input_tokens, output_tokens = 0, 0
+                if plan_message.token_usage:
+                    input_tokens = plan_message.token_usage.input_tokens
+                    output_tokens = plan_message.token_usage.output_tokens
             plan = textwrap.dedent(
                 f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message_content}\n```"""
             )
@@ -767,7 +801,7 @@ You have been provided with these additional arguments, that you can access dire
             )
         return rationale.strip(), action.strip()
 
-    def provide_final_answer(self, task: str, images: list["PIL.Image.Image"] | None = None) -> ChatMessage:
+    def provide_final_answer(self, task: str) -> ChatMessage:
         """
         Provide the final answer to the task, based on the logs of the agent's interactions.
 
@@ -789,8 +823,6 @@ You have been provided with these additional arguments, that you can access dire
                 ],
             )
         ]
-        if images:
-            messages[0].content += [{"type": "image", "image": image} for image in images]
         messages += self.write_memory_to_messages()[1:]
         messages.append(
             ChatMessage(
@@ -850,116 +882,6 @@ You have been provided with these additional arguments, that you can access dire
                 answer += "\n" + truncate_content(str(content)) + "\n---"
             answer += "\n</summary_of_work>"
         return answer
-    
-    def parse_tags(self, tag, txt):
-        """
-        Args:
-            txt (str): Text containing <tag> tags
-            
-        Returns:
-            list: List of dictionaries with 'filename' and 'content' keys
-        """
-        pattern = '<'+tag+"""\s+filename=(['"])([^'"]*)\\1>(.*?)</"""+tag+'>'
-        matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
-
-        results = []
-        for quote, filename, content in matches:
-            results.append({
-                'filename': filename,
-                'content': content  # Trim whitespace
-            })
-
-        return results
-
-    def remove_tags(self, tag, txt):
-        """
-        Args:
-            txt (str): Text containing <tag> tags
-            
-        Returns:
-            Text without the tag.
-        """
-        pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
-        output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
-        pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
-        output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
-        return output
-        
-    def save_files_from_text(self, txt):
-        files = self.parse_tags('savetofile', txt)
-        for file in files:
-              force_directories(file['filename'])
-              with open(file['filename'], 'w') as f:
-                f.write(self.replace_include_files(file['content']))
-                msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['filename']))+" bytes."
-                self.logger.log(msg_str, LogLevel.INFO)
-        return files
-
-    def append_files_from_text(self, txt):
-        files = self.parse_tags('appendtofile', txt)
-        for file in files:
-              with open(file['filename'], 'a') as f:
-                f.write(self.replace_include_files(file['content']))
-                msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['filename']))+" bytes."
-                self.logger.log(msg_str, LogLevel.INFO)
-        return files
-                
-    def replace_include_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<include>{file["filename"]}</include>', file["content"])
-        return txt
-
-    def replace_append_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<append>{file["filename"]}</append>', file["content"])
-        return txt
-    
-    def replace_include_files(self, txt):
-        """
-        Args:
-            text (str): Text containing <includefile> tags
-            
-        Returns:
-            str: Text with tags replaced by file contents
-        """
-        def replace_with_file_content(match):
-            filename = match.group(1).strip()
-            try:
-                with open(filename, 'r', encoding='utf-8') as file:
-                    txt = file.read()
-                    self.logger.log("Included file "+filename+".", LogLevel.INFO)
-                    return txt
-            except FileNotFoundError:
-                return f"[ERROR: File not found: {filename}]"
-            except PermissionError:
-                return f"[ERROR: Permission denied: {filename}]"
-            except Exception as e:
-                return f"[ERROR: Could not read file {filename}: {str(e)}]"
-        pattern = r'<includefile>(.*?)</includefile>'
-        result = re.sub(pattern, replace_with_file_content, txt, flags=re.DOTALL)
-        return result
-    
-    def set_system_prompt(self, new_system_prompt):
-        self.prompt_templates['system_prompt'] = new_system_prompt
-        # removed in v1.18: self.system_prompt = self.initialize_system_prompt()
-    
-    def posepend_last_message(self, input_messages):        
-        # Add postpend string to the last user message
-        if input_messages and self.model.postpend_string:
-            for i in range(len(input_messages) - 1, -1, -1):
-                if input_messages[i].role in (MessageRole.USER, MessageRole.TOOL_RESPONSE):
-                    content = input_messages[i].content
-                    if isinstance(content, list):
-                        # Find the last text content and append
-                        for j in range(len(content) - 1, -1, -1):
-                            if content[j].get('type') == 'text':
-                                content[j]['text'] += f"\n\n{self.model.postpend_string}"
-                                break
-                    elif isinstance(content, str):
-                        input_messages[i].content = content + f"\n\n{self.model.postpend_string}"
-                    break
-        return input_messages
-
 
     def save(self, output_dir: str | Path, relative_path: str | None = None):
         """
@@ -1343,7 +1265,7 @@ class ToolCallingAgent(MultiStepAgent):
         try:
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 output_stream = self.model.generate_stream(
-                    self.posepend_last_message(input_messages),
+                    input_messages,
                     stop_sequences=["Observation:", "Calling tools:"],
                     tools_to_call_from=self.tools_and_managed_agents,
                 )
@@ -1380,12 +1302,6 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
-
-        model_output = str(model_output)
-        self.save_files_from_text(model_output)
-        model_output = self.remove_tags('savetofile', model_output)
-        self.append_files_from_text(model_output)
-        model_output = self.remove_tags('appendtofile', model_output)
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
             try:
@@ -1574,7 +1490,7 @@ class CodeAgent(MultiStepAgent):
         prompt_templates ([`~agents.PromptTemplates`], *optional*): Prompt templates.
         additional_authorized_imports (`list[str]`, *optional*): Additional authorized imports for the agent.
         planning_interval (`int`, *optional*): Interval at which the agent will run a planning step.
-        executor_type (`Literal["local", "e2b", "docker", "wasm", "exec"]`, default `"exec"`): Type of code executor.
+        executor_type (`Literal["local", "e2b", "modal", "docker", "wasm"]`, default `"local"`): Type of code executor.
         executor_kwargs (`dict`, *optional*): Additional arguments to pass to initialize the executor.
         max_print_outputs_length (`int`, *optional*): Maximum length of the print outputs.
         stream_outputs (`bool`, *optional*, default `False`): Whether to stream outputs during execution.
@@ -1592,7 +1508,7 @@ class CodeAgent(MultiStepAgent):
         prompt_templates: PromptTemplates | None = None,
         additional_authorized_imports: list[str] | None = None,
         planning_interval: int | None = None,
-        executor_type: Literal["local", "e2b", "docker", "wasm", "exec"] = "exec",
+        executor_type: Literal["local", "e2b", "modal", "docker", "wasm"] = "local",
         executor_kwargs: dict[str, Any] | None = None,
         max_print_outputs_length: int | None = None,
         stream_outputs: bool = False,
@@ -1640,7 +1556,7 @@ class CodeAgent(MultiStepAgent):
                 "Caution: you set an authorization for all imports, meaning your agent can decide to import any package it deems necessary. This might raise issues if the package is not installed in your environment.",
                 level=LogLevel.INFO,
             )
-        if executor_type not in {"local", "e2b", "docker", "wasm", "exec"}:
+        if executor_type not in {"local", "e2b", "modal", "docker", "wasm"}:
             raise ValueError(f"Unsupported executor type: {executor_type}")
         self.executor_type = executor_type
         self.executor_kwargs: dict[str, Any] = executor_kwargs or {}
@@ -1670,7 +1586,7 @@ class CodeAgent(MultiStepAgent):
                 "e2b": E2BExecutor,
                 "docker": DockerExecutor,
                 "wasm": WasmExecutor,
-                "exec": LocalExecExecutor
+                "modal": ModalExecutor,
             }
             return remote_executors[self.executor_type](
                 self.additional_authorized_imports, self.logger, **self.executor_kwargs
@@ -1693,7 +1609,7 @@ class CodeAgent(MultiStepAgent):
             },
         )
         return system_prompt
-    
+
     def _step_stream(
         self, memory_step: ActionStep
     ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
@@ -1707,7 +1623,7 @@ class CodeAgent(MultiStepAgent):
         input_messages = memory_messages.copy()
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
-        stop_sequences = STOP_SEQUENCES
+        stop_sequences = ["Observation:", "Calling tools:"]
         if self.code_block_tags[1] not in self.code_block_tags[0]:
             # If the closing tag is contained in the opening tag, adding it as a stop sequence would cut short any code generation
             stop_sequences.append(self.code_block_tags[1])
@@ -1715,214 +1631,62 @@ class CodeAgent(MultiStepAgent):
             additional_args: dict[str, Any] = {}
             if self._use_structured_outputs_internally:
                 additional_args["response_format"] = CODEAGENT_RESPONSE_FORMAT
-            retry_cnt = 0
-            success_flag = False
-            MAX_TRIES = 3
-            while (retry_cnt < MAX_TRIES) and (not success_flag):
-                retry_cnt = retry_cnt + 1
-                try:
-                    if self.stream_outputs:
-                        output_stream = self.model.generate_stream(
-                            self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
-                            **additional_args,
+            if self.stream_outputs:
+                output_stream = self.model.generate_stream(
+                    input_messages,
+                    stop_sequences=stop_sequences,
+                    **additional_args,
+                )
+                chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
+                with Live("", console=self.logger.console, vertical_overflow="visible") as live:
+                    for event in output_stream:
+                        chat_message_stream_deltas.append(event)
+                        live.update(
+                            Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
                         )
-                        output_text = ""
-                        chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
-                        with Live("", console=self.logger.console, vertical_overflow="visible") as live:
-                            for event in output_stream:
-                                chat_message_stream_deltas.append(event)
-                                live.update(
-                                    Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
-                                )
-                                yield event
-                        chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
-                        memory_step.model_output_message = chat_message
-                        output_text = chat_message.content
+                        yield event
+                chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
+                memory_step.model_output_message = chat_message
+                output_text = chat_message.content
+            else:
+                chat_message: ChatMessage = self.model.generate(
+                    input_messages,
+                    stop_sequences=stop_sequences,
+                    **additional_args,
+                )
+                memory_step.model_output_message = chat_message
+                output_text = chat_message.content
+                self.logger.log_markdown(
+                    content=output_text or "",
+                    title="Output message of the LLM:",
+                    level=LogLevel.DEBUG,
+                )
 
-                        model_output = output_text
-                        #TODO: fix input and output token count
-                        chat_message = ChatMessage(
-                            role="assistant",
-                            content=output_text,
-                            token_usage=TokenUsage(input_tokens=0, output_tokens=0),
-                        )
-                        memory_step.model_output_message = chat_message
-                        model_output = chat_message.content
-                    else:
-                        chat_message: ChatMessage = self.model(
-                            self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
-                            **additional_args,
-                        )
-                        memory_step.model_output_message = chat_message
-                        model_output = chat_message.content
-                    success_flag = True
-                except:
-                    if (retry_cnt == MAX_TRIES):
-                        raise
-                    else:
-                        time.sleep(30)
+            if not self._use_structured_outputs_internally:
+                # This adds the end code sequence (i.e. the closing code block tag) to the history.
+                # This will nudge subsequent LLM calls to finish with this end code sequence, thus efficiently stopping generation.
+                if output_text and not output_text.strip().endswith(self.code_block_tags[1]):
+                    output_text += self.code_block_tags[1]
+                    memory_step.model_output_message.content = output_text
 
-            # This adds <end_code> sequence to the history.
-            # This will nudge ulterior LLM calls to finish with <end_code>, thus efficiently stopping generation.
-            # if model_output and str(model_output).strip().endswith("```"):
-            #     model_output += "<end_code>"
-            #     memory_step.model_output_message.content = model_output
             memory_step.token_usage = chat_message.token_usage
-            memory_step.model_output = model_output
+            memory_step.model_output = output_text
         except Exception as e:
-            error_message = f"Error in generating model output:\n{e}"
-            if (not self.model.flatten_messages_as_text):
-                error_message += f"\nConsider using `flatten_messages_as_text=True` when creating the model."
-            raise AgentGenerationError(error_message, self.logger) from e
-        
-        str_len = 0
-        str_len_str = '0'
-        saved_files = []
-
-        if model_output is not None:
-            model_output = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', str(model_output)) # remove escaped tags
-            model_output = remove_after_markers(model_output, STOP_SEQUENCES, True)
-            if ('<runcode>' in model_output) and not('</runcode>' in model_output):
-                model_output = model_output + '</runcode>'
-            if ('<code>' in model_output) and not('</code>' in model_output):
-                model_output = model_output + '</code>'
-            if ('<final_answer>' in model_output) and not('</final_answer>' in model_output):
-                model_output = model_output + '</final_answer>'
-            memory_step.model_output_message = model_output
-            str_len = len(model_output)
-            str_len_str = str(str_len)
-            self.logger.log_markdown(
-                content=model_output,
-                title="Output of the LLM with "+str_len_str+" chars:",
-                level=LogLevel.INFO,
-            )
-            # len1 = len(model_output)
-            saved_files = self.save_files_from_text(model_output)
-            model_output = self.remove_tags('savetofile', model_output)
-            # len2 = len(model_output)
-            appended_files = self.append_files_from_text(model_output)
-            model_output = self.remove_tags('appendtofile', model_output)
-            if (is_valid_python_code(model_output)):
-                model_output = """```py
-"""+model_output+"""
-```<end_code>"""
-            model_output_for_parsing = self.remove_tags('thoughts', model_output)
-            model_output_for_parsing = self.remove_tags('plans', model_output_for_parsing)
-            model_output_for_parsing = self.remove_tags('freewill', model_output_for_parsing)
-            model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
-            model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
-            model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
-            model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
-            model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
-            #v1.19 compatibility
-            model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
-            # this is for backward compatibility
-            if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
-                model_output_for_parsing = model_output_for_parsing + """
-
-```py
-print(\"\"\"
-Reminders to my future self:
-* As I can not ask questions to users, I will use my best guess when required.
-* When I feel tempted to repeat the same reply, I will try a new approach.
-* When I finish or when I do not know what to do, I will respond with
-<runcode>final_answer("I finished working.")</runcode> in my output.
-Another way to give my final answer is:
-<final_answer>I finished working</final_answer>
-* When the user asks me to run something with <runcode></runcode>, it means that
-the user wants me to respond with the <runcode>...</runcode> string so the commands
-will run in his device.
-\"\"\")
-```<end_code>
-"""
-            # len3 = len(model_output)
-            # print('Lens:',len1, len2, len3)
+            raise AgentGenerationError(f"Error in generating model output:\n{e}", self.logger) from e
 
         ### Parse output ###
         try:
             if self._use_structured_outputs_internally:
-                code_action = json.loads(model_output_for_parsing)["code"]
+                code_action = json.loads(output_text)["code"]
                 code_action = extract_code_from_text(code_action, self.code_block_tags) or code_action
             else:
-                code_action = bp_parse_code_blobs(model_output_for_parsing)
+                code_action = parse_code_blobs(output_text, self.code_block_tags)
             code_action = fix_final_answer_code(code_action)
-            if (len(saved_files)==0):
-                code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
-"""+code_action
             memory_step.code_action = code_action
         except Exception as e:
-            code_example = """ Follow this example in <example></example>:
-<example>
-Any tags go here.
-
-<runcode>
-print('the result of a computation for debug, test or verification.')
-# final_answer('I have completed the task') # use final_answer to say that you have completed the task or to ask for more tasks
-# You can leave the code section empty if you intend to continue to work in the next step. 
-</runcode>
-</example>
-""" 
-            error_msg = """Error in code parsing. Follow examples with the desired structure in the tags <example></example>:
-<example>
-<savetofile filename="free-will.txt">
-I am going to solve this task with confidence.
-</savetofile>
-<runcode>
-result = 5 + 3 + 1294.678
-final_answer(result)
-</runcode>
-</example>
-
-If you need to include any file in the file system, use the <includefile></includefile> tags. This is an example:
-<example>
-<savetofile filename="first_step.py">
-print("first step")
-</savetofile>
-
-<savetofile filename="second_step.py">
-print("second step")
-</savetofile>
-
-<runcode>
-<includefile>first_step.py</includefile>
-<includefile>second_step.py</includefile>
-</runcode>
-</example>
-
-The above will run and print:
-first step
-second step
-"""
-            if (str_len>8000):
-                    error_msg = error_msg + """
-If you are trying to save or run a too big file, you can try to save and append in steps:
-<example>
-<savetofile filename="large_file.txt">
-First section, function or chapter
-</savetofile>
-<runcode>
-print('Starting well.')
-</runcode>
-<appendtofile filename="large_file.txt">
-Second section, function or chapter
-</savetofile>
-<runcode>
-print('Continuing awesome!')
-</runcode>
-<appendtofile filename="large_file.txt">
-Third section, function or chapter
-</savetofile>
-<runcode>
-print('Finishing fantastic!!!')
-</runcode>
-</example>
-
-You can combine the above to be able to run very large portions of python code if required.
-"""
+            error_msg = f"Error in code parsing:\n{e}\nMake sure to provide correct code blobs."
             raise AgentParsingError(error_msg, self.logger)
-        
+
         tool_call = ToolCall(
             name="python_interpreter",
             arguments=code_action,
@@ -1932,35 +1696,25 @@ You can combine the above to be able to run very large portions of python code i
         memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
-        self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
-        code_action = self.replace_include_tags(code_action, saved_files)
-        code_action = self.replace_append_tags(code_action, appended_files)
-        code_action = self.replace_include_files(code_action)
-        
-        # with open('tmp.py', "w") as text_file:
-        #     text_file.write(code_action)
-        # code_action = "exec(load_string_from_file('tmp.py'))"
-
-        observation = ''
+        self.logger.log_code(title="Executing parsed code:", content=code_action, level=LogLevel.INFO)
         try:
             code_output = self.python_executor(code_action)
-            code_output.logs = truncate_content(code_output.logs, 20000) # execution log is truncated to 20K
             execution_outputs_console = []
             if len(code_output.logs) > 0:
                 execution_outputs_console += [
                     Text("Execution logs:", style="bold"),
                     Text(code_output.logs),
                 ]
-                observation = "Execution logs:\n" + code_output.logs
+            observation = "Execution logs:\n" + code_output.logs
         except Exception as e:
             if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
-                code_output.logs = str(self.python_executor.state["_print_outputs"])
-                if len(code_output.logs) > 0:
+                execution_logs = str(self.python_executor.state["_print_outputs"])
+                if len(execution_logs) > 0:
                     execution_outputs_console = [
                         Text("Execution logs:", style="bold"),
-                        Text(code_output.logs),
+                        Text(execution_logs),
                     ]
-                    memory_step.observations = "Execution logs:\n" + code_output.logs
+                    memory_step.observations = "Execution logs:\n" + execution_logs
                     self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
             error_msg = str(e)
             if "Import of " in error_msg and " is not allowed" in error_msg:
@@ -1970,23 +1724,19 @@ You can combine the above to be able to run very large portions of python code i
                 )
             raise AgentExecutionError(error_msg, self.logger)
 
-        if (code_output.output is not None) and (code_output.output != "None"):
-            truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
-            if (len(truncated_output) > 0):
-                observation += "Last output from code snippet:\n" + truncated_output
-                if not code_output.is_final_answer:
-                    execution_outputs_console += [
-                        Text(
-                            f"Out: {truncated_output}",
-                        ),
-                    ]
-        else:
-            truncated_output = ''
-
-        self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+        truncated_output = truncate_content(str(code_output.output))
+        observation += "Last output from code snippet:\n" + truncated_output
         memory_step.observations = observation
-        memory_step.action_output = truncated_output
-        yield ActionOutput(output=truncated_output, is_final_answer=code_output.is_final_answer)
+
+        if not code_output.is_final_answer:
+            execution_outputs_console += [
+                Text(
+                    f"Out: {truncated_output}",
+                ),
+            ]
+        self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+        memory_step.action_output = code_output.output
+        yield ActionOutput(output=code_output.output, is_final_answer=code_output.is_final_answer)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the agent to a dictionary representation.

@@ -23,7 +23,7 @@ from .local_python_executor import (
     evaluate_python_code,
 )
 from .tools import PipelineTool, Tool
-import time
+
 
 @dataclass
 class PreTool:
@@ -137,13 +137,10 @@ class DuckDuckGoSearchTool(Tool):
     def forward(self, query: str) -> str:
         self._enforce_rate_limit()
         results = self.ddgs.text(query, max_results=self.max_results)
-        time.sleep(5)
         if len(results) == 0:
-            str_result = "No results found! Try a less restrictive/shorter query."
-        else:
-            postprocessed_results = [f"[{result['title']}]({result['href']})\n{result['body']}" for result in results]
-            str_result = "## Search Results\n\n" + "\n\n".join(postprocessed_results)
-        return str_result
+            raise Exception("No results found! Try a less restrictive/shorter query.")
+        postprocessed_results = [f"[{result['title']}]({result['href']})\n{result['body']}" for result in results]
+        return "## Search Results\n\n" + "\n\n".join(postprocessed_results)
 
     def _enforce_rate_limit(self) -> None:
         import time
@@ -472,9 +469,7 @@ class VisitWebpageTool(Tool):
         if len(content) <= max_length:
             return content
         return (
-            content[: max_length // 2]
-            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
-            + content[-max_length // 2 :]
+            content[:max_length] + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
         )
 
     def forward(self, url: str) -> str:

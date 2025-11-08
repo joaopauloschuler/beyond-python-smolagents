@@ -13,372 +13,265 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-# Beyond Python Smolagents
-**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities with 2 main functions that you can easily call:
-* [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
+<p align="center">
+    <!-- Uncomment when CircleCI is set up
+    <a href="https://circleci.com/gh/huggingface/accelerate"><img alt="Build" src="https://img.shields.io/circleci/build/github/huggingface/transformers/master"></a>
+    -->
+    <a href="https://github.com/huggingface/smolagents/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/huggingface/smolagents.svg?color=blue"></a>
+    <a href="https://huggingface.co/docs/smolagents"><img alt="Documentation" src="https://img.shields.io/website/http/huggingface.co/docs/smolagents/index.html.svg?down_color=red&down_message=offline&up_message=online"></a>
+    <a href="https://github.com/huggingface/smolagents/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/huggingface/smolagents.svg"></a>
+    <a href="https://github.com/huggingface/smolagents/blob/main/CODE_OF_CONDUCT.md"><img alt="Contributor Covenant" src="https://img.shields.io/badge/Contributor%20Covenant-v2.0%20adopted-ff69b4.svg"></a>
+</p>
 
-  [![Watch the video](docs/img/writing-process.jpg?raw=true)](https://youtu.be/oQ2GdrtWR94)
+<h3 align="center">
+  <div style="display:flex;flex-direction:row;">
+    <img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/smolagents/smolagents.png" alt="Hugging Face mascot as James Bond" width=400px>
+    <p>Agents that think in code!</p>
+  </div>
+</h3>
 
-* [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
+`smolagents` is a library that enables you to run powerful agents in a few lines of code. It offers:
 
-  [![Watch the video](docs/img/evol.jpg?raw=true)](https://youtu.be/XuFL3PQGQkc)
+✨ **Simplicity**: the logic for agents fits in ~1,000 lines of code (see [agents.py](https://github.com/huggingface/smolagents/blob/main/src/smolagents/agents.py)). We kept abstractions to their minimal shape above raw code!
 
-  [![Watch the video](docs/img/monologue.jpg?raw=true)](https://youtu.be/25uJ0VHDKZE)
+🧑‍💻 **First-class support for Code Agents**. Our [`CodeAgent`](https://huggingface.co/docs/smolagents/reference/agents#smolagents.CodeAgent) writes its actions in code (as opposed to "agents being used to write code"). To make it secure, we support executing in sandboxed environments via [E2B](https://e2b.dev/), [Modal](https://modal.com/), Docker, or Pyodide+Deno WebAssembly sandbox.
 
-## Google colab ready to run examples 
+🤗 **Hub integrations**: you can [share/pull tools or agents to/from the Hub](https://huggingface.co/docs/smolagents/reference/tools#smolagents.Tool.from_hub) for instant sharing of the most efficient agents!
 
-### Writing task examples
-* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
-* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
-* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/vitamin-C.ipynb)
+🌐 **Model-agnostic**: smolagents supports any LLM. It can be a local `transformers` or `ollama` model, one of [many providers on the Hub](https://huggingface.co/blog/inference-providers), or any model from OpenAI, Anthropic and many others via our [LiteLLM](https://www.litellm.ai/) integration.
 
-### Coding task examples
-  [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
-* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
-* [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/php/php-single-file-01.ipynb)
-* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/java/java-single-file-01.ipynb)
-* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
-* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.21-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
+👁️ **Modality-agnostic**: Agents support text, vision, video, even audio inputs! Cf [this tutorial](https://huggingface.co/docs/smolagents/examples/web_browser) for vision.
 
-## Feature list
-* 👥 Collaborate across multiple agents to solve complex problems.
-* 🔍 Research and write technical documentation.
-* 📚 Generate and update documentation including READMEs for existing codebases.
-* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
-* 🛠️ Compile, test, and debug source code in various computing languages.
-* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
+🛠️ **Tool-agnostic**: you can use tools from any [MCP server](https://huggingface.co/docs/smolagents/reference/tools#smolagents.ToolCollection.from_mcp), from [LangChain](https://huggingface.co/docs/smolagents/reference/tools#smolagents.Tool.from_langchain), you can even use a [Hub Space](https://huggingface.co/docs/smolagents/reference/tools#smolagents.Tool.from_space) as a tool.
 
-## Installation
-To get started with Beyond Python Smolagents, follow these steps:
+Full documentation can be found [here](https://huggingface.co/docs/smolagents/index).
 
-1. **Clone the Repository:** Clone the `v1.21-bp` branch of the Beyond Python Smolagents repository.
-    ```bash
-    !git clone -b v1.21-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
-    ```
+> [!NOTE]
+> Check the our [launch blog post](https://huggingface.co/blog/smolagents) to learn more about `smolagents`!
 
-2.  **Install Beyond Python Smolagents:** Install the cloned project, including the LiteLLM dependencies.
-    ```bash
-    !pip install ./smolagents[litellm]
-    ```
+## Quick demo
 
-This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
-
-## Basic usage (single agent)
-Create a single agent with various tools for working with different programming languages:
+First install the package with a default set of tools:
+```bash
+pip install "smolagents[toolkit]"
 ```
-import smolagents
-from smolagents.bp_tools import *
-from smolagents.bp_utils import *
-from smolagents.bp_thinkers import *
-from smolagents import LiteLLMModel, LogLevel
-from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
-from smolagents import tool
+Then define your agent, give it the tools it needs and run it!
+```py
+from smolagents import CodeAgent, WebSearchTool, InferenceClientModel
 
-MAX_TOKENS = 64000
-coder_model_id = "gemini/gemini-2.5-flash"
-coder_model = LiteLLMModel(model_id=coder_model_id, api_key=YOUR_KEY_VALUE, max_tokens=MAX_TOKENS)
+model = InferenceClientModel()
+agent = CodeAgent(tools=[WebSearchTool()], model=model, stream_outputs=True)
 
-tools = [ run_os_command,
-  compile_and_run_pascal_code, run_php_file,
-  pascal_interface_to_string, source_code_to_string, string_to_source_code,  
-  save_string_to_file, load_string_from_file, 
-  copy_file, replace_on_file, replace_on_file_with_files, get_file_size, 
-  ]
-
-coder_agent = CodeAgent( model=coder_model, tools = tools, add_base_tools=True)
-coder_agent.run("Please list the files in the current folder.")
+agent.run("How many seconds would it take for a leopard at full speed to run through Pont des Arts?")
 ```
 
-## The `fast_solver`
-The `fast_solver` function is a sophisticated multi-agent problem-solving approach that leverages the "wisdom of crowds" principle with AI models.
+https://github.com/user-attachments/assets/84b149b4-246c-40c9-a48d-ba013b08e600
 
-### Core Purpose
-This function takes a complex task and solves it by generating multiple independent solutions, then intelligently combining them into a superior final solution.
+You can even share your agent to the Hub, as a Space repository:
+```py
+agent.push_to_hub("m-ric/my_agent")
 
-### Workflow Breakdown
-
-#### Phase 1: Independent Solution Generation
-1. **Creates 3 separate AI agents** using potentially different models (`p_coder_model`, `p_coder_model2`, `p_coder_model3`)
-2. **Each agent independently solves the same task** without knowledge of the others' work
-3. **Saves each solution to separate files** (`solution1.ext`, `solution2.ext`, `solution3.ext`)
-4. **Includes fallback logic** - if an agent fails to save its solution initially, it gets a second chance
-
-#### Phase 2: Solution Synthesis
-1. **Loads all three solutions** from the saved files
-2. **Creates a fourth "final" agent** (using `p_coder_model_final`)
-3. **Presents all three solutions to this agent** with instructions to mix and combine the best parts
-4. **Generates a final optimized solution** that synthesizes the strengths of all previous attempts
-
-### Key Features
-
-**Multi-Model Support**: Can use up to 4 different AI models - allowing you to leverage different models' strengths (e.g., one model might be better at creativity, another at technical accuracy).
-
-**Robust Error Handling**: If any agent fails to save its solution initially, the function automatically retries.
-
-**Flexible Output**: The `fileext` parameter allows generating different types of content (code files, documentation, etc.).
-
-**Rich Motivation**: Each agent receives encouraging prompts to "show your intelligence with no restraints" and produce extensive, detailed solutions.
-
-### Why This Approach Works
-
-1. **Diversity**: Multiple independent attempts often explore different solution approaches
-2. **Quality Enhancement**: The final synthesis stage can identify and combine the best elements from each approach
-3. **Error Mitigation**: If one agent produces a poor solution, the others can compensate
-4. **Scalability**: Can leverage different specialized models for different aspects of the problem
-
-This is essentially an automated "brainstorming → synthesis" workflow that mimics how human teams might approach complex problems.
-
-## The heavy thinker - `evolutive_problem_solver`
-Using "Heavy Thinking" is typically more computationally intensive and time-consuming than basic single-agent tasks, but it is designed to yield superior results for difficult problems that benefit from a more thorough, multi-pass approach.
-`evolutive_problem_solver` combines evolutive computing, genetic algorithms and agents to produce a final result.
-
-The "Heavy Thinking" method within Beyond Python Smolagents represents an advanced paradigm for tackling highly complex or open-ended problems that may not be solvable in a single agent turn. It's particularly useful for tasks requiring significant iterative refinement, exploration, or multi-step reasoning, such as generating comprehensive documentation from a large codebase or complex coding tasks.
-
-While `evolutive_problem_solver` internal workings involve sophisticated logic, the user interacts with it by providing a detailed task prompt and a set of tools. `evolutive_problem_solver` has an iterative process, potentially involving multiple agent interactions, intermediate evaluations, and refinements over several "steps" and "agent_steps" within each step, aiming to converge on a high-quality solution.
-
-Here is how you might conceptually set up and invoke the `evolutive_problem_solver` for a task like generating comprehensive documentation from source code. This example focuses on *how* you would structure the input prompt and call the function:
-
+# agent.from_hub("m-ric/my_agent") to load an agent from Hub
 ```
-!git clone git@github.com:joaopauloschuler/neural-api.git
-current_source = source_code_to_string('neural-api')
-project_name = 'neural-api'
-task = """You have access to an Ubuntu system. You have available to you python, php and free pascal.
-You are given the source code of the """+project_name+""" project in the tags <file filename="..."> source code file content </file>.
-This is the source code:"""+current_source+"""
-Your highly important and interesting task is producing a better version of the README.md file.
-You will save the updated versions of the README.md into new files as directed.
-The original version of the readme file is provided in the tag <file filename="README.md"><file>.
-When asked to test, given that this is a task regarding documentation, you should review the README file.
-When asked to code, you will produce documentation.
 
-You will write the documentation in a technical and non commercial language.
-You contribution will be helping others to understand how to use this project and its inner workings so future
-developers will be able to build on the top of it.
-It would be fantastic if you could add to the documentation ideas about to solve real world problems using this project.
-For saving documentation, use the tags <savetofile> and <appendtofile>. Trying to save documentation via python code is just too hard and error prone.
-When asked to test or review documentation, make sure that referred files or functions do actually exist. This is to prevent broken links.
-Your documentation should focus on existing features only. Do not document future or to be be developed features.
-Your goal is documentation.
-Avoid adding code snippets.
-"""
-print("Input size:", len(task))
-# Run the evolutive solver
-evolutive_problem_solver(
-    coder_model,       # The LLM to use
-    task,              # The task description
-    agent_steps=54,    # Number of steps each agent can take
-    steps=4,           # Number of evolutionary iterations
-    start_now=True,    # Start from scratch
-    fileext='.md',     # File extension for outputs
-    tools=tools        # Tools available to the agents
+Our library is LLM-agnostic: you could switch the example above to any inference provider.
+
+<details>
+<summary> <b>InferenceClientModel, gateway for all <a href="https://huggingface.co/docs/inference-providers/index">inference providers</a> supported on HF</b></summary>
+
+```py
+from smolagents import InferenceClientModel
+
+model = InferenceClientModel(
+    model_id="deepseek-ai/DeepSeek-R1",
+    provider="together",
+)
+```
+</details>
+<details>
+<summary> <b>LiteLLM to access 100+ LLMs</b></summary>
+
+```py
+from smolagents import LiteLLMModel
+
+model = LiteLLMModel(
+    model_id="anthropic/claude-3-5-sonnet-latest",
+    temperature=0.2,
+    api_key=os.environ["ANTHROPIC_API_KEY"]
+)
+```
+</details>
+<details>
+<summary> <b>OpenAI-compatible servers: Together AI</b></summary>
+
+```py
+import os
+from smolagents import OpenAIServerModel
+
+model = OpenAIServerModel(
+    model_id="deepseek-ai/DeepSeek-R1",
+    api_base="https://api.together.xyz/v1/", # Leave this blank to query OpenAI servers.
+    api_key=os.environ["TOGETHER_API_KEY"], # Switch to the API key for the server you're targeting.
+)
+```
+</details>
+<details>
+<summary> <b>OpenAI-compatible servers: OpenRouter</b></summary>
+
+```py
+import os
+from smolagents import OpenAIServerModel
+
+model = OpenAIServerModel(
+    model_id="openai/gpt-4o",
+    api_base="https://openrouter.ai/api/v1", # Leave this blank to query OpenAI servers.
+    api_key=os.environ["OPENROUTER_API_KEY"], # Switch to the API key for the server you're targeting.
 )
 ```
 
-The source code above shows one of the core strengths of Beyond Python Smolagents: Its ability to work with codebases across multiple languages to generate and update documentation automatically. The `source_code_to_string` and `pascal_interface_to_string` tools are particularly useful here, allowing agents to ingest the codebase structure and content.
+</details>
+<details>
+<summary> <b>Local `transformers` model</b></summary>
 
-For complex documentation tasks, such as generating a comprehensive README from a large project, you should leverage advanced techniques provided by `evolutive_problem_solver`.
+```py
+from smolagents import TransformersModel
 
-### Heavy thinking inner working
-
-**1. Overall Workflow:**
-
-The `evolutive_problem_solver` function sets up a loop where a `CodeAgent` acts as both a coder and a critic. It starts with initial solutions, then enters a cycle of:
-1.  Analyzing and comparing current solutions.
-2.  Potentially mixing solutions if beneficial.
-3.  Selecting the "best" current solution.
-4.  Generating two new alternative solutions by applying improvements suggested by the agent itself, potentially guided by past advice.
-5.  Refining the new solutions (detailing changes, testing, getting advice).
-6.  Potentially merging smaller new solutions with the current best.
-
-This process simulates an evolutionary cycle where solutions compete, combine (mixing), and are refined based on criteria evaluated by the AI agent, aiming to improve the quality of the solution over time. The `advices.notes` file serves as a form of accumulated knowledge or 'genetic memory' for the agent across iterations. The process repeats for a fixed number of `steps`.
-
-**2. `get_local_agent()` Inner Function:**
-
-This helper function is responsible for creating and configuring a `CodeAgent` instance based on the parameters passed to the main `evolutive_problem_solver` function. It sets up the agent's tools, model, import permissions, max steps, callbacks, executor type, system prompt, and log level. This ensures that a fresh agent instance with the desired configuration is available whenever needed during the process.
-
-**3. `test_and_refine(local_agent, solution_file)` Inner Function:**
-
-This function orchestrates a series of refinement steps for a given `solution_file` using the `local_agent`. It guides the agent through the following tasks:
-*   **Refine 1:** Prompts the agent to detail the changes it made (presumably in the immediately preceding step where the solution file was created or modified).
-*   **Refine 2:** Instructs the agent to review and test its own solution. If the agent feels it needs further refinement, it's prompted to update the full source code in the specified `solution_file` and call `final_answer("Task completed! YAY!")`.
-*   **Refine 3:** Asks the agent to provide any advice it would give to its future self based on the current task and solution process. The output of this step is captured as `new_advice`. If `new_advice` is not empty, it is appended to a file named `advices.notes`, separated by a horizontal rule (`---`).
-
-**4. Main Execution Logic:**
-
-*   **Initialization:**
-    *   A `local_task_description` is created, wrapping the original `task_str` in `<task>` tags.
-    *   A list `valid_solutions` is defined to hold the base filenames for the three potential solutions ('solution1', 'solution2', 'solution3').
-    *   A `motivation` string is defined, encouraging the agent to be extensive, detailed, and creative.
-
-*   **Initial Solution Generation (`if start_now:`):**
-    *   If `start_now` is True, the process begins by generating the first three distinct solutions.
-    *   A `local_agent` is obtained using `get_local_agent()`.
-    *   The agent is run three times, each time tasked with solving the `local_task_description` with the added `motivation` and saving the output to `solution1`, `solution2`, and `solution3` respectively (with the specified `fileext`). The `reset=True` ensures each initial generation starts with a fresh context for the agent.
-    *   After each initial solution is generated, `test_and_refine` is called for that solution file to detail changes, test, and capture advice.
-
-*   **Evolution Loop (`for i in range(steps):`):**
-    *   The code enters a loop that runs for `steps` iterations, representing the evolutionary process.
-    *   Inside the loop, a new `local_agent` is created at the start of each iteration.
-    *   **Analysis and Comparison:**
-        *   A detailed `task_description` is created. This prompt includes the original task, the content of `solution1`, `solution2`, and `solution3` (loaded using `load_string_from_file`), all enclosed in appropriate XML-like tags (`<solution1>`, etc.).
-        *   The agent is instructed to analyze these three solutions, explain their advantages and disadvantages, prioritize solutions with more features, and output the analysis as text using `final_answer()`. The agent is explicitly told *not* to code anything except calling `final_answer` with text.
-        *   The agent is run with this analysis task (`reset=True` for a fresh start).
-    *   **Mixing Decision:**
-        *   If it's not one of the last two steps (`i < steps - 2`), the agent is asked if mixing parts of the solutions would be beneficial.
-        *   The agent's response is captured, and if it's 'yes', the `should_mix` flag is set to True.
-    *   **Mixing Logic (`if should_mix:`):**
-        *   If mixing is deemed beneficial, `solution2` is chosen as the destination file for the mixed solution.
-        *   The agent is tasked with mixing parts of the existing solutions into `solution2` and saving the full result there.
-        *   `test_and_refine` is called on `solution2`.
-        *   `continue` skips the rest of the current loop iteration (selection and alternative generation) and proceeds to the next evolutionary step with the potentially mixed `solution2` now available for comparison.
-    *   **Best Solution Selection:**
-        *   If mixing is not happening, the agent is asked to select the best solution among `solution1`, `solution2`, and `solution3` by calling `final_answer()` with the chosen filename.
-        *   The selected filename is stored in `selected_solution`.
-    *   **Best Solution Handling:**
-        *   If `selected_solution` is one of the valid filenames, the corresponding file is copied to `best_solution.best`.
-        *   **Alternative Generation and Improvement (`if i < steps - 1:`):**
-            *   If it's not the very last step (`i < steps - 1`), the process prepares to generate alternative solutions based on the newly selected `best_solution.best`.
-            *   The current `best_solution.best` is copied to `solution3` to serve as a baseline for comparison in the next iteration.
-            *   A loop runs twice (for `alternatives_cnt` 0 and 1), targeting `solution1` and `solution2` as the files for the new alternatives.
-            *   For each alternative:
-                *   The agent is presented with the current `best_solution.best` and the accumulated `advices.notes` and asked to suggest improvements (outputting text via `final_answer`).
-                *   The agent is asked to randomly pick one suggestion and code it.
-                *   The agent is run to implement the selected improvement, tasked with updating the *existing* solution rather than starting a new one. For the first alternative (`alternatives_cnt == 0`), the agent is encouraged to be bold and add many improvements.
-                *   The agent is asked if more review/testing is needed.
-                *   The agent is instructed to save the *full* updated solution to the current `solution_file` (`solution1` or `solution2`) using `<savetofile>` tags and confirm completion with `final_answer("Task completed! YAY!")`.
-                *   `test_and_refine` is called on this updated solution file.
-                *   **Merging Smaller Solutions:** A peculiar step checks if the newly generated `solution_file` is *smaller* than the `best_solution.best`. If it is, the agent is tasked with merging the `best_solution.best` and the new `solution_file`, assuming the larger `best_solution.best` might contain valuable parts missing from the smaller new version. The merged result is saved back to the `solution_file`.
-    *   **Error Handling:** A `try...except` block is present to catch potential errors during the loop iteration, printing 'ERROR'.
-
-**5. Return Value:**
-
-After the evolutionary loop completes (`steps` iterations), the function returns the content of the final (best) solution.
-
-## Available agent tools
-
-The `bp_tools.py` files provides a suite of functions and classes that can be used as tools by agents. This list details key tools and a brief description of their function:
-
-*   `run_os_command(str_command: string, timeout: integer)`: Executes an arbitrary command in the host operating system's shell (e.g., `ls`, `cd`, `mkdir`, `pip install <package>`, `apt-get update`). Returns the standard output from the command. Use with extreme caution due to security implications.
-*   `compile_and_run_pascal_code(pasfilename: string, timeout: integer)`: Compiles and executes a Free Pascal source file (`.pas`). Accepts standard Free Pascal compiler options via the `pasfilename` string. Returns the output of the compiled program.
-*   `run_php_file(filename: string, timeout: integer)`: Executes a PHP script file (`.php`) using the installed PHP interpreter. Returns the standard output generated by the script.
-*   `source_code_to_string(folder_name: string)`: Recursively scans a specified folder and its subfolders for common source code file types (.py, .pas, .php, .inc, .txt, .md). It reads their content and concatenates them into a single string, structured using `<file filename="...">...</file>` XML-like tags. This is invaluable for giving an agent a comprehensive view of a project's source code for documentation, analysis, or refactoring tasks.
-*   `string_to_source_code(string_with_files: string, output_base_dir: string = '.', overwrite: boolean = True, verbose: boolean = False)`: Performs the inverse operation of `source_code_to_string`. It parses a structured string (like the output of `source_code_to_string`) and recreates the specified files and directory structure within the `output_base_dir`. Useful for agents generating multiple code or documentation files.
-*   `pascal_interface_to_string(folder_name: string, remove_pascal_comments: boolean = False)`: Specifically scans Pascal source files in a folder and extracts only the content located within the `interface` section of units, ignoring comments and strings. The extracted content is returned in a string structured with `<pascal_interface filename="...">...</pascal_interface>` tags. Helps agents understand Pascal unit dependencies.
-*   `get_pascal_interface_from_file(filename: string, remove_pascal_comments: boolean = False)`: Returns the Pascal interface section from a single Pascal source code file.
-*   `get_pascal_interface_from_code(content: string, remove_pascal_comments: boolean = False)`: Extracts the interface section from Pascal source code provided as a string.
-*   `remove_pascal_comments_from_string(code_string: string)`: Removes all comments from a Delphi/Pascal code string. Handles single-line comments (//), brace comments ({ }), and parenthesis-asterisk comments ((* *)). Preserves comment-like text inside string literals.
-*   `save_string_to_file(content: string, filename: string)`: Writes the given string `content` to the specified `filename`. If the file exists, it is overwritten. A fundamental tool for agents to output generated text or code.
-*   `append_string_to_file(content: string, filename: string)`: Appends the given string `content` to the end of the specified `filename`. Unlike `save_string_to_file`, this preserves existing file content.
-*   `load_string_from_file(filename: string)`: Reads the entire content of the specified `filename` and returns it as a single string. Allows agents to read existing files.
-*   `copy_file(source_filename: string, dest_filename: string)`: Copies the file located at `source_filename` to `dest_filename`. Standard file system copy operation.
-*   `get_file_size(filename: string)`: Returns the size of a specified file in bytes as an integer. Useful for file management tasks.
-*   `is_file(filename: string)`: Returns true if the specified path is a file. Implemented as `os.path.isfile(filename)`.
-*   `force_directories(file_path: string)`: Extracts the directory path from a full file path and creates the directory structure if it does not already exist. Useful for ensuring parent directories exist before creating files.
-*   `get_file_lines(filename: string)`: Returns the number of lines in a text file as an integer.
-*   `get_line_from_file(file_name: string, line_number: integer)`: Reads a specified line from a text file (1-based index). Useful for finding specific lines where compilers report errors.
-*   `print_source_code_lines(filename: string, start_line: integer, end_line: integer)`: Prints lines from `start_line` to `end_line` of the specified file. Useful in combination with `get_line_from_file` for finding bugs in source code.
-*   `replace_line_in_file(file_name: string, line_number: integer, new_content: string)`: Replaces a specified line in a text file with new content. The line_number is 1-based.
-*   `insert_lines_into_file(file_name: string, line_number: integer, new_content: string)`: Inserts new content before a specified line in a text file. The original line and all subsequent lines are shifted down.
-*   `replace_on_file(filename: string, old_value: string, new_value: string)`: Reads the content of `filename`, replaces all occurrences of `old_value` with `new_value` in the content, and writes the modified content back to the same file. Returns the modified content string. Useful for in-place file patching.
-*   `replace_on_file_with_files(filename: string, file_with_old_value: string, file_with_new_value: string)`: Reads content from `file_with_old_value` and `file_with_new_value`, then replaces all occurrences of the old content with the new content within the `filename` file. Returns the modified content string of `filename`.
-*   `trim_right_lines(multi_line_string: string)`: Performs a right trim on all lines of a string, removing trailing whitespace from each line.
-*   `trim_right_lines_in_file(filename: string)`: Performs a right trim on all lines of the specified file, removing trailing whitespace from each line.
-*   `get_files_in_folder(folder: string = 'solutions', fileext: string = '.md')`: Returns a list of files in a folder with a given file extension. Useful for discovering files of a specific type.
-*   `create_filename(topic: string, extension: string = ".md")`: Creates a filename from a topic string (unformatted) and an extension. The topic is converted to a URL-safe slug format.
-*   `list_directory_tree(folder_path: string, max_depth: integer = 3, show_files: boolean = True)`: Creates a tree-like view of a directory structure. This is useful for understanding project structure without loading all file contents, saving context. Shows directories and optionally files up to a specified depth.
-*   `search_in_files(folder_path: string, search_pattern: string, file_extensions: tuple = None, case_sensitive: boolean = False, max_results: integer = 50)`: Searches for a text pattern in files within a folder and its subfolders. Returns matching lines with file paths and line numbers. Much more efficient than loading all files when you need to find specific code patterns.
-*   `read_file_range(filename: string, start_byte: integer, end_byte: integer)`: Reads a specific byte range from a file. This is useful for very large files where you only need to inspect a portion, saving memory and context.
-*   `get_file_info(filepath: string)`: Gets metadata about a file without reading its content. Returns a dictionary containing file properties (size, modified_time, is_file, is_dir, exists, readable, writable). Efficient for checking file properties before deciding whether to load the full content.
-*   `list_directory(folder_path: string, pattern: string = "*", recursive: boolean = False, files_only: boolean = False, dirs_only: boolean = False)`: Lists files and directories in a folder with optional filtering. More flexible than `get_files_in_folder` with glob pattern matching support. Can search recursively and filter by type.
-*   `mkdir(directory_path: string, parents: boolean = True)`: Creates a directory. If `parents=True`, creates intermediate directories as needed (similar to `mkdir -p` in Unix).
-*   `extract_function_signatures(filename: string, language: string = "python")`: Extracts function and class signatures from a source code file without loading the full implementation. Helps understand code structure efficiently. Currently supports Python, JavaScript, Java, and PHP.
-*   `compare_files(file1: string, file2: string, context_lines: integer = 3)`: Compares two files and shows the differences in a unified diff format. Useful for understanding what changed between versions. Returns a diff output with configurable context lines.
-*   `delete_file(filepath: string)`: Deletes a file from the filesystem. Returns `True` if successful. Raises appropriate exceptions if the file doesn't exist or is a directory.
-*   `delete_directory(directory_path: string, recursive: boolean = False)`: Deletes a directory. If `recursive=True`, deletes the directory and all its contents. Use with caution.
-*   `count_lines_of_code(folder_path: string, file_extensions: tuple = ('.py', '.js', '.java', '.cpp', '.c', '.php', '.rb'))`: Counts lines of code in a project, broken down by file type. Helps understand project size and composition without loading all files. Returns a dictionary with file extensions as keys and line counts as values.
-
-### Sub-assistant Tool Classes
-
-In addition to the function-based tools above, `bp_tools.py` provides several Tool classes that wrap agents as tools, allowing them to be used by other agents:
-
-*   `Summarize(agent)`: A sub-assistant that returns a summary of a provided string.
-*   `SummarizeUrl(agent)`: A sub-assistant that returns a summary of a web page given its URL.
-*   `SummarizeLocalFile(agent)`: A sub-assistant that returns a summary of a local file.
-*   `Subassistant(agent)`: A general-purpose sub-assistant similar in capability to the main agent. Can be used to delegate tasks.
-*   `InternetSearchSubassistant(agent)`: A sub-assistant dedicated to internet searches. Useful for delegating research tasks.
-*   `CoderSubassistant(agent)`: A sub-assistant specialized in coding tasks.
-*   `GetRelevantInfoFromFile(agent)`: A sub-assistant that extracts relevant information about a specific topic from a local file.
-*   `GetRelevantInfoFromUrl(agent)`: A sub-assistant that extracts relevant information about a specific topic from a URL.
-
-All sub-assistant classes support a `restart_chat` parameter to control whether the sub-assistant should maintain context from previous interactions or start fresh.
-
-## Create a team of agents (sub-assistants) and use them as tools
-
-### Core Concepts
-
-Beyond Python Smolagents is built around the concept of AI agents equipped with tools to interact with their environment and solve tasks.
-
-*   **Agents** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Autonomous entities powered by language models that receive instructions and use available tools to achieve objectives. Different agent types (`CodeAgent`, `ToolCallingAgent`, `MultiStepAgent`) are available, each tailored for potentially different purposes and capable of being configured with specific tool sets:
-    *   `CodeAgent`: Specialized in code generation, execution, and debugging across multiple languages.
-    *   `ToolCallingAgent`: A general-purpose agent capable of utilizing a defined set of tools.
-    *   `MultiStepAgent`: Designed to break down complex tasks into smaller steps and execute them sequentially or iteratively.
-*   **Models** (inherited from [smolagents](https://github.com/huggingface/smolagents)): The underlying Language Models (LLMs) that provide the cognitive capabilities for the agents, enabling them to understand tasks, reason, and generate responses or code. The framework integrates with various LLMs via the LiteLLM library, allowing users to select models based on cost, performance, context window size, and specific capabilities.
-*   **Tools:** (inherited from [smolagents](https://github.com/huggingface/smolagents)): Functions or utilities that agents can call to perform actions in the environment. These abstract interactions such as running OS commands, accessing the filesystem, interacting with the internet, or executing code in different programming languages. Tools are fundamental; without them, agents can only generate text; with them, they can *act*. The framework provides many built-in tools, and users can define custom ones.
-*   **Sub-assistants:** Instances of agents are treated as tools and provided to a primary agent (often called "the boss"). This allows a higher-level agent to delegate specific sub-tasks to specialized agents. For example, a main agent tasked with building a project might delegate code generation to a `CoderSubassistant` or research to an `InternetSearchSubassistant`. This enables building complex, modular artificial workforce and leverages the specialized capabilities of different agent configurations.
-*   **Base Tools (`add_base_tools=True/False`)** (inherited from [smolagents](https://github.com/huggingface/smolagents)): A crucial parameter when initializing agents. It controls whether an agent automatically receives a default, standard set of tools provided by the Beyond Python Smolagents framework.
-    *   Setting `add_base_tools=True` equips the agent with a common set of utilities right out of the box. This set typically includes tools for basic file operations (`save_string_to_file`, `load_string_from_file`), web interaction (`VisitWebpageTool`, `DuckDuckGoSearchTool`), and Python execution (`PythonInterpreterTool`), among others. These are added *in addition to* any tools explicitly provided in the `tools` list during initialization. This is useful for creating general-purpose agents.
-    *   Setting `add_base_tools=False` means the agent will *only* have access to the tools explicitly passed to it via the `tools` parameter during initialization. This allows for creating highly minimal or very specifically-purposed agents with a restricted set of actions, which can be beneficial for security or task focus.
-
-### Creating the team
-Beyond Python Smolagents allows you to compose complex working groups by having agents delegate tasks to other specialized agents, referred to as sub-assistants. This modular approach helps manage complexity and leverage agents optimized for specific tasks (e.g., coding, internet search, summarization).
-
-The library provides wrapper classes (Subassistant, CoderSubassistant, InternetSearchSubassistant, Summarize, etc.) that turn an agent instance into a tool that another agent can call.
-
-Here's an example demonstrating how to set up a "boss" agent that can utilize other agents as sub-assistants:
+model = TransformersModel(
+    model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
+    max_new_tokens=4096,
+    device_map="auto"
+)
 ```
-no_tool_agent = ToolCallingAgent(tools=[], model=model, add_base_tools=False)
-tooled_agent = ToolCallingAgent(tools=tools, model=model, add_base_tools=True)
-internet_search_agent = ToolCallingAgent(tools=[save_string_to_file, load_string_from_file], model=model, add_base_tools=True)
+</details>
+<details>
+<summary> <b>Azure models</b></summary>
 
-subassistant = Subassistant(tooled_agent)
-internet_search_subassistant = InternetSearchSubassistant(internet_search_agent)
-coder_subassistant = CoderSubassistant(coder_agent)
-summarize = Summarize(no_tool_agent)
-summarize_url = SummarizeUrl(no_tool_agent)
-summarize_local_file = SummarizeLocalFile(no_tool_agent)
-get_relevant_info_from_file = GetRelevantInfoFromFile(no_tool_agent)
-get_relevant_info_from_url = GetRelevantInfoFromUrl(no_tool_agent)
+```py
+import os
+from smolagents import AzureOpenAIServerModel
 
-tools = [save_string_to_file, load_string_from_file, copy_file, get_file_size,
-  source_code_to_string, string_to_source_code, pascal_interface_to_string,
-  replace_on_file, replace_on_file_with_files,
-  subassistant, coder_subassistant, internet_search_subassistant,
-  summarize, summarize_url, summarize_local_file,
-  get_relevant_info_from_file, get_relevant_info_from_url,
-  run_os_command, run_php_file, compile_and_run_pascal_code,
-  ]
-
-task_str="""Code, test and debug something that will impress me!
-For completing the task, you will first plan for it.
-You will decide what task will be assigned to each of your sub-assistants.
-You will decide the need for researching using internet_search_subassistant before you actually start coding a solution."""
-
-the_boss = CodeAgent(model=coder_model, tools = tools, add_base_tools=True)
-the_boss.run(task_str)
+model = AzureOpenAIServerModel(
+    model_id = os.environ.get("AZURE_OPENAI_MODEL"),
+    azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
+    api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
+    api_version=os.environ.get("OPENAI_API_VERSION")    
+)
 ```
-***
-### 🔥🚨 EXTREME SECURITY RISK 🚨🔥
-***
+</details>
+<details>
+<summary> <b>Amazon Bedrock models</b></summary>
 
-**This implementation grants agents extensive access and control over the environment in which they run.** This level of control is intentionally designed to enable powerful automation and interaction capabilities across different languages and the operating system (including file system access, running arbitrary OS commands, and executing code in various languages).
+```py
+import os
+from smolagents import AmazonBedrockServerModel
 
-**CONSEQUENTLY, USING THIS SOFTWARE IN AN ENVIRONMENT CONTAINING SENSITIVE DATA, PRODUCTION SYSTEMS, OR IMPORTANT PERSONAL INFORMATION IS HIGHLY DANGEROUS AND STRONGLY DISCOURAGED.**
+model = AmazonBedrockServerModel(
+    model_id = os.environ.get("AMAZON_BEDROCK_MODEL_ID") 
+)
+```
+</details>
 
-**YOU MUST ONLY RUN THIS CODE INSIDE A SECURELY ISOLATED ENVIRONMENT** specifically set up for this purpose, such as:
-*   **A dedicated Virtual Machine (VM):** Configure a VM with minimal or no sensitive data, isolated from your main network if possible. Treat anything inside the VM as potentially compromised.
-*   **A locked-down Container (like Docker):** Use containerization to create an isolated filesystem and process space. Ensure no sensitive volumes from your host machine are mounted into the container. Limit network access if possible.
+## CLI
 
-**DO NOT** run this code directly on your primary development machine, production servers, personal computer, or any environment with valuable data or system access you wish to protect.
+You can run agents from CLI using two commands: `smolagent` and `webagent`.
 
-**USE THIS SOFTWARE ENTIRELY AT YOUR OWN RISK! The developers explicitly disclaim responsibility for any damage, data loss, security breaches, or other negative consequences resulting from the use of this software in an insecure or inappropriate environment.** This warning cannot be overstated.
-***
+`smolagent` is a generalist command to run a multi-step `CodeAgent` that can be equipped with various tools.
+
+```bash
+smolagent "Plan a trip to Tokyo, Kyoto and Osaka between Mar 28 and Apr 7."  --model-type "InferenceClientModel" --model-id "Qwen/Qwen2.5-Coder-32B-Instruct" --imports "pandas numpy" --tools "web_search"
+```
+
+Meanwhile `webagent` is a specific web-browsing agent using [helium](https://github.com/mherrmann/helium) (read more [here](https://github.com/huggingface/smolagents/blob/main/src/smolagents/vision_web_browser.py)).
+
+For instance:
+```bash
+webagent "go to xyz.com/men, get to sale section, click the first clothing item you see. Get the product details, and the price, return them. note that I'm shopping from France" --model-type "LiteLLMModel" --model-id "gpt-4o"
+```
+
+## How do Code agents work?
+
+Our [`CodeAgent`](https://huggingface.co/docs/smolagents/reference/agents#smolagents.CodeAgent) works mostly like classical ReAct agents - the exception being that the LLM engine writes its actions as Python code snippets.
+
+```mermaid
+flowchart TB
+    Task[User Task]
+    Memory[agent.memory]
+    Generate[Generate from agent.model]
+    Execute[Execute Code action - Tool calls are written as functions]
+    Answer[Return the argument given to 'final_answer']
+
+    Task -->|Add task to agent.memory| Memory
+
+    subgraph ReAct[ReAct loop]
+        Memory -->|Memory as chat messages| Generate
+        Generate -->|Parse output to extract code action| Execute
+        Execute -->|No call to 'final_answer' tool => Store execution logs in memory and keep running| Memory
+    end
+    
+    Execute -->|Call to 'final_answer' tool| Answer
+
+    %% Styling
+    classDef default fill:#d4b702,stroke:#8b7701,color:#ffffff
+    classDef io fill:#4a5568,stroke:#2d3748,color:#ffffff
+    
+    class Task,Answer io
+```
+
+Actions are now Python code snippets. Hence, tool calls will be performed as Python function calls. For instance, here is how the agent can perform web search over several websites in one single action:
+```py
+requests_to_search = ["gulf of mexico america", "greenland denmark", "tariffs"]
+for request in requests_to_search:
+    print(f"Here are the search results for {request}:", web_search(request))
+```
+
+Writing actions as code snippets is demonstrated to work better than the current industry practice of letting the LLM output a dictionary of the tools it wants to call: [uses 30% fewer steps](https://huggingface.co/papers/2402.01030) (thus 30% fewer LLM calls) and [reaches higher performance on difficult benchmarks](https://huggingface.co/papers/2411.01747). Head to [our high-level intro to agents](https://huggingface.co/docs/smolagents/conceptual_guides/intro_agents) to learn more on that.
+
+Especially, since code execution can be a security concern (arbitrary code execution!), we provide options at runtime:
+  - a secure python interpreter to run code more safely in your environment (more secure than raw code execution but still risky)
+  - a sandboxed environment using [E2B](https://e2b.dev/) or Docker (removes the risk to your own system).
+
+Alongside [`CodeAgent`](https://huggingface.co/docs/smolagents/reference/agents#smolagents.CodeAgent), we also provide the standard [`ToolCallingAgent`](https://huggingface.co/docs/smolagents/reference/agents#smolagents.ToolCallingAgent) which writes actions as JSON/text blobs. You can pick whichever style best suits your use case.
+
+## How smol is this library?
+
+We strived to keep abstractions to a strict minimum: the main code in `agents.py` has <1,000 lines of code.
+Still, we implement several types of agents: `CodeAgent` writes its actions as Python code snippets, and the more classic `ToolCallingAgent` leverages built-in tool calling methods. We also have multi-agent hierarchies, import from tool collections, remote code execution, vision models...
+
+By the way, why use a framework at all? Well, because a big part of this stuff is non-trivial. For instance, the code agent has to keep a consistent format for code throughout its system prompt, its parser, the execution. So our framework handles this complexity for you. But of course we still encourage you to hack into the source code and use only the bits that you need, to the exclusion of everything else!
+
+## How strong are open models for agentic workflows?
+
+We've created [`CodeAgent`](https://huggingface.co/docs/smolagents/reference/agents#smolagents.CodeAgent) instances with some leading models, and compared them on [this benchmark](https://huggingface.co/datasets/m-ric/agents_medium_benchmark_2) that gathers questions from a few different benchmarks to propose a varied blend of challenges.
+
+[Find the benchmarking code here](https://github.com/huggingface/smolagents/blob/main/examples/smolagents_benchmark/run.py) for more detail on the agentic setup used, and see a comparison of using LLMs code agents compared to vanilla (spoilers: code agents works better).
+
+<p align="center">
+    <img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/smolagents/benchmark_code_agents.jpeg" alt="benchmark of different models on agentic workflows. Open model DeepSeek-R1 beats closed-source models." width=60% max-width=500px>
+</p>
+
+This comparison shows that open-source models can now take on the best closed models!
+
+## Security
+
+Security is a critical consideration when working with code-executing agents. Our library provides:
+- Sandboxed execution options using [E2B](https://e2b.dev/), [Modal](https://modal.com/), Docker, or Pyodide+Deno WebAssembly sandbox
+- Best practices for running agent code securely
+
+For security policies, vulnerability reporting, and more information on secure agent execution, please see our [Security Policy](SECURITY.md).
+
+## Contribute
+
+Everyone is welcome to contribute, get started with our [contribution guide](https://github.com/huggingface/smolagents/blob/main/CONTRIBUTING.md).
+
+## Cite smolagents
+
+If you use `smolagents` in your publication, please cite it by using the following BibTeX entry.
+
+```bibtex
+@Misc{smolagents,
+  title =        {`smolagents`: a smol library to build great agentic systems.},
+  author =       {Aymeric Roucher and Albert Villanova del Moral and Thomas Wolf and Leandro von Werra and Erik Kaunismäki},
+  howpublished = {\url{https://github.com/huggingface/smolagents}},
+  year =         {2025}
+}
+```
