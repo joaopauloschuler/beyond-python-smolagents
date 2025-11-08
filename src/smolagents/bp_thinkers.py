@@ -826,9 +826,9 @@ def kb_generator(p_coder_model,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
   log_level = LogLevel.DEBUG,
-  start_coder_model = None,
-  mixer_model = None,
-  secondary_improvement_model = None,
+  p_coder_model2 = None,
+  p_coder_model3 = None,
+  p_coder_model_final = None,
   folder = 'solutions'
   ):
   def get_local_agent(p_local_model = None):
@@ -856,13 +856,13 @@ def kb_generator(p_coder_model,
         add_base_tools = add_base_tools,
         step_callbacks = step_callbacks,
         log_level = log_level,
-        p_coder_model2 = secondary_improvement_model,
-        p_coder_model3 = start_coder_model,
-        p_coder_model_final = mixer_model
+        p_coder_model2 = p_coder_model2,
+        p_coder_model3 = p_coder_model3,
+        p_coder_model_final = p_coder_model_final
         )
-  if start_coder_model is None: start_coder_model = p_coder_model
-  if mixer_model is None: mixer_model = p_coder_model
-  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
+  if p_coder_model2 is None:  p_coder_model2 = p_coder_model
+  if p_coder_model3 is None: p_coder_model3 = p_coder_model
+  if p_coder_model_final is None: p_coder_model_final = p_coder_model
   resume_fileext = fileext+'-resumed'
   os.makedirs(folder, exist_ok=True)
   for i in range(paper_num):
@@ -916,9 +916,9 @@ def kb_updater(p_coder_model,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
   log_level = LogLevel.DEBUG,
-  start_coder_model = None,
-  mixer_model = None,
-  secondary_improvement_model = None,
+  p_coder_model2 = None,
+  p_coder_model3 = None,
+  p_coder_model_final = None,
   folder = 'solutions'
   ):
   def local_fast_solver(local_task, local_file_ext:str = '.md'):
@@ -932,13 +932,13 @@ def kb_updater(p_coder_model,
         add_base_tools = add_base_tools,
         step_callbacks = step_callbacks,
         log_level = log_level,
-        p_coder_model2 = secondary_improvement_model,
-        p_coder_model3 = start_coder_model,
-        p_coder_model_final = mixer_model
+        p_coder_model2 = p_coder_model2,
+        p_coder_model3 = p_coder_model3,
+        p_coder_model_final = p_coder_model_final
         )
-  if start_coder_model is None: start_coder_model = p_coder_model
-  if mixer_model is None: mixer_model = p_coder_model
-  if secondary_improvement_model is None:  secondary_improvement_model = p_coder_model
+  if p_coder_model2 is None:  p_coder_model2 = p_coder_model
+  if p_coder_model3 is None: p_coder_model3 = p_coder_model
+  if p_coder_model_final is None: p_coder_model_final = p_coder_model
   resume_fileext = fileext+'-resumed'
   os.makedirs(folder, exist_ok=True)
   a_files = get_files_in_folder(folder=folder, fileext=fileext)
