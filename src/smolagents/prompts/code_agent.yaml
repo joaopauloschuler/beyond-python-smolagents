@@ -242,7 +242,7 @@ planning:
     ```
     {{task}}
     ```
-  
+
     Below you will find a history of attempts made to solve this task.
     You will first have to produce a survey of known and unknown facts, then propose a step-by-step high-level plan to solve the task.
     If the previous tries so far have met some success, your updated plan can build on these results.
@@ -256,7 +256,7 @@ planning:
     ### 1.2. Facts that we have learned
     ### 1.3. Facts still to look up
     ### 1.4. Facts still to derive
-  
+
     Then write a step-by-step high-level plan to solve the task above.
     ## 2. Plan
     ### 2. 1. ...
