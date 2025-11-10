@@ -8,6 +8,7 @@ import shutil
 DEFAULT_THINKER_STEP_CALLBACKS = []
 DEFAULT_THINKER_MAX_STEPS = 50
 DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
+DEFAULT_THINKER_PLANNING_INTERVAL = None
 
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
@@ -232,7 +233,8 @@ def evolutive_problem_solver(p_coder_model,
   start_coder_model = None,
   mixer_model = None,
   secondary_improvement_model = None,
-  only_bigger_solution = False
+  only_bigger_solution = False,
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -243,8 +245,9 @@ def evolutive_problem_solver(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type
-      ) # , planning_interval=3
+      executor_type=executor_type, 
+      planning_interval=planning_interval
+      )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
     return coder_agent
@@ -485,7 +488,8 @@ def fast_solver(p_coder_model,
   log_level = LogLevel.ERROR,
   p_coder_model2 = None,
   p_coder_model3 = None,
-  p_coder_model_final = None
+  p_coder_model_final = None,
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
   ):
   def get_local_agent(p_local_model=None):
     if p_local_model is None:
@@ -497,7 +501,8 @@ def fast_solver(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type
+      executor_type=executor_type, 
+      planning_interval=planning_interval
       )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
@@ -601,7 +606,8 @@ def evolutive_problem_solver_folder(p_coder_model,
   refine = True,
   start_coder_model = None,
   mixer_model = None,
-  secondary_improvement_model = None
+  secondary_improvement_model = None,
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -612,7 +618,8 @@ def evolutive_problem_solver_folder(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type
+      executor_type=executor_type, 
+      planning_interval=planning_interval
       )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
@@ -965,3 +972,4 @@ Your goal is to improve it, make it better, include better references or make it
   Write in the """+fileext+""" format."""
       outpt_text = local_fast_solver(new_kb_task, fileext)
       shutil.copyfile('final_solution'+fileext, file_name_resume)
+
