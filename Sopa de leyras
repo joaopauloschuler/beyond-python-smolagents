@@ -1,0 +1,84 @@
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np, os
+
+# Load image
+path = "/mnt/data/IMG_6DFE647A-54B5-4A6D-8F28-D0DE5BEBB482.jpeg"
+img = Image.open(path).convert("RGB")
+w,h = img.size
+
+# Resize for detection
+resized = img.copy()
+max_side = 1200
+scale = 1.0
+if max(w,h) > max_side:
+    scale = max_side / max(w,h)
+    resized = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+rw,rh = resized.size
+pix = np.array(resized.convert("L"))
+
+# Find bounding box of puzzle area by looking for lighter rectangle roughly centered
+th = pix.mean() + 10
+mask = pix > th
+ys, xs = np.where(mask)
+minx, maxx = xs.min(), xs.max()
+miny, maxy = ys.min(), ys.max()
+pad = 5
+minx = max(0, minx-pad); miny = max(0, miny-pad)
+maxx = min(rw-1, maxx+pad); maxy = min(rh-1, maxy+pad)
+
+crop = resized.crop((minx, miny, maxx, maxy)).convert("L")
+cw,ch = crop.size
+
+# Assume a 15x15 grid (common). Create evenly spaced centers across crop area.
+N = 15
+row_centers = [int((ch/(N-1))*i) for i in range(N)]
+col_centers = [int((cw/(N-1))*i) for i in range(N)]
+
+# Draw on original image
+out = img.copy()
+draw = ImageDraw.Draw(out, 'RGBA')
+
+def grid_to_pixel(r, c):
+    # r,c are 1-based; clamp to 1..N
+    r = max(1, min(N, r)); c = max(1, min(N, c))
+    cx = minx + col_centers[c-1]
+    cy = miny + row_centers[r-1]
+    # scale back to original coordinates
+    if scale != 1.0:
+        cx = int(cx / scale * (w/ rw))
+        cy = int(cy / scale * (h/ rh))
+    return int(cx), int(cy)
+
+# Words to highlight (from previous list). Some had coords beyond 15; they will be clamped.
+words_coords = {
+    "REPUBLICA": [(8,1),(8,2),(8,3),(8,4),(8,5),(8,6),(8,7),(8,8),(8,9)],
+    "ELECCIONES": [(11,1),(12,2),(13,3),(14,4),(15,5),(16,6),(17,7),(18,8),(19,9),(20,10)],
+    "PODER": [(10,8),(11,8),(12,8),(13,8),(14,8)],
+    "GOBIERNO": [(10,6),(11,7),(12,8),(13,9),(14,10),(15,11),(16,12),(17,13)],
+    "PARTIDOS": [(4,3),(5,4),(6,5),(7,6),(8,7),(9,8),(10,9),(11,10)],
+    "IGUALDAD": [(9,10),(10,11),(11,12),(12,13),(13,14),(14,15),(15,16),(16,17)],
+    "DERECHOS": [(6,3),(7,3),(8,3),(9,3),(10,3),(11,3),(12,3),(13,3)],
+    "VOTO": [(12,7),(12,8),(12,9),(12,10)],
+    "CIUDADANOS": [(9,2),(10,3),(11,4),(12,5),(13,6),(14,7),(15,8),(16,9),(17,10),(18,11)]
+}
+
+# Highlight each word with rectangle around letter centers; use semi-transparent yellow
+for word, coords in words_coords.items():
+    pixels = [grid_to_pixel(r,c) for (r,c) in coords]
+    xs = [p[0] for p in pixels]; ys = [p[1] for p in pixels]
+    minx_p, maxx_p = min(xs)-22, max(xs)+22
+    miny_p, maxy_p = min(ys)-22, max(ys)+22
+    draw.rectangle([minx_p, miny_p, maxx_p, maxy_p], fill=(255,255,0,120), outline=(200,150,0,220), width=4)
+    # label
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 28)
+    except:
+        font = ImageFont.load_default()
+    # place label above rectangle if possible
+    label_pos = (minx_p, max(miny_p-30, 5))
+    draw.text(label_pos, word, fill=(0,0,0), font=font)
+
+# Save result
+out_path = "/mnt/data/marked_puzzle_fixed.png"
+out.save(out_path)
+out_path
