@@ -607,7 +607,8 @@ def evolutive_problem_solver_folder(p_coder_model,
   start_coder_model = None,
   mixer_model = None,
   secondary_improvement_model = None,
-  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
+  load_full_source = True
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -686,6 +687,18 @@ with any advice that you would like to give to yourself to a future version of y
       remove_files('*.c')
       remove_files('*.pas')
       print('Evolutive problem solver is starting:', i)
+      if load_full_source:
+        solutions_string = """
+<solution1>"""+source_code_to_string('solution1/')+"""</solution1>
+<solution2>"""+source_code_to_string('solution2/')+"""</solution2>
+<solution3>"""+source_code_to_string('solution3/')+"""</solution3>
+"""
+      else:
+        solutions_string = """
+<solution1>"""+list_directory_tree('solution1/')+"""</solution1>
+<solution2>"""+list_directory_tree('solution2/')+"""</solution2>
+<solution3>"""+list_directory_tree('solution3/')+"""</solution3>
+"""
       task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
 Please explain the advantages and disvantages of each solution.
@@ -703,10 +716,7 @@ The contents of these folders are given in the tags:
 <solution2></solution2>
 <solution3></solution3>
 
-This is the contents:
-<solution1>"""+source_code_to_string('solution1/')+"""</solution1>
-<solution2>"""+source_code_to_string('solution2/')+"""</solution2>
-<solution3>"""+source_code_to_string('solution3/')+"""</solution3>
+This is the contents:"""+solutions_string+"""
 
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 
