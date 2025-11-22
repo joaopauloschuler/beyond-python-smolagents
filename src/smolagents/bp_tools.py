@@ -1495,7 +1495,7 @@ def create_filename(topic:str, extension:str=".md") -> str:
     return filename + extension
 
 @tool
-def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool = True) -> str:
+def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool = True, add_function_signatures: bool = False) -> str:
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.
@@ -1514,6 +1514,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
         folder_path: str The root folder path to visualize
         max_depth: int Maximum depth to traverse (default 3)
         show_files: bool Whether to show files or only directories (default True)
+        add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
     
     Returns:
         str: A string representation of the directory tree
@@ -1523,6 +1524,26 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
 
     lines = []
     total_lines = 0
+
+    # Helper function to detect language from file extension
+    def detect_language(filename):
+        """Detect programming language from file extension"""
+        ext = os.path.splitext(filename)[1].lower()
+        language_map = {
+            '.py': 'python',
+            '.js': 'javascript',
+            '.jsx': 'javascript',
+            '.ts': 'typescript',
+            '.tsx': 'typescript',
+            '.java': 'java',
+            '.php': 'php',
+            '.pas': 'pascal',
+            '.pp': 'pascal',
+            '.lpr': 'pascal',
+            '.dpr': 'pascal',
+            '.inc': 'pascal',
+        }
+        return language_map.get(ext, 'generic')
 
     def add_tree_lines(current_path, prefix="", depth=0):
         nonlocal total_lines
@@ -1565,6 +1586,25 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
                         pass
 
             lines.append(f"{prefix}{connector}{item}{'/' if os.path.isdir(item_path) else ''}{line_count_str}")
+
+            # Extract and display function signatures if requested
+            if add_function_signatures and os.path.isfile(item_path):
+                _, ext = os.path.splitext(item)
+                if ext.lower() in DEFAULT_SOURCE_CODE_EXTENSIONS:
+                    language = detect_language(item)
+                    try:
+                        signatures = extract_function_signatures(item_path, language)
+                        # Only display if signatures were found and don't contain error messages
+                        if signatures and not signatures.startswith("Error:") and not signatures.startswith("No function"):
+                            # Indent the signatures to align with the tree structure
+                            extension = "    " if is_last else "│   "
+                            sig_prefix = prefix + extension
+                            for sig in signatures.split('\n'):
+                                if sig.strip():  # Only add non-empty signature lines
+                                    lines.append(f"{sig_prefix}    {sig.strip()}")
+                    except Exception:
+                        # Silently skip files that cause errors during signature extraction
+                        pass
 
             # Recurse into subdirectories
             if os.path.isdir(item_path):
