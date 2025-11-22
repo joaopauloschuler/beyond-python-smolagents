@@ -1775,7 +1775,7 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     Extracts function and class signatures from a source code file without loading
     the full implementation. This helps understand code structure efficiently.
     
-    Currently supports: python, javascript, java, php
+    Currently supports: python, javascript, java, php, pascal, and generic fallback for most languages
     
     Args:
         filename: str The source code file path
@@ -1794,10 +1794,10 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         return f"Error reading file: {e}"
     
     signatures = []
+    import re
     
     if language.lower() == "python":
         # Match Python function and class definitions
-        import re
         # Match def function_name(...): and class ClassName(...):
         pattern = r'^([ \t]*)(def|class)\s+(\w+)\s*(\([^)]*\))?\s*:'
         for match in re.finditer(pattern, content, re.MULTILINE):
@@ -1809,7 +1809,6 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     
     elif language.lower() in ["javascript", "js", "typescript", "ts"]:
         # Match JavaScript/TypeScript function declarations
-        import re
         # function name(...), async function name(...), name(...) {, const name = (...) =>
         patterns = [
             r'^([ \t]*)(async\s+)?function\s+(\w+)\s*(\([^)]*\))',
@@ -1822,20 +1821,56 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     
     elif language.lower() == "java":
         # Match Java method declarations
-        import re
         pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
         for match in re.finditer(pattern, content, re.MULTILINE):
             signatures.append(match.group(0).strip())
     
     elif language.lower() == "php":
-        # Match PHP function declarations
-        import re
-        pattern = r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
-        for match in re.finditer(pattern, content, re.MULTILINE):
-            signatures.append(match.group(0).strip())
+        # Match PHP function and method declarations (including object-oriented features)
+        # Matches: function name(...), class ClassName, public/private/protected function name(...)
+        patterns = [
+            r'^([ \t]*)class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?',
+            r'^([ \t]*)(public|private|protected)\s+(static\s+)?function\s+(\w+)\s*(\([^)]*\))',
+            r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
+    
+    elif language.lower() in ["pascal", "objectpascal", "delphi"]:
+        # Match Pascal/Object Pascal function, procedure, and class declarations
+        # Handles: function Name(...): Type; procedure Name(...); class TClassName
+        patterns = [
+            r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
+            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*class(?:\s*\([^)]*\))?',
+            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
     
     else:
-        return f"Error: Language '{language}' not supported. Supported: python, javascript, java, php"
+        # Generic fallback for unsupported languages using "function" and "procedure" keywords
+        # This will work for many programming languages that use these keywords
+        patterns = [
+            r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?',
+            r'^([ \t]*)(?:public|private|protected)?\s*(function|procedure)\s+(\w+)\s*(\([^)]*\))?'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
     
     if not signatures:
         return f"No function/class signatures found in '{filename}'"

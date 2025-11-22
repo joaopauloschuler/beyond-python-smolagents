@@ -355,13 +355,143 @@ class MyClass:
         assert "class MyClass" in result
         assert "def method1(self):" in result
     
-    def test_unsupported_language(self, tmp_path):
-        """Test unsupported language"""
-        file_path = tmp_path / "test.txt"
-        file_path.write_text("content")
+    def test_php_object_oriented(self, tmp_path):
+        """Test extracting PHP object-oriented signatures"""
+        file_path = tmp_path / "test.php"
+        file_path.write_text("""<?php
+class MyClass {
+    public function publicMethod($param1) {
+        return $param1;
+    }
+    
+    private function privateMethod() {
+        return true;
+    }
+    
+    protected static function staticMethod($a, $b) {
+        return $a + $b;
+    }
+}
+
+function standalone_function($param) {
+    return $param;
+}
+?>""")
         
-        result = extract_function_signatures(str(file_path), "cobol")
-        assert "not supported" in result
+        result = extract_function_signatures(str(file_path), "php")
+        
+        assert "class MyClass" in result
+        assert "public function publicMethod($param1)" in result
+        assert "private function privateMethod()" in result
+        assert "protected static function staticMethod($a, $b)" in result
+        assert "function standalone_function($param)" in result
+    
+    def test_pascal_functions(self, tmp_path):
+        """Test extracting Pascal/Object Pascal function signatures"""
+        file_path = tmp_path / "test.pas"
+        file_path.write_text("""program TestProgram;
+
+type
+  TMyClass = class
+  private
+    FValue: Integer;
+  public
+    constructor Create;
+    destructor Destroy;
+    function GetValue: Integer;
+    procedure SetValue(AValue: Integer);
+  end;
+
+function CalculateSum(A, B: Integer): Integer;
+begin
+  Result := A + B;
+end;
+
+procedure PrintMessage(Msg: string);
+begin
+  WriteLn(Msg);
+end;
+
+constructor TMyClass.Create;
+begin
+  inherited;
+  FValue := 0;
+end;
+
+destructor TMyClass.Destroy;
+begin
+  inherited;
+end;
+
+function TMyClass.GetValue: Integer;
+begin
+  Result := FValue;
+end;
+
+procedure TMyClass.SetValue(AValue: Integer);
+begin
+  FValue := AValue;
+end;
+
+begin
+  PrintMessage('Hello, World!');
+end.
+""")
+        
+        result = extract_function_signatures(str(file_path), "pascal")
+        
+        assert "TMyClass = class" in result.lower() or "tmyclass = class" in result.lower()
+        assert "function CalculateSum" in result or "function calculatesum" in result
+        assert "procedure PrintMessage" in result or "procedure printmessage" in result
+        assert "constructor Create" in result or "constructor create" in result
+        assert "destructor Destroy" in result or "destructor destroy" in result
+    
+    def test_generic_fallback_with_function_keyword(self, tmp_path):
+        """Test generic fallback for unsupported languages using 'function' keyword"""
+        file_path = tmp_path / "test.lua"
+        file_path.write_text("""
+function myFunction(param1, param2)
+    return param1 + param2
+end
+
+function anotherFunction()
+    print("Hello")
+end
+""")
+        
+        result = extract_function_signatures(str(file_path), "lua")
+        
+        assert "function myFunction(param1, param2)" in result
+        assert "function anotherFunction()" in result
+    
+    def test_generic_fallback_with_procedure_keyword(self, tmp_path):
+        """Test generic fallback for unsupported languages using 'procedure' keyword"""
+        file_path = tmp_path / "test.ada"
+        file_path.write_text("""
+procedure MyProcedure (Param1 : Integer) is
+begin
+    null;
+end MyProcedure;
+
+function MyFunction (A, B : Integer) return Integer is
+begin
+    return A + B;
+end MyFunction;
+""")
+        
+        result = extract_function_signatures(str(file_path), "ada")
+        
+        assert "procedure MyProcedure" in result
+        assert "function MyFunction" in result
+    
+    def test_no_signatures_found(self, tmp_path):
+        """Test when no signatures are found"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("Just some plain text with no code")
+        
+        result = extract_function_signatures(str(file_path), "python")
+        
+        assert "No function/class signatures found" in result
     
     def test_nonexistent_file(self):
         """Test nonexistent file"""
