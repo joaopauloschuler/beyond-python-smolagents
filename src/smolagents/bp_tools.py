@@ -1495,7 +1495,7 @@ def create_filename(topic:str, extension:str=".md") -> str:
     return filename + extension
 
 @tool
-def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool = True, add_function_signatures: bool = False) -> str:
+def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False) -> str:
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.

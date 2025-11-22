@@ -608,7 +608,7 @@ def evolutive_problem_solver_folder(p_coder_model,
   mixer_model = None,
   secondary_improvement_model = None,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
-  load_full_source = True
+  load_full_source = False
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
