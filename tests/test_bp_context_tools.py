@@ -138,6 +138,143 @@ class TestListDirectoryTree:
         assert "single.py (1 line)" in result
         assert "single.py (1 lines)" not in result
 
+    def test_function_signatures_disabled_by_default(self, tmp_path):
+        """Test that function signatures are not shown by default"""
+        # Create a Python file with functions
+        (tmp_path / "test.py").write_text("""
+def function1():
+    pass
+
+def function2(arg):
+    return arg
+""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+
+        assert "test.py" in result
+        # Should not contain function signatures when add_function_signatures is False (default)
+        assert "def function1" not in result
+        assert "def function2" not in result
+
+    def test_function_signatures_python(self, tmp_path):
+        """Test extracting Python function signatures in directory tree"""
+        # Create Python files with functions
+        (tmp_path / "module.py").write_text("""
+def hello_world():
+    print("Hello")
+
+class MyClass:
+    def method1(self, arg):
+        pass
+    
+    def method2(self):
+        return True
+""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
+
+        assert "module.py" in result
+        assert "def hello_world():" in result
+        assert "class MyClass" in result
+        assert "def method1(self, arg):" in result
+        assert "def method2(self):" in result
+
+    def test_function_signatures_multiple_languages(self, tmp_path):
+        """Test extracting function signatures from multiple languages"""
+        # Create Python file
+        (tmp_path / "script.py").write_text("""
+def calculate(a, b):
+    return a + b
+""")
+
+        # Create JavaScript file
+        (tmp_path / "script.js").write_text("""
+function myFunction(param1, param2) {
+    return param1 + param2;
+}
+""")
+
+        # Create PHP file
+        (tmp_path / "script.php").write_text("""<?php
+class MyClass {
+    public function publicMethod($param) {
+        return $param;
+    }
+}
+?>""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
+
+        # Check Python signatures
+        assert "script.py" in result
+        assert "def calculate(a, b):" in result
+        
+        # Check JavaScript signatures
+        assert "script.js" in result
+        assert "function myFunction(param1, param2)" in result
+        
+        # Check PHP signatures
+        assert "script.php" in result
+        assert "class MyClass" in result
+        assert "public function publicMethod($param)" in result
+
+    def test_function_signatures_nested_directories(self, tmp_path):
+        """Test extracting function signatures in nested directories"""
+        # Create nested structure
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("""
+def main():
+    print("Main function")
+""")
+        
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_main.py").write_text("""
+def test_something():
+    assert True
+""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=2, show_files=True, add_function_signatures=True)
+
+        assert "main.py" in result
+        assert "def main():" in result
+        assert "test_main.py" in result
+        assert "def test_something():" in result
+
+    def test_function_signatures_no_signatures_found(self, tmp_path):
+        """Test handling files with no function signatures"""
+        # Create a text file with no code
+        (tmp_path / "readme.md").write_text("""
+# README
+This is a readme file with no code.
+""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
+
+        assert "readme.md" in result
+        # Should not add error messages or "No function" messages to the tree
+        assert "No function" not in result
+        assert "Error:" not in result
+
+    def test_function_signatures_with_non_source_files(self, tmp_path):
+        """Test that non-source files don't attempt signature extraction"""
+        # Create a binary file
+        (tmp_path / "data.bin").write_bytes(b'\x00\x01\x02\x03')
+        
+        # Create a Python file
+        (tmp_path / "script.py").write_text("""
+def my_function():
+    pass
+""")
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
+
+        # Binary file should be shown but no signatures attempted
+        assert "data.bin" in result
+        
+        # Python file should show signatures
+        assert "script.py" in result
+        assert "def my_function():" in result
+
 
 class TestSearchInFiles:
     def test_basic_search(self, tmp_path):
