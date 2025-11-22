@@ -100,7 +100,9 @@ class TestListDirectoryTree:
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
         
         assert "image.png" in result
-        assert "lines" not in result.lower() or "Total source code lines:" not in result
+        assert " line)" not in result
+        assert " lines)" not in result
+        assert "Total source code lines:" not in result
     
     def test_line_count_in_nested_directories(self, tmp_path):
         """Test that line counts work in nested directories"""
