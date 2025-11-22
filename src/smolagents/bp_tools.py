@@ -15,6 +15,26 @@ If you need to ask for more details, when asking for more details, you should se
 Setting restart_chat to False is particularly useful when this sub assistant replies to you “I have completed the task” without providing any further information. In this case, you can ask for the missing details with “restart_chat to False”.
 """
 
+DEFAULT_SOURCE_CODE_EXTENSIONS:tuple = (
+        '.ada',
+        '.asm', '.s',
+        '.c', '.cc', '.cs', '.cpp', '.h', '.hpp', '.go', '.rs', '.swift',
+        '.cob', '.cbl',
+        '.dart', '.lua',
+        '.f', '.f90',
+        '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
+        '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
+        '.java', '.kt', '.kts', '.scala',
+        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
+        '.php', 
+        '.py', '.ipynb',
+        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
+        '.r', '.R', '.m', '.sql',
+        '.txt', '.csv', '.md',
+        '.toml', '.ini', '.cfg',
+        '.xml', '.json', '.yml', '.yaml',
+    )
+
 @tool
 def save_string_to_file(content: str, filename: str) -> bool:
     """
@@ -709,25 +729,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 
 @tool
 def source_code_to_string(folder_name: str, 
-    allowed_extensions: tuple = (
-        '.ada',
-        '.asm', '.s',
-        '.c', '.cc', '.cs', '.cpp', '.h', '.hpp', '.go', '.rs', '.swift',
-        '.cob', '.cbl',
-        '.dart', '.lua',
-        '.f', '.f90',
-        '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
-        '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
-        '.java', '.kt', '.kts', '.scala',
-        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
-        '.php', 
-        '.py', '.ipynb',
-        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
-        '.r', '.R', '.m', '.sql',
-        '.txt', '.csv', '.md',
-        '.toml', '.ini', '.cfg',
-        '.xml', '.json', '.yml', '.yaml',
-    ),
+    allowed_extensions: tuple = DEFAULT_SOURCE_CODE_EXTENSIONS,
     remove_pascal_comments: bool = False,
     exclude_list: tuple = ('excluded_folder','excluded_file.pas')) -> str:
     """
