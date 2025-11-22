@@ -695,9 +695,9 @@ with any advice that you would like to give to yourself to a future version of y
 """
       else:
         solutions_string = """
-<solution1>"""+list_directory_tree('solution1/')+"""</solution1>
-<solution2>"""+list_directory_tree('solution2/')+"""</solution2>
-<solution3>"""+list_directory_tree('solution3/')+"""</solution3>
+<solution1>"""+list_directory_tree('solution1/', add_function_signatures=True)+"""</solution1>
+<solution2>"""+list_directory_tree('solution2/', add_function_signatures=True)+"""</solution2>
+<solution3>"""+list_directory_tree('solution3/', add_function_signatures=True)+"""</solution3>
 """
       task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
