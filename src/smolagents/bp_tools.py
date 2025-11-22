@@ -1557,7 +1557,8 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
                 if ext.lower() in DEFAULT_SOURCE_CODE_EXTENSIONS:
                     try:
                         num_lines = get_file_lines(item_path)
-                        line_count_str = f" ({num_lines} lines)"
+                        line_word = "line" if num_lines == 1 else "lines"
+                        line_count_str = f" ({num_lines} {line_word})"
                         total_lines += num_lines
                     except Exception:
                         # If we can't read the file, just skip the line count

@@ -87,7 +87,7 @@ class TestListDirectoryTree:
         
         assert "script.py (2 lines)" in result
         assert "styles.css (3 lines)" in result
-        assert "config.json (1 lines)" in result
+        assert "config.json (1 line)" in result
         assert "readme.md (4 lines)" in result
         assert "Total source code lines: 10" in result
     
@@ -125,6 +125,16 @@ class TestListDirectoryTree:
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
         
         assert "Total source code lines:" not in result
+    
+    def test_singular_line_count(self, tmp_path):
+        """Test that single line uses 'line' not 'lines'"""
+        # Create a file with exactly 1 line
+        (tmp_path / "single.py").write_text("single line\n")
+        
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+        
+        assert "single.py (1 line)" in result
+        assert "single.py (1 lines)" not in result
 
 
 class TestSearchInFiles:
