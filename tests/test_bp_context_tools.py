@@ -141,13 +141,13 @@ class TestListDirectoryTree:
     def test_function_signatures_disabled_by_default(self, tmp_path):
         """Test that function signatures are not shown by default"""
         # Create a Python file with functions
-        (tmp_path / "test.py").write_text("""
-def function1():
-    pass
-
-def function2(arg):
-    return arg
-""")
+        (tmp_path / "test.py").write_text(
+            "def function1():\n"
+            "    pass\n"
+            "\n"
+            "def function2(arg):\n"
+            "    return arg\n"
+        )
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
 
@@ -159,17 +159,17 @@ def function2(arg):
     def test_function_signatures_python(self, tmp_path):
         """Test extracting Python function signatures in directory tree"""
         # Create Python files with functions
-        (tmp_path / "module.py").write_text("""
-def hello_world():
-    print("Hello")
-
-class MyClass:
-    def method1(self, arg):
-        pass
-    
-    def method2(self):
-        return True
-""")
+        (tmp_path / "module.py").write_text(
+            "def hello_world():\n"
+            '    print("Hello")\n'
+            "\n"
+            "class MyClass:\n"
+            "    def method1(self, arg):\n"
+            "        pass\n"
+            "\n"
+            "    def method2(self):\n"
+            "        return True\n"
+        )
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
 
@@ -182,26 +182,27 @@ class MyClass:
     def test_function_signatures_multiple_languages(self, tmp_path):
         """Test extracting function signatures from multiple languages"""
         # Create Python file
-        (tmp_path / "script.py").write_text("""
-def calculate(a, b):
-    return a + b
-""")
+        (tmp_path / "script.py").write_text(
+            "def calculate(a, b):\n" "    return a + b\n"
+        )
 
         # Create JavaScript file
-        (tmp_path / "script.js").write_text("""
-function myFunction(param1, param2) {
-    return param1 + param2;
-}
-""")
+        (tmp_path / "script.js").write_text(
+            "function myFunction(param1, param2) {\n"
+            "    return param1 + param2;\n"
+            "}\n"
+        )
 
         # Create PHP file
-        (tmp_path / "script.php").write_text("""<?php
-class MyClass {
-    public function publicMethod($param) {
-        return $param;
-    }
-}
-?>""")
+        (tmp_path / "script.php").write_text(
+            "<?php\n"
+            "class MyClass {\n"
+            "    public function publicMethod($param) {\n"
+            "        return $param;\n"
+            "    }\n"
+            "}\n"
+            "?>"
+        )
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
 
@@ -222,16 +223,14 @@ class MyClass {
         """Test extracting function signatures in nested directories"""
         # Create nested structure
         (tmp_path / "src").mkdir()
-        (tmp_path / "src" / "main.py").write_text("""
-def main():
-    print("Main function")
-""")
+        (tmp_path / "src" / "main.py").write_text(
+            "def main():\n" '    print("Main function")\n'
+        )
 
         (tmp_path / "tests").mkdir()
-        (tmp_path / "tests" / "test_main.py").write_text("""
-def test_something():
-    assert True
-""")
+        (tmp_path / "tests" / "test_main.py").write_text(
+            "def test_something():\n" "    assert True\n"
+        )
 
         result = list_directory_tree(str(tmp_path), max_depth=2, show_files=True, add_function_signatures=True)
 
@@ -243,10 +242,9 @@ def test_something():
     def test_function_signatures_no_signatures_found(self, tmp_path):
         """Test handling files with no function signatures"""
         # Create a text file with no code
-        (tmp_path / "readme.md").write_text("""
-# README
-This is a readme file with no code.
-""")
+        (tmp_path / "readme.md").write_text(
+            "# README\n" "This is a readme file with no code.\n"
+        )
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
 
@@ -261,10 +259,7 @@ This is a readme file with no code.
         (tmp_path / "data.bin").write_bytes(b"\x00\x01\x02\x03")
 
         # Create a Python file
-        (tmp_path / "script.py").write_text("""
-def my_function():
-    pass
-""")
+        (tmp_path / "script.py").write_text("def my_function():\n" "    pass\n")
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
 

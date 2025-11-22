@@ -1743,6 +1743,7 @@ def list_directory_tree(
                     try:
                         signatures = extract_function_signatures(item_path, language)
                         # Only display if signatures were found and don't contain error messages
+                        # Check if the result contains actual signatures (not error or empty messages)
                         if (
                             signatures
                             and not signatures.startswith("Error:")
@@ -1754,7 +1755,12 @@ def list_directory_tree(
                             for sig in signatures.split("\n"):
                                 if sig.strip():  # Only add non-empty signature lines
                                     lines.append(f"{sig_prefix}    {sig.strip()}")
-                    except Exception:
+                    except (
+                        UnicodeDecodeError,
+                        PermissionError,
+                        OSError,
+                        IOError,
+                    ):
                         # Silently skip files that cause errors during signature extraction
                         pass
 
