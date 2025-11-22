@@ -10,7 +10,7 @@ import pytest
 
 
 # Add the source directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from smolagents.bp_tools import (
     compare_files,
@@ -94,8 +94,8 @@ class TestListDirectoryTree:
     def test_no_line_count_for_non_source_files(self, tmp_path):
         """Test that non-source files don't show line counts"""
         # Create non-source files
-        (tmp_path / "image.png").write_bytes(b'\x89PNG\r\n\x1a\n')
-        (tmp_path / "data.bin").write_bytes(b'\x00\x01\x02\x03')
+        (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (tmp_path / "data.bin").write_bytes(b"\x00\x01\x02\x03")
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
 
@@ -121,7 +121,7 @@ class TestListDirectoryTree:
     def test_no_total_when_no_source_files(self, tmp_path):
         """Test that total is not shown when there are no source files"""
         # Create only non-source files
-        (tmp_path / "image.png").write_bytes(b'\x89PNG\r\n\x1a\n')
+        (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (tmp_path / "dir1").mkdir()
 
         result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
@@ -208,11 +208,11 @@ class MyClass {
         # Check Python signatures
         assert "script.py" in result
         assert "def calculate(a, b):" in result
-        
+
         # Check JavaScript signatures
         assert "script.js" in result
         assert "function myFunction(param1, param2)" in result
-        
+
         # Check PHP signatures
         assert "script.php" in result
         assert "class MyClass" in result
@@ -226,7 +226,7 @@ class MyClass {
 def main():
     print("Main function")
 """)
-        
+
         (tmp_path / "tests").mkdir()
         (tmp_path / "tests" / "test_main.py").write_text("""
 def test_something():
@@ -258,8 +258,8 @@ This is a readme file with no code.
     def test_function_signatures_with_non_source_files(self, tmp_path):
         """Test that non-source files don't attempt signature extraction"""
         # Create a binary file
-        (tmp_path / "data.bin").write_bytes(b'\x00\x01\x02\x03')
-        
+        (tmp_path / "data.bin").write_bytes(b"\x00\x01\x02\x03")
+
         # Create a Python file
         (tmp_path / "script.py").write_text("""
 def my_function():
@@ -270,7 +270,7 @@ def my_function():
 
         # Binary file should be shown but no signatures attempted
         assert "data.bin" in result
-        
+
         # Python file should show signatures
         assert "script.py" in result
         assert "def my_function():" in result
@@ -282,7 +282,7 @@ class TestSearchInFiles:
         file1 = tmp_path / "test1.py"
         file1.write_text("def my_function():\n    pass\n")
 
-        result = search_in_files(str(tmp_path), "def my_function", file_extensions=('.py',))
+        result = search_in_files(str(tmp_path), "def my_function", file_extensions=(".py",))
 
         assert "test1.py" in result
         assert "def my_function" in result
@@ -305,7 +305,7 @@ class TestSearchInFiles:
         (tmp_path / "test.py").write_text("python code")
         (tmp_path / "test.js").write_text("javascript code")
 
-        result = search_in_files(str(tmp_path), "code", file_extensions=('.py',))
+        result = search_in_files(str(tmp_path), "code", file_extensions=(".py",))
         assert "test.py" in result
         assert "test.js" not in result
 
@@ -361,11 +361,11 @@ class TestGetFileInfo:
 
         info = get_file_info(str(file_path))
 
-        assert info['exists'] == True
-        assert info['is_file'] == True
-        assert info['is_dir'] == False
-        assert info['size_bytes'] == 12  # "test content" is 12 bytes
-        assert info['readable'] == True
+        assert info["exists"] == True
+        assert info["is_file"] == True
+        assert info["is_dir"] == False
+        assert info["size_bytes"] == 12  # "test content" is 12 bytes
+        assert info["readable"] == True
 
     def test_directory(self, tmp_path):
         """Test getting info for directory"""
@@ -374,17 +374,17 @@ class TestGetFileInfo:
 
         info = get_file_info(str(dir_path))
 
-        assert info['exists'] == True
-        assert info['is_file'] == False
-        assert info['is_dir'] == True
+        assert info["exists"] == True
+        assert info["is_file"] == False
+        assert info["is_dir"] == True
 
     def test_nonexistent_path(self):
         """Test getting info for nonexistent path"""
         info = get_file_info("/nonexistent/path")
 
-        assert info['exists'] == False
-        assert info['is_file'] == False
-        assert info['is_dir'] == False
+        assert info["exists"] == False
+        assert info["is_file"] == False
+        assert info["is_dir"] == False
 
 
 class TestListDirectory:
@@ -723,24 +723,24 @@ class TestCountLinesOfCode:
         (tmp_path / "test.py").write_text("line1\nline2\nline3\n")
         (tmp_path / "test.js").write_text("line1\nline2\n")
 
-        result = count_lines_of_code(str(tmp_path), file_extensions=('.py', '.js'))
+        result = count_lines_of_code(str(tmp_path), file_extensions=(".py", ".js"))
 
-        assert result['.py'] == 3
-        assert result['.js'] == 2
-        assert result['_total'] == 5
+        assert result[".py"] == 3
+        assert result[".js"] == 2
+        assert result["_total"] == 5
 
     def test_empty_directory(self, tmp_path):
         """Test counting in empty directory"""
         result = count_lines_of_code(str(tmp_path))
 
-        assert result['_total'] == 0
+        assert result["_total"] == 0
 
     def test_invalid_directory(self):
         """Test counting in nonexistent directory"""
         result = count_lines_of_code("/nonexistent/path")
 
-        assert 'error' in result
+        assert "error" in result
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

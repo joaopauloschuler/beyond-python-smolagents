@@ -1,12 +1,15 @@
 # beyond python tools
 
-from .tools import tool, Tool
-from .default_tools import VisitWebpageTool
 import os
-import subprocess
-import shlex
 import re
+import shlex
+import subprocess
+
 from slugify import slugify
+
+from .default_tools import VisitWebpageTool
+from .tools import Tool, tool
+
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -15,25 +18,79 @@ If you need to ask for more details, when asking for more details, you should se
 Setting restart_chat to False is particularly useful when this sub assistant replies to you “I have completed the task” without providing any further information. In this case, you can ask for the missing details with “restart_chat to False”.
 """
 
-DEFAULT_SOURCE_CODE_EXTENSIONS:tuple = (
-        '.ada',
-        '.asm', '.s',
-        '.c', '.cc', '.cs', '.cpp', '.h', '.hpp', '.go', '.rs', '.swift',
-        '.cob', '.cbl',
-        '.dart', '.lua',
-        '.f', '.f90',
-        '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
-        '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
-        '.java', '.kt', '.kts', '.scala',
-        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
-        '.php', 
-        '.py', '.ipynb',
-        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
-        '.r', '.R', '.m', '.sql',
-        '.txt', '.csv', '.md',
-        '.toml', '.ini', '.cfg',
-        '.xml', '.json', '.yml', '.yaml',
-    )
+DEFAULT_SOURCE_CODE_EXTENSIONS: tuple = (
+    ".ada",
+    ".asm",
+    ".s",
+    ".c",
+    ".cc",
+    ".cs",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".go",
+    ".rs",
+    ".swift",
+    ".cob",
+    ".cbl",
+    ".dart",
+    ".lua",
+    ".f",
+    ".f90",
+    ".hs",
+    ".ml",
+    ".mli",
+    ".fs",
+    ".fsx",
+    ".clj",
+    ".cljs",
+    ".scm",
+    ".lisp",
+    ".html",
+    ".htm",
+    ".js",
+    ".css",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".java",
+    ".kt",
+    ".kts",
+    ".scala",
+    ".pas",
+    ".inc",
+    ".pp",
+    ".lpr",
+    ".dpr",
+    ".lfm",
+    ".dfm",
+    ".php",
+    ".py",
+    ".ipynb",
+    ".rb",
+    ".pl",
+    ".pm",
+    ".sh",
+    ".bash",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".r",
+    ".R",
+    ".m",
+    ".sql",
+    ".txt",
+    ".csv",
+    ".md",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".xml",
+    ".json",
+    ".yml",
+    ".yaml",
+)
+
 
 @tool
 def save_string_to_file(content: str, filename: str) -> bool:
@@ -44,8 +101,9 @@ def save_string_to_file(content: str, filename: str) -> bool:
       filename: str
     """
     with open(filename, "w") as text_file:
-      text_file.write(content)
+        text_file.write(content)
     return True
+
 
 @tool
 def append_string_to_file(content: str, filename: str) -> bool:
@@ -56,43 +114,45 @@ def append_string_to_file(content: str, filename: str) -> bool:
       filename: str
     """
     with open(filename, "a") as text_file:
-      text_file.write(content)
+        text_file.write(content)
     return True
+
 
 @tool
 def load_string_from_file(filename: str) -> str:
     """
-Loads the content from the specified file.
-For saving and printing a file, just enclose your text into the <savetofile></savetofile>:
-<example>
-<savetofile filename="another_file.csv">
-header1,header2
-value1,value2
-value3,value4
-</savetofile>
-<runcode>
-# print the content of another_file.csv
-print(load_string_from_file(filename="another_file.csv"))
-</runcode>
-</example>
+    Loads the content from the specified file.
+    For saving and printing a file, just enclose your text into the <savetofile></savetofile>:
+    <example>
+    <savetofile filename="another_file.csv">
+    header1,header2
+    value1,value2
+    value3,value4
+    </savetofile>
+    <runcode>
+    # print the content of another_file.csv
+    print(load_string_from_file(filename="another_file.csv"))
+    </runcode>
+    </example>
 
-    Args:
-      filename: str
+        Args:
+          filename: str
     """
-    content = ''
+    content = ""
     if os.path.isfile(filename):
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
+            with open(filename, "r", encoding="utf-8") as f:
                 content = f.read()
         except UnicodeDecodeError:
             try:
                 # Try a different common encoding if utf-8 fails
-                with open(filename, 'r', encoding='latin-1') as f:
+                with open(filename, "r", encoding="latin-1") as f:
                     content = f.read()
             except Exception as e:
                 # If both common encodings fail, report the error
                 raise ValueError(f"Could not read file {filename} due to encoding issues or other errors: {e}")
     return content
+
 
 @tool
 def copy_file(source_filename: str, dest_filename: str) -> bool:
@@ -104,6 +164,7 @@ def copy_file(source_filename: str, dest_filename: str) -> bool:
     """
     save_string_to_file(load_string_from_file(source_filename), dest_filename)
     return True
+
 
 @tool
 def replace_on_file(filename: str, old_value: str, new_value: str) -> str:
@@ -126,43 +187,44 @@ def replace_on_file(filename: str, old_value: str, new_value: str) -> str:
     save_string_to_file(new_code, filename)
     return new_code
 
+
 @tool
 def replace_on_file_with_files(filename: str, file_with_old_value: str, file_with_new_value: str) -> str:
     """
-    Replace the content from the file_with_old_value with the content from the file_with_new_value in the filename.
-    This function is useful for fixing source code directly on the file specified by filename.
-    It returns the updated file.
+        Replace the content from the file_with_old_value with the content from the file_with_new_value in the filename.
+        This function is useful for fixing source code directly on the file specified by filename.
+        It returns the updated file.
 
-    This is its implementation:
-    str_code = load_string_from_file(filename)
-    old_value = load_string_from_file(file_with_old_value)
-    new_value = load_string_from_file(file_with_new_value)
-    new_code = str_code.replace(old_value, new_value)
-    save_string_to_file(new_code, filename)
-    return new_code
+        This is its implementation:
+        str_code = load_string_from_file(filename)
+        old_value = load_string_from_file(file_with_old_value)
+        new_value = load_string_from_file(file_with_new_value)
+        new_code = str_code.replace(old_value, new_value)
+        save_string_to_file(new_code, filename)
+        return new_code
 
-In the case that you need to replace strings in an existing file, you can do it using the replace_on_file tool. This is an example:
-<example>
-<savetofile filename="tmp1.txt">
-hello world
-</savetofile>
-<savetofile filename="tmp2.txt">
-hello home!
-</savetofile>
-<savetofile filename="test.txt">
-Hey! hello world
-</savetofile>
-<runcode>
-replace_on_file_with_files('test.txt', 'tmp1.txt', 'tmp2.txt')
-</runcode>
-</example>
+    In the case that you need to replace strings in an existing file, you can do it using the replace_on_file tool. This is an example:
+    <example>
+    <savetofile filename="tmp1.txt">
+    hello world
+    </savetofile>
+    <savetofile filename="tmp2.txt">
+    hello home!
+    </savetofile>
+    <savetofile filename="test.txt">
+    Hey! hello world
+    </savetofile>
+    <runcode>
+    replace_on_file_with_files('test.txt', 'tmp1.txt', 'tmp2.txt')
+    </runcode>
+    </example>
 
-The expected file content of test.txt after the above is "Hey! hello home!".
+    The expected file content of test.txt after the above is "Hey! hello home!".
 
-    Args:
-      filename: str
-      file_with_old_value: str
-      file_with_new_value: str
+        Args:
+          filename: str
+          file_with_old_value: str
+          file_with_new_value: str
     """
     str_code = load_string_from_file(filename)
     old_value = load_string_from_file(file_with_old_value)
@@ -170,6 +232,7 @@ The expected file content of test.txt after the above is "Hey! hello home!".
     new_code = str_code.replace(old_value, new_value)
     save_string_to_file(new_code, filename)
     return new_code
+
 
 @tool
 def get_file_size(filename: str) -> int:
@@ -179,8 +242,9 @@ def get_file_size(filename: str) -> int:
       filename: str
     """
     if os.path.isfile(filename):
-      return os.path.getsize(filename)
+        return os.path.getsize(filename)
     return 0
+
 
 @tool
 def is_file(filename: str) -> bool:
@@ -191,6 +255,7 @@ def is_file(filename: str) -> bool:
       filename: str
     """
     return os.path.isfile(filename)
+
 
 def remove_after_markers(text, stop_sequences=["</runcode>", "</code>", "Calling tools:"], after_first=True):
     """
@@ -212,7 +277,7 @@ def remove_after_markers(text, stop_sequences=["</runcode>", "</code>", "Calling
     valid_positions = []
 
     for sequence in stop_sequences:
-        if (after_first):
+        if after_first:
             pos = text.find(sequence)
         else:
             pos = text.rfind(sequence)
@@ -224,6 +289,7 @@ def remove_after_markers(text, stop_sequences=["</runcode>", "</code>", "Calling
         return text[:cut_position]
 
     return text
+
 
 @tool
 def force_directories(file_path: str) -> None:
@@ -244,49 +310,52 @@ def force_directories(file_path: str) -> None:
     # os.makedirs handles these cases correctly.
     # os.makedirs() with exist_ok=True will create the directories recursively
     # if they don't exist, and will do nothing if they already exist.
-    if directory_path: # Only attempt to create if directory_path is not empty
-      os.makedirs(directory_path, exist_ok=True)
+    if directory_path:  # Only attempt to create if directory_path is not empty
+        os.makedirs(directory_path, exist_ok=True)
+
 
 @tool
-def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 536870912) -> str:
+def run_os_command(str_command: str, timeout: int = 60, max_memory: int = 536870912) -> str:
     """
-Runs an OS command and returns the output.
-This implementation uses Popen with shell=False.
+    Runs an OS command and returns the output.
+    This implementation uses Popen with shell=False.
 
-For finding files in the file system, use this example:
-<example>
-<runcode>
-print(run_os_command('find / -type f -iname "UTF8P*" 2>/dev/null'))
-</runcode>
-</example>
+    For finding files in the file system, use this example:
+    <example>
+    <runcode>
+    print(run_os_command('find / -type f -iname "UTF8P*" 2>/dev/null'))
+    </runcode>
+    </example>
 
-You can use run_os_command to run php code. This is an example:
-<example>
-<savetofile filename="hello.php">
-<?php echo "hello"; ?>
-</savetofile>
-<runcode>
-# 60 seconds of timeout and 512MB of max memory
-print(run_os_command("php hello.php", timeout=60, max_memory=512*1024*1024))
-</runcode>
-</example>
+    You can use run_os_command to run php code. This is an example:
+    <example>
+    <savetofile filename="hello.php">
+    <?php echo "hello"; ?>
+    </savetofile>
+    <runcode>
+    # 60 seconds of timeout and 512MB of max memory
+    print(run_os_command("php hello.php", timeout=60, max_memory=512*1024*1024))
+    </runcode>
+    </example>
 
-As you can see in the above command, you can use any computer language that is available in the system. If it is not, you can install it using the run_os_command tool.
+    As you can see in the above command, you can use any computer language that is available in the system. If it is not, you can install it using the run_os_command tool.
 
-    Args:
-      str_command: str
-      timeout: int seconds
-      max_memory: int bytes
+        Args:
+          str_command: str
+          timeout: int seconds
+          max_memory: int bytes
     """
-    if (max_memory>0):
-        command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
+    if max_memory > 0:
+        command = shlex.split("prlimit --as=" + str(max_memory) + " " + str_command)
     else:
         command = shlex.split(str_command)
     result = ""
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        proc = subprocess.Popen(
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False
+        )
         try:
             outs, errs = proc.communicate(input="", timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -299,73 +368,78 @@ As you can see in the above command, you can use any computer language that is a
     except Exception as e:
         result += f"ERROR: {e}"
 
-    if outs is not None: result += outs.decode('utf-8')
-    if errs is not None: result += errs.decode('utf-8')
+    if outs is not None:
+        result += outs.decode("utf-8")
+    if errs is not None:
+        result += errs.decode("utf-8")
     return result
+
 
 @tool
 def print_source_code_lines(filename: str, start_line: int, end_line: int) -> None:
-  """ 
-  This tool prints the lines from the start_line to the end_line of the file filename.
-  In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
+    """
+    This tool prints the lines from the start_line to the end_line of the file filename.
+    In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
 
-  Args:
-    filename: str The path to the text file.
-    start_line: int
-    end_line: int
-  """
-  file_content = load_string_from_file(filename)
-  lines = file_content.splitlines()
-  print("Content of " + filename + " from line "+str(start_line)+" to line " +str(end_line) )
-  for i in range(start_line-1, end_line):
-      print(f"{i+1}: {lines[i]}")
+    Args:
+      filename: str The path to the text file.
+      start_line: int
+      end_line: int
+    """
+    file_content = load_string_from_file(filename)
+    lines = file_content.splitlines()
+    print("Content of " + filename + " from line " + str(start_line) + " to line " + str(end_line))
+    for i in range(start_line - 1, end_line):
+        print(f"{i + 1}: {lines[i]}")
+
 
 @tool
 def get_file_lines(filename: str) -> int:
-  """ 
-  This tool returns the number of lines in a text file.
+    """
+    This tool returns the number of lines in a text file.
 
-  Args:
-    filename: str The path to the text file.
-  """
-  file_content = load_string_from_file(filename)
-  lines = file_content.splitlines()
-  return len(lines)
+    Args:
+      filename: str The path to the text file.
+    """
+    file_content = load_string_from_file(filename)
+    lines = file_content.splitlines()
+    return len(lines)
+
 
 @tool
 def get_line_from_file(file_name: str, line_number: int) -> str:
     """
-    Reads a specified line from a text file.
-    This fuction was coded by Gemini 2.5Flash.
+        Reads a specified line from a text file.
+        This fuction was coded by Gemini 2.5Flash.
 
-    This function is good for finding the line where the compiler gave an error. As per example:
-Free Pascal Compiler version 3.2.2+dfsg-9ubuntu1 [2022/04/11] for x86_64
-Copyright (c) 1993-2021 by Florian Klaempfl and others
-Target OS: Linux for x86-64
-Compiling solution1/src/jpmmath.pas
-jpmmath.pas(301,19) Warning: function result variable of a managed type does not seem to be initialized
+        This function is good for finding the line where the compiler gave an error. As per example:
+    Free Pascal Compiler version 3.2.2+dfsg-9ubuntu1 [2022/04/11] for x86_64
+    Copyright (c) 1993-2021 by Florian Klaempfl and others
+    Target OS: Linux for x86-64
+    Compiling solution1/src/jpmmath.pas
+    jpmmath.pas(301,19) Warning: function result variable of a managed type does not seem to be initialized
 
-In the above example, to find the error, you can call:
-<runcode>
-print(get_line_from_file('solution1/src/jpmmath.pas', 301))
-</runcode>
+    In the above example, to find the error, you can call:
+    <runcode>
+    print(get_line_from_file('solution1/src/jpmmath.pas', 301))
+    </runcode>
 
-    Args:
-        file_name: str The path to the text file.
-        line_number: int The 1-based index of the line to retrieve.
-                           For example, 1 for the first line, 2 for the second, etc.
+        Args:
+            file_name: str The path to the text file.
+            line_number: int The 1-based index of the line to retrieve.
+                               For example, 1 for the first line, 2 for the second, etc.
 
-    Returns:
-        str: The content of the specified line, with leading/trailing whitespace
-             (including the newline character) removed.
+        Returns:
+            str: The content of the specified line, with leading/trailing whitespace
+                 (including the newline character) removed.
 
-    Raises:
-        ValueError: If file_name is not a valid string, or line_number is not
-                    a positive integer.
-        FileNotFoundError: If the specified file does not exist.
-        IndexError: If the line_number is out of the bounds of the file
-                    (e.g., requesting line 10 from a 5-line file).
-        IOError: For other potential I/O errors during file reading.
+        Raises:
+            ValueError: If file_name is not a valid string, or line_number is not
+                        a positive integer.
+            FileNotFoundError: If the specified file does not exist.
+            IndexError: If the line_number is out of the bounds of the file
+                        (e.g., requesting line 10 from a 5-line file).
+            IOError: For other potential I/O errors during file reading.
     """
     # 1. Input Validation
     if not isinstance(file_name, str) or not file_name.strip():
@@ -376,12 +450,12 @@ print(get_line_from_file('solution1/src/jpmmath.pas', 301))
         raise ValueError("line_number must be a positive integer (1-based).")
 
     try:
-        with open(file_name, 'r', encoding='utf-8') as f:
+        with open(file_name, "r", encoding="utf-8") as f:
             # Enumerate starts from 0 by default, so we compare with line_number - 1
             for current_line_index, line_content in enumerate(f):
                 if current_line_index == line_number - 1:
                     # rstrip() removes trailing whitespace, including the newline char
-                    return line_content.rstrip('\n\r') # Handles both \n and \r\n
+                    return line_content.rstrip("\n\r")  # Handles both \n and \r\n
 
             # If the loop finishes, it means the requested line_number was
             # beyond the total number of lines in the file.
@@ -396,6 +470,7 @@ print(get_line_from_file('solution1/src/jpmmath.pas', 301))
         # Catch any other unexpected errors
         raise Exception(f"An unexpected error occurred: {e}")
 
+
 @tool
 def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> None:
     """
@@ -408,10 +483,10 @@ def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> 
     Example usage:
         # Replace line 301 with a corrected version
         replace_line_in_file('solution1/src/jpmmath.pas', 301, 'function Result: Integer;')
-        
+
         # Replace line 10 with multiple lines
         replace_line_in_file('test.txt', 10, 'Line 10a\\nLine 10b\\nLine 10c')
-        
+
         # Fix a compiler error
         error_line = get_line_from_file('solution1/src/jpmmath.pas', 301)
         print(f"Original: {error_line}")
@@ -448,19 +523,18 @@ def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> 
 
     try:
         # 2. Read the entire file
-        with open(file_name, 'r', encoding='utf-8') as f:
+        with open(file_name, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
         # 3. Validate line_number is within bounds
         if line_number > len(lines):
             raise IndexError(
-                f"Line number {line_number} is out of bounds for file '{file_name}' "
-                f"(file has {len(lines)} lines)."
+                f"Line number {line_number} is out of bounds for file '{file_name}' (file has {len(lines)} lines)."
             )
 
         # 4. Prepare the replacement - ensure it ends with \n for proper file format
-        if not new_content.endswith('\n'):
-            new_content += '\n'
+        if not new_content.endswith("\n"):
+            new_content += "\n"
 
         # 5. Replace the specified line (convert to 0-based index)
         # If new_content contains \n characters, it will be written as-is,
@@ -468,7 +542,7 @@ def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> 
         lines[line_number - 1] = new_content
 
         # 6. Write the modified content back to the file
-        with open(file_name, 'w', encoding='utf-8') as f:
+        with open(file_name, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
     except FileNotFoundError:
@@ -479,6 +553,7 @@ def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> 
         raise IOError(f"An I/O error occurred while accessing file '{file_name}': {e}")
     except Exception as e:
         raise Exception(f"An unexpected error occurred: {e}")
+
 
 @tool
 def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -> None:
@@ -493,13 +568,13 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
     Example usage:
         # Insert a new line before line 301
         insert_lines_into_file('solution1/src/jpmmath.pas', 301, 'var Result: Integer;')
-        
+
         # Insert multiple lines before line 10
         insert_lines_into_file('test.txt', 10, 'Line 9a\\nLine 9b\\nLine 9c')
-        
+
         # Insert at the beginning of the file
         insert_lines_into_file('test.txt', 1, '// File header comment')
-        
+
         # Append to the end of the file (if file has 100 lines, use 101)
         insert_lines_into_file('test.txt', 101, 'New last line')
 
@@ -536,7 +611,7 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
 
     try:
         # 2. Read the entire file
-        with open(file_name, 'r', encoding='utf-8') as f:
+        with open(file_name, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
         # 3. Validate line_number is within bounds
@@ -549,8 +624,8 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
             )
 
         # 4. Prepare the content to insert - ensure it ends with \n
-        if not new_content.endswith('\n'):
-            new_content += '\n'
+        if not new_content.endswith("\n"):
+            new_content += "\n"
 
         # 5. Insert the new content before the specified line (convert to 0-based index)
         # If new_content contains \n characters, it will be written as-is,
@@ -558,7 +633,7 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
         lines.insert(line_number - 1, new_content)
 
         # 6. Write the modified content back to the file
-        with open(file_name, 'w', encoding='utf-8') as f:
+        with open(file_name, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
     except FileNotFoundError:
@@ -570,65 +645,68 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
     except Exception as e:
         raise Exception(f"An unexpected error occurred: {e}")
 
+
 @tool
 def run_php_file(filename: str, timeout: int = 60) -> str:
     """
-Runs a PHP file and returns the output.
-To run PHP code, follow tis an example:
-<example>
-<savetofile filename="hello.php">
-<?php echo "hello"; ?>
-</savetofile>
-<runcode>
-print(run_php_file("hello.php", timeout=60))
-</runcode>
-</example>
+    Runs a PHP file and returns the output.
+    To run PHP code, follow tis an example:
+    <example>
+    <savetofile filename="hello.php">
+    <?php echo "hello"; ?>
+    </savetofile>
+    <runcode>
+    print(run_php_file("hello.php", timeout=60))
+    </runcode>
+    </example>
 
-Args:
-    filename: str
-    timeout: int
-"""
+    Args:
+        filename: str
+        timeout: int
+    """
     return run_os_command("php " + filename, timeout)
+
 
 @tool
 def compile_and_run_pascal_code(pasfilename: str, timeout: int = 60) -> str:
-  """
-Compiles and runs pascal code. pasfilename contains the filename to be compiled.
-If you need to pass additional parameters such as to include existing units, you can include into the pasfilename parameter.
-This is an example to compile a file named myfile.pas with the units from neural-api/neural:
-compile_and_run_pascal_code('-Funeural-api/neural/ myfile.pas', 120)
+    """
+    Compiles and runs pascal code. pasfilename contains the filename to be compiled.
+    If you need to pass additional parameters such as to include existing units, you can include into the pasfilename parameter.
+    This is an example to compile a file named myfile.pas with the units from neural-api/neural:
+    compile_and_run_pascal_code('-Funeural-api/neural/ myfile.pas', 120)
 
-This is an example for running pascal code:
-<example>
-<savetofile filename="hello.pas">
-program hello;
-begin
-WriteLn('Hello');
-end.
-</savetofile>
-<runcode>
-compile_and_run_pascal_code("hello.pas", timeout=60)
-</runcode>
-</example>
+    This is an example for running pascal code:
+    <example>
+    <savetofile filename="hello.pas">
+    program hello;
+    begin
+    WriteLn('Hello');
+    end.
+    </savetofile>
+    <runcode>
+    compile_and_run_pascal_code("hello.pas", timeout=60)
+    </runcode>
+    </example>
 
-    Args:
-      pasfilename: str
-      timeout: int
-  """
-  filename = 'compiled'
-  if os.path.exists(filename):
-      os.remove(filename)
-  print(run_os_command("fpc -O3 -Mobjfpc "+pasfilename+' -o'+filename, timeout=timeout))
-  if os.path.exists(filename):
-    print(run_os_command("./compiled", timeout=timeout))
-  else:
-    print('Compilation error.')
+        Args:
+          pasfilename: str
+          timeout: int
+    """
+    filename = "compiled"
+    if os.path.exists(filename):
+        os.remove(filename)
+    print(run_os_command("fpc -O3 -Mobjfpc " + pasfilename + " -o" + filename, timeout=timeout))
+    if os.path.exists(filename):
+        print(run_os_command("./compiled", timeout=timeout))
+    else:
+        print("Compilation error.")
+
 
 @tool
 def remove_pascal_comments_from_string(code_string: str) -> str:
     """
     Remove all comments from a Delphi/Pascal code string.
-    
+
     Handles:
     - Single-line comments (//)
     - Brace comments ({ }) with nesting
@@ -683,7 +761,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 
         # Handle end of line comment
         if in_line_comment:
-            if char in ['\n', '\r']:
+            if char in ["\n", "\r"]:
                 in_line_comment = False
                 result.append(char)  # Preserve newlines
             i += 1
@@ -691,7 +769,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 
         # Handle end of (* *) comment
         if in_paren_comment:
-            if char == '*' and next_char == ')':
+            if char == "*" and next_char == ")":
                 in_paren_comment = False
                 i += 2
                 continue
@@ -700,23 +778,23 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
 
         # Handle end of { } comment
         if brace_comment_depth > 0:
-            if char == '}':
+            if char == "}":
                 brace_comment_depth -= 1
-            elif char == '{':
+            elif char == "{":
                 brace_comment_depth += 1  # Handle nesting
             i += 1
             continue
 
         # Check for start of comments (only when not in any comment or string)
-        if char == '/' and next_char == '/':
+        if char == "/" and next_char == "/":
             in_line_comment = True
             i += 2
             continue
-        elif char == '{':
+        elif char == "{":
             brace_comment_depth = 1
             i += 1
             continue
-        elif char == '(' and next_char == '*':
+        elif char == "(" and next_char == "*":
             in_paren_comment = True
             i += 2
             continue
@@ -725,13 +803,16 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
         result.append(char)
         i += 1
 
-    return ''.join(result)
+    return "".join(result)
+
 
 @tool
-def source_code_to_string(folder_name: str, 
+def source_code_to_string(
+    folder_name: str,
     allowed_extensions: tuple = DEFAULT_SOURCE_CODE_EXTENSIONS,
     remove_pascal_comments: bool = False,
-    exclude_list: tuple = ('excluded_folder','excluded_file.pas')) -> str:
+    exclude_list: tuple = ("excluded_folder", "excluded_file.pas"),
+) -> str:
     """
     Scans a folder and subfolders for specific source code file types (.py, .txt, .pas, .inc, .md),
     concatenates their content into a single string with XML-like tags,
@@ -761,31 +842,31 @@ def source_code_to_string(folder_name: str,
             filepath = os.path.join(root, filename)
             _, file_extension = os.path.splitext(filename)
             file_extension_lower = file_extension.lower()
-            subfolders_tuple = tuple(root.split('/'))
+            subfolders_tuple = tuple(root.split("/"))
             not_exclude = True
             for item in subfolders_tuple:
                 if item in exclude_list:
                     not_exclude = False
                     break  # Exit the loop once a match is found
 
-            if not_exclude and \
-                (file_extension_lower in allowed_extensions) and \
-                (not (filename in exclude_list)):
+            if not_exclude and (file_extension_lower in allowed_extensions) and (filename not in exclude_list):
                 # Store full path for sorting, base filename for output tag, and extension
-                relevant_files_info.append({
-                    'filepath': filepath,
-                    'filename': filename, # Use base filename for the tag
-                    'extension': file_extension_lower
-                })
+                relevant_files_info.append(
+                    {
+                        "filepath": filepath,
+                        "filename": filename,  # Use base filename for the tag
+                        "extension": file_extension_lower,
+                    }
+                )
 
     # Custom sorting key: .md files first (0), then .txt files (1), then others (2).
     # Within each group, sort alphabetically by full path for consistency (deterministic).
     def sort_key(file_info):
-        extension = file_info['extension']
-        filepath = file_info['filepath']
-        if extension == '.md':
+        extension = file_info["extension"]
+        filepath = file_info["filepath"]
+        if extension == ".md":
             primary_key = 0
-        elif extension == '.txt':
+        elif extension == ".txt":
             primary_key = 1
         else:
             primary_key = 2
@@ -797,47 +878,48 @@ def source_code_to_string(folder_name: str,
     output_string_parts = []
 
     for file_info in relevant_files_info:
-        filepath = file_info['filepath']
-        filename_for_tag = filepath.replace(folder_name+'/','')
+        filepath = file_info["filepath"]
+        filename_for_tag = filepath.replace(folder_name + "/", "")
         content = ""
         try:
             # Attempt to read file content, trying multiple common encodings
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
             except UnicodeDecodeError:
-                 try:
+                try:
                     # Try a different common encoding if utf-8 fails
-                    with open(filepath, 'r', encoding='latin-1') as f:
+                    with open(filepath, "r", encoding="latin-1") as f:
                         content = f.read()
-                 except Exception as e:
+                except Exception as e:
                     # If both common encodings fail, report the error
                     print(f"Could not read file {filepath} due to encoding issues or other errors.")
                     content = f"Error reading file content (encoding or other issue): {e}"
 
         except FileNotFoundError:
-             # This should ideally not happen since os.walk found it, but included for robustness
-             print(f"Error: File not found unexpectedly: {filepath}")
-             content = "Error: File not found unexpectedly."
+            # This should ideally not happen since os.walk found it, but included for robustness
+            print(f"Error: File not found unexpectedly: {filepath}")
+            content = "Error: File not found unexpectedly."
 
         except Exception as e:
             # Catch any other potential reading errors
             print(f"An unexpected error occurred while reading file {filepath}: {e}")
             content = f"An unexpected error occurred while reading: {e}"
 
-        if (remove_pascal_comments):
+        if remove_pascal_comments:
             content = remove_pascal_comments_from_string(content)
         # Format the content block using the base filename
         formatted_block = f'<file filename="{filename_for_tag}">\n{content}\n</file>'
         output_string_parts.append(formatted_block)
 
-
     # Join all formatted blocks with a newline separator between blocks
-    return '\n'.join(output_string_parts)
+    return "\n".join(output_string_parts)
 
 
 @tool
-def string_to_source_code(string_with_files: str, output_base_dir: str = '.', overwrite: bool = True, verbose: bool = True) -> None:
+def string_to_source_code(
+    string_with_files: str, output_base_dir: str = ".", overwrite: bool = True, verbose: bool = True
+) -> None:
     """
     Parses a string containing concatenated file content with <file filename="...">...</file> tags,
     and recreates the files and directories in a specified base directory.
@@ -887,7 +969,9 @@ def string_to_source_code(string_with_files: str, output_base_dir: str = '.', ov
 
         # Ensure the directory exists for the output file
         output_dir = os.path.dirname(output_filepath)
-        if output_dir and not os.path.exists(output_dir): # Only create directory if it's not the root and doesn't exist
+        if output_dir and not os.path.exists(
+            output_dir
+        ):  # Only create directory if it's not the root and doesn't exist
             if verbose:
                 print(f"Ensuring directory exists: {output_dir}")
             try:
@@ -900,21 +984,21 @@ def string_to_source_code(string_with_files: str, output_base_dir: str = '.', ov
                     print(f"Error creating directory {output_dir}: {e}")
                     print(f"Skipping file {output_filepath} due to directory creation error.")
                 failed_saves += 1
-                continue # Skip saving this file
+                continue  # Skip saving this file
 
         # Check if file exists and if overwrite is disabled
         if os.path.exists(output_filepath) and not overwrite:
             if verbose:
                 print(f"File already exists and overwrite is False. Skipping file: {output_filepath}")
             skipped_saves += 1
-            continue # Skip saving this file
+            continue  # Skip saving this file
 
         # Attempt to save file
         if verbose:
             print(f"Attempting to save file: {output_filepath}")
         try:
             # Use utf-8 encoding for writing
-            with open(output_filepath, 'w', encoding='utf-8') as f:
+            with open(output_filepath, "w", encoding="utf-8") as f:
                 f.write(content)
             if verbose:
                 print(f"Successfully saved file: {output_filepath}")
@@ -925,175 +1009,205 @@ def string_to_source_code(string_with_files: str, output_base_dir: str = '.', ov
             failed_saves += 1
         except Exception as e:
             if verbose:
-                 print(f"An unexpected error occurred while writing file {output_filepath}: {e}")
+                print(f"An unexpected error occurred while writing file {output_filepath}: {e}")
             failed_saves += 1
 
     if verbose:
         print("\nFile reconstruction process finished.")
         print(f"Summary: {successful_saves} files saved successfully, {skipped_saves} skipped, {failed_saves} failed.")
 
+
 @tool
 def get_pascal_interface_from_file(filename: str, remove_pascal_comments: bool = False) -> str:
-        """
-        Returns the pascal interface of a pascal source code file.
-        Args:
-            filename: The pascal source code file name.
-            remove_pascal_comments: if true, removes pascal comments.
-        Returns:
-            The pascal interface
-        """
-        return get_pascal_interface_from_code(load_string_from_file(filename), remove_pascal_comments)
+    """
+    Returns the pascal interface of a pascal source code file.
+    Args:
+        filename: The pascal source code file name.
+        remove_pascal_comments: if true, removes pascal comments.
+    Returns:
+        The pascal interface
+    """
+    return get_pascal_interface_from_code(load_string_from_file(filename), remove_pascal_comments)
+
 
 @tool
 def get_pascal_interface_from_code(content: str, remove_pascal_comments: bool = False) -> str:
-        """
-        Returns the interface of a pascal source code
-        Args:
-            content: The pascal source code.
-            remove_pascal_comments: if true, removes pascal comments.
-        Returns:
-            The pascal interface
-        """
-        # --- Robust Extraction Logic (Stateful Character Parser from Solution 2) ---
-        interface_section_content_chars = [] # Use a list to build the string efficiently
-        is_interface_found = False
-        is_implementation_found = False # Stop when implementation is found after interface
+    """
+    Returns the interface of a pascal source code
+    Args:
+        content: The pascal source code.
+        remove_pascal_comments: if true, removes pascal comments.
+    Returns:
+        The pascal interface
+    """
+    # --- Robust Extraction Logic (Stateful Character Parser from Solution 2) ---
+    interface_section_content_chars = []  # Use a list to build the string efficiently
+    is_interface_found = False
+    is_implementation_found = False  # Stop when implementation is found after interface
 
-        in_curly_comment = False
-        in_star_comment = False
-        in_string = False
-        in_line_comment = False
+    in_curly_comment = False
+    in_star_comment = False
+    in_string = False
+    in_line_comment = False
 
-        i = 0
-        while i < len(content):
-            char = content[i]
-            chars_left = len(content) - i
+    i = 0
+    while i < len(content):
+        char = content[i]
+        chars_left = len(content) - i
 
-            # Check for end of line comment
-            if in_line_comment and char == '\n':
-                in_line_comment = False
-                # Newline terminates the line comment state. It should be included if capturing.
+        # Check for end of line comment
+        if in_line_comment and char == "\n":
+            in_line_comment = False
+            # Newline terminates the line comment state. It should be included if capturing.
+            if is_interface_found and not is_implementation_found:
+                interface_section_content_chars.append(char)
+            i += 1
+            continue
+        elif in_line_comment:
+            # Inside line comment, do not process keywords or toggle states.
+            # Include character in output if capturing interface section.
+            if is_interface_found and not is_implementation_found:
+                interface_section_content_chars.append(char)
+            i += 1
+            continue
+
+        # State transitions for block comments and strings (only if not in line comment)
+        if not in_line_comment:
+            # Handle string state (simplified: toggle on single quote)
+            if char == "'":
+                in_string = not in_string
+                # Include the quote if capturing
                 if is_interface_found and not is_implementation_found:
-                     interface_section_content_chars.append(char)
+                    interface_section_content_chars.append(char)
                 i += 1
                 continue
-            elif in_line_comment:
-                 # Inside line comment, do not process keywords or toggle states.
-                 # Include character in output if capturing interface section.
-                 if is_interface_found and not is_implementation_found:
-                      interface_section_content_chars.append(char)
-                 i += 1
-                 continue
 
-            # State transitions for block comments and strings (only if not in line comment)
-            if not in_line_comment:
-                # Handle string state (simplified: toggle on single quote)
-                if char == "'":
-                    in_string = not in_string
-                    # Include the quote if capturing
-                    if is_interface_found and not is_implementation_found:
-                         interface_section_content_chars.append(char)
-                    i += 1
-                    continue
+            # Handle } for curly comment end
+            if in_curly_comment and char == "}":
+                in_curly_comment = False
+                # Include the bracket if capturing
+                if is_interface_found and not is_implementation_found:
+                    interface_section_content_chars.append(char)
+                i += 1
+                continue
 
-                # Handle } for curly comment end
-                if in_curly_comment and char == '}':
-                    in_curly_comment = False
+            # Handle *} for star comment end
+            if in_star_comment and chars_left >= 2 and content[i : i + 2] == "*}":
+                in_star_comment = False
+                # Include the bracket if capturing
+                if is_interface_found and not is_implementation_found:
+                    interface_section_content_chars.extend(content[i : i + 2])
+                i += 2
+                continue
+
+            # Handle { for curly comment start
+            if (
+                char == "{" and not in_star_comment and not in_string
+            ):  # { cannot start a curly comment inside star comment or string
+                # Check if it's a star comment {*
+                if chars_left >= 2 and content[i + 1] == "*":
+                    # This is {*, handled below
+                    pass  # Let the next check handle {*
+                else:  # This is {
+                    in_curly_comment = True
                     # Include the bracket if capturing
                     if is_interface_found and not is_implementation_found:
-                         interface_section_content_chars.append(char)
+                        interface_section_content_chars.append(char)
                     i += 1
                     continue
 
-                # Handle *} for star comment end
-                if in_star_comment and chars_left >= 2 and content[i:i+2] == '*}':
-                     in_star_comment = False
-                     # Include the bracket if capturing
-                     if is_interface_found and not is_implementation_found:
-                          interface_section_content_chars.extend(content[i:i+2])
-                     i += 2
-                     continue
+            # Handle {* for star comment start
+            if (
+                chars_left >= 2 and content[i : i + 2] == "{*" and not in_curly_comment and not in_string
+            ):  # {* cannot start inside curly comment or string
+                in_star_comment = True
+                # Include the marker if capturing
+                if is_interface_found and not is_implementation_found:
+                    interface_section_content_chars.extend(content[i : i + 2])
+                i += 2
+                continue
 
-                # Handle { for curly comment start
-                if char == '{' and not in_star_comment and not in_string: # { cannot start a curly comment inside star comment or string
-                    # Check if it's a star comment {*
-                    if chars_left >= 2 and content[i+1] == '*':
-                         # This is {*, handled below
-                         pass # Let the next check handle {*
-                    else: # This is {
-                        in_curly_comment = True
-                        # Include the bracket if capturing
-                        if is_interface_found and not is_implementation_found:
-                             interface_section_content_chars.append(char)
+            # Handle // for line comment start
+            if (
+                chars_left >= 2
+                and content[i : i + 2] == "//"
+                and not in_curly_comment
+                and not in_star_comment
+                and not in_string
+            ):
+                in_line_comment = True
+                # Include the marker if capturing
+                if is_interface_found and not is_implementation_found:
+                    interface_section_content_chars.extend(content[i : i + 2])
+                i += 2
+                continue
+
+        # --- Keyword Detection (only when not in comment or string or line comment) ---
+        # Only check for keywords if none of the comment/string states are active
+        if not in_curly_comment and not in_star_comment and not in_string and not in_line_comment:
+            # Check for 'interface' keyword
+            if (
+                not is_interface_found
+                and chars_left >= len("interface")
+                and content[i : i + len("interface")].lower() == "interface"
+            ):
+                # Check for word boundary - simplified check using isalnum() and _
+                is_word_boundary_before = i == 0 or not content[i - 1].isalnum() and content[i - 1] != "_"
+                is_word_boundary_after = (
+                    i + len("interface") == len(content)
+                    or not content[i + len("interface")].isalnum()
+                    and content[i + len("interface")] != "_"
+                )
+
+                if is_word_boundary_before and is_word_boundary_after:
+                    is_interface_found = True
+                    # Start capturing content *after* the keyword 'interface'
+                    # Skip the keyword itself
+                    i += len("interface")
+                    # Skip any immediate whitespace after the keyword
+                    while i < len(content) and content[i].isspace():
                         i += 1
-                        continue
+                    continue  # Continue loop from the character after 'interface' + whitespace
 
-                # Handle {* for star comment start
-                if chars_left >= 2 and content[i:i+2] == '{*' and not in_curly_comment and not in_string: # {* cannot start inside curly comment or string
-                     in_star_comment = True
-                     # Include the marker if capturing
-                     if is_interface_found and not is_implementation_found:
-                          interface_section_content_chars.extend(content[i:i+2])
-                     i += 2
-                     continue
+            # Check for 'implementation' keyword (only if interface was found)
+            if (
+                is_interface_found
+                and not is_implementation_found
+                and chars_left >= len("implementation")
+                and content[i : i + len("implementation")].lower() == "implementation"
+            ):
+                # Check for word boundary
+                is_word_boundary_before = i == 0 or not content[i - 1].isalnum() and content[i - 1] != "_"
+                is_word_boundary_after = (
+                    i + len("implementation") == len(content)
+                    or not content[i + len("implementation")].isalnum()
+                    and content[i + len("implementation")] != "_"
+                )
 
-                # Handle // for line comment start
-                if chars_left >= 2 and content[i:i+2] == '//' and not in_curly_comment and not in_star_comment and not in_string:
-                    in_line_comment = True
-                    # Include the marker if capturing
-                    if is_interface_found and not is_implementation_found:
-                         interface_section_content_chars.extend(content[i:i+2])
-                    i += 2
-                    continue
+                if is_word_boundary_before and is_word_boundary_after:
+                    is_implementation_found = True
+                    # Stop processing this file's content as we found the end marker
+                    # Do NOT include 'implementation' keyword or anything after it
+                    break
 
-            # --- Keyword Detection (only when not in comment or string or line comment) ---
-            # Only check for keywords if none of the comment/string states are active
-            if not in_curly_comment and not in_star_comment and not in_string and not in_line_comment:
-                # Check for 'interface' keyword
-                if not is_interface_found and chars_left >= len('interface') and content[i:i+len('interface')].lower() == 'interface':
-                     # Check for word boundary - simplified check using isalnum() and _
-                     is_word_boundary_before = (i == 0 or not content[i-1].isalnum() and content[i-1] != '_')
-                     is_word_boundary_after = (i + len('interface') == len(content) or not content[i+len('interface')].isalnum() and content[i+len('interface')] != '_')
+        # --- Content Capture ---
+        # If we are inside the interface section AND the 'implementation' keyword hasn't been found yet,
+        # append the current character to the output. This captures everything between 'interface' and 'implementation',
+        # including comments and strings within that section.
+        if is_interface_found and not is_implementation_found:
+            interface_section_content_chars.append(char)
 
-                     if is_word_boundary_before and is_word_boundary_after:
-                         is_interface_found = True
-                         # Start capturing content *after* the keyword 'interface'
-                         # Skip the keyword itself
-                         i += len('interface')
-                         # Skip any immediate whitespace after the keyword
-                         while i < len(content) and content[i].isspace():
-                             i += 1
-                         continue # Continue loop from the character after 'interface' + whitespace
+        # Move to the next character if not handled by multi-char sequence above
+        i += 1
 
-                # Check for 'implementation' keyword (only if interface was found)
-                if is_interface_found and not is_implementation_found and chars_left >= len('implementation') and content[i:i+len('implementation')].lower() == 'implementation':
-                     # Check for word boundary
-                     is_word_boundary_before = (i == 0 or not content[i-1].isalnum() and content[i-1] != '_')
-                     is_word_boundary_after = (i + len('implementation') == len(content) or not content[i+len('implementation')].isalnum() and content[i+len('implementation')] != '_')
+    # --- End of Extraction Logic ---
 
-                     if is_word_boundary_before and is_word_boundary_after:
-                        is_implementation_found = True
-                        # Stop processing this file's content as we found the end marker
-                        # Do NOT include 'implementation' keyword or anything after it
-                        break
+    # Join the captured characters into a string
+    interface_content = "".join(interface_section_content_chars).strip()  # Strip leading/trailing whitespace
+    if remove_pascal_comments:
+        interface_content = remove_pascal_comments_from_string(interface_content)
+    return interface_content
 
-            # --- Content Capture ---
-            # If we are inside the interface section AND the 'implementation' keyword hasn't been found yet,
-            # append the current character to the output. This captures everything between 'interface' and 'implementation',
-            # including comments and strings within that section.
-            if is_interface_found and not is_implementation_found:
-                 interface_section_content_chars.append(char)
-
-            # Move to the next character if not handled by multi-char sequence above
-            i += 1
-
-        # --- End of Extraction Logic ---
-
-        # Join the captured characters into a string
-        interface_content = "".join(interface_section_content_chars).strip() # Strip leading/trailing whitespace
-        if (remove_pascal_comments):
-            interface_content = remove_pascal_comments_from_string(interface_content)
-        return interface_content
 
 @tool
 def pascal_interface_to_string(folder_name: str, remove_pascal_comments: bool = False) -> str:
@@ -1125,7 +1239,7 @@ def pascal_interface_to_string(folder_name: str, remove_pascal_comments: bool = 
 
     relevant_files = []
     # Added .pp, .lpr, .dpr based on common Pascal file types
-    allowed_extensions = ('.pas', '.inc', '.pp', '.lpr', '.dpr')
+    allowed_extensions = (".pas", ".inc", ".pp", ".lpr", ".dpr")
 
     for root, _, files in os.walk(folder_name):
         for filename in files:
@@ -1151,83 +1265,86 @@ def pascal_interface_to_string(folder_name: str, remove_pascal_comments: bool = 
         try:
             # Attempt to read file content, trying multiple common encodings
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
             except UnicodeDecodeError:
-                 try:
+                try:
                     # Try a different common encoding if utf-8 fails
-                    with open(filepath, 'r', encoding='latin-1') as f:
+                    with open(filepath, "r", encoding="latin-1") as f:
                         content = f.read()
-                 except Exception as e:
+                except Exception as e:
                     read_error = f"Could not read file due to encoding issues or other errors: {e}"
-                    print(f"Error reading file {filepath}: {read_error}") # Print to execution log
-
+                    print(f"Error reading file {filepath}: {read_error}")  # Print to execution log
 
         except FileNotFoundError:
-             # Should not happen based on os.walk, but included for robustness
-             read_error = "File not found unexpectedly."
-             print(f"Error reading file {filepath}: {read_error}") # Print to execution log
+            # Should not happen based on os.walk, but included for robustness
+            read_error = "File not found unexpectedly."
+            print(f"Error reading file {filepath}: {read_error}")  # Print to execution log
 
         except Exception as e:
             # Catch any other potential reading errors
             read_error = f"An unexpected error occurred while reading: {e}"
-            print(f"An unexpected error occurred while reading file {filepath}: {e}") # Print to execution log
+            print(f"An unexpected error occurred while reading file {filepath}: {e}")  # Print to execution log
 
         if read_error:
             # If read failed, add an error tag and skip to the next file
-             formatted_block = f'<pascal_interface filename="{relative_filepath}">\nError reading file: {read_error}\n</pascal_interface>'
-             output_parts.append(formatted_block)
-             continue # Skip to the next file
+            formatted_block = f'<pascal_interface filename="{relative_filepath}">\nError reading file: {read_error}\n</pascal_interface>'
+            output_parts.append(formatted_block)
+            continue  # Skip to the next file
 
         interface_content = get_pascal_interface_from_code(content, remove_pascal_comments)
         # Construct the output block for this file using the tag format from Solution 1
         # Only add a block if 'interface' was actually found in the file
         if len(interface_content) > 10:
-             formatted_block = f'<pascal_interface filename="{relative_filepath}">\n{interface_content}\n</pascal_interface>'
-             output_parts.append(formatted_block)
+            formatted_block = (
+                f'<pascal_interface filename="{relative_filepath}">\n{interface_content}\n</pascal_interface>'
+            )
+            output_parts.append(formatted_block)
 
     # Join all formatted blocks with a newline separator between blocks
     # Add an extra newline after each block for better readability in the final output
-    return '\n\n'.join(output_parts)
+    return "\n\n".join(output_parts)
+
 
 @tool
 def trim_right_lines(multi_line_string: str) -> str:
-  """
-  This function will do a right trim in all lines of the string.
-  Args:
-    multi_line_string: str
-  """
-  lines = multi_line_string.splitlines()
-  # Trim only the right side of each line
-  trimmed_lines = [line.rstrip() for line in lines]
-  # Join the lines back together
-  trimmed_string = '\n'.join(trimmed_lines)
-  return trimmed_string
+    """
+    This function will do a right trim in all lines of the string.
+    Args:
+      multi_line_string: str
+    """
+    lines = multi_line_string.splitlines()
+    # Trim only the right side of each line
+    trimmed_lines = [line.rstrip() for line in lines]
+    # Join the lines back together
+    trimmed_string = "\n".join(trimmed_lines)
+    return trimmed_string
+
 
 @tool
 def trim_right_lines_in_file(filename: str) -> None:
-  """
-  This function will do a right trim in all lines of the file.
-  Args:
-    filename: str
-  """
-  multi_line_string = load_string_from_file(filename)
-  save_string_to_file(trim_right_lines(multi_line_string), filename)
+    """
+    This function will do a right trim in all lines of the file.
+    Args:
+      filename: str
+    """
+    multi_line_string = load_string_from_file(filename)
+    save_string_to_file(trim_right_lines(multi_line_string), filename)
+
 
 class Summarize(Tool):
     name = "summarize"
-    description = """This subassistant will return the summary of a string.
-"""+RESTART_CHAT_TXT
+    description = (
+        """This subassistant will return the summary of a string.
+"""
+        + RESTART_CHAT_TXT
+    )
     inputs = {
         "text_str": {
             "type": "string",
             "description": "Input text to be summarized.",
         },
-        "restart_chat": {
-            "type": "boolean",
-            "description": "When true, forgets the previous chat.",
-            "nullable" : True
-        }
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
     }
     output_type = "string"
     agent = None
@@ -1237,24 +1354,24 @@ class Summarize(Tool):
         self.agent = agent
 
     def forward(self, text_str: str, restart_chat: bool = True) -> str:
-        task_str = 'Hello super-intelligence! Please provide a summary for the following as a string: '+ text_str
+        task_str = "Hello super-intelligence! Please provide a summary for the following as a string: " + text_str
         result = self.agent.run(task_str, reset=restart_chat)
         return result
 
+
 class SummarizeUrl(Tool):
     name = "summarize_url"
-    description = """This subassistant will return the summary of a web page given its url as a string.
-"""+RESTART_CHAT_TXT
+    description = (
+        """This subassistant will return the summary of a web page given its url as a string.
+"""
+        + RESTART_CHAT_TXT
+    )
     inputs = {
         "url": {
             "type": "string",
             "description": "url to be summarized.",
         },
-        "restart_chat": {
-            "type": "boolean",
-            "description": "When true, forgets the previous chat.",
-            "nullable" : True
-        }
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
     }
     output_type = "string"
     agent = None
@@ -1265,224 +1382,252 @@ class SummarizeUrl(Tool):
 
     def forward(self, url: str, restart_chat: bool = True) -> str:
         LocalVistWebPageTool = VisitWebpageTool()
-        task_str = 'Hello super-intelligence! Please write all the information in plain English text without tags from the following as a string (do not use python code except for the final answer): '+ LocalVistWebPageTool(url)[:15000]
+        task_str = (
+            "Hello super-intelligence! Please write all the information in plain English text without tags from the following as a string (do not use python code except for the final answer): "
+            + LocalVistWebPageTool(url)[:15000]
+        )
         result = self.agent.run(task_str, reset=restart_chat)
         return result
 
+
 class SummarizeLocalFile(Tool):
-        name = "summarize_local_file"
-        description = """This function will return the summary of a local file.
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "filename": {
-                "type": "string",
-                "description": "File in the file system.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+    name = "summarize_local_file"
+    description = (
+        """This function will return the summary of a local file.
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "filename": {
+            "type": "string",
+            "description": "File in the file system.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, filename: str, restart_chat: bool = True) -> str:
-            task_str = 'Hello super-intelligence! Please provide a summary for the following as a string (do not use python code except for the final answer): '+ load_string_from_file(filename)[:15000]
-            result = self.agent.run(task_str, reset=restart_chat)
-            return result
+    def forward(self, filename: str, restart_chat: bool = True) -> str:
+        task_str = (
+            "Hello super-intelligence! Please provide a summary for the following as a string (do not use python code except for the final answer): "
+            + load_string_from_file(filename)[:15000]
+        )
+        result = self.agent.run(task_str, reset=restart_chat)
+        return result
+
 
 class Subassistant(Tool):
-        name = "subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the sub assistant.
+    name = "subassistant"
+    description = (
+        """This assistant is similar to yourself in capability. It is called the sub assistant.
 Check what the site https://cnn.com is about or
 create a summary from the content of the file /content/README.md .
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "task_str": {
-                "type": "string",
-                "description": "Task description.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "task_str": {
+            "type": "string",
+            "description": "Task description.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, task_str: str, restart_chat: bool = True) -> str:
-            result = self.agent.run(task_str, reset=restart_chat)
-            return result
+    def forward(self, task_str: str, restart_chat: bool = True) -> str:
+        result = self.agent.run(task_str, reset=restart_chat)
+        return result
+
 
 class InternetSearchSubassistant(Tool):
-        name = "internet_search_subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the internet search sub assistant.
+    name = "internet_search_subassistant"
+    description = (
+        """This assistant is similar to yourself in capability. It is called the internet search sub assistant.
 This sub assistant is dedicated to internet searches.
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "task_str": {
-                "type": "string",
-                "description": "search topic.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "task_str": {
+            "type": "string",
+            "description": "search topic.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, task_str: str, restart_chat: bool = True) -> str:
-            local_task_str = """Hello super intelligence!
-Please do an internet search regarding '"""+task_str+"""'.
+    def forward(self, task_str: str, restart_chat: bool = True) -> str:
+        local_task_str = (
+            """Hello super intelligence!
+Please do an internet search regarding '"""
+            + task_str
+            + """'.
 Then, please reply with as much information as you can via final_answer('Hello, my findings are:...') .
 In your answer, please include the references (links).
 """
-            result = self.agent.run(local_task_str, reset=restart_chat)
-            return result
+        )
+        result = self.agent.run(local_task_str, reset=restart_chat)
+        return result
+
 
 class CoderSubassistant(Tool):
-        name = "coder_subassistant"
-        description = """This assistant is similar to yourself in capability. It is called the coder sub assistant.
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "task_str": {
-                "type": "string",
-                "description": "Coding task description.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+    name = "coder_subassistant"
+    description = (
+        """This assistant is similar to yourself in capability. It is called the coder sub assistant.
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "task_str": {
+            "type": "string",
+            "description": "Coding task description.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, task_str: str, restart_chat: bool = True) -> str:
-            local_task_str = """Hello super intelligence!
-Please code '"""+task_str+"""'.
+    def forward(self, task_str: str, restart_chat: bool = True) -> str:
+        local_task_str = (
+            """Hello super intelligence!
+Please code '"""
+            + task_str
+            + """'.
 Then, please reply with your code via 
 <final_answer>
 # my code ...
 ...
 </final_answer>
 """
-            result = self.agent.run(local_task_str, reset=restart_chat)
-            return result
+        )
+        result = self.agent.run(local_task_str, reset=restart_chat)
+        return result
+
 
 class GetRelevantInfoFromFile(Tool):
-        name = "get_relevant_info_from_file"
-        description = """This sub assistant will return relevant information about relevant_about_str from a local file.
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "relevant_about_str": {
-                "type": "string",
-                "description": "What are we looking for.",
-            },
-            "filename": {
-                "type": "string",
-                "description": "File in the file system.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+    name = "get_relevant_info_from_file"
+    description = (
+        """This sub assistant will return relevant information about relevant_about_str from a local file.
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "relevant_about_str": {
+            "type": "string",
+            "description": "What are we looking for.",
+        },
+        "filename": {
+            "type": "string",
+            "description": "File in the file system.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, relevant_about_str:str, filename: str, restart_chat: bool = True) -> str:
-            task_str = """Hello super-intelligence! I have the following content in the tags <md></md>. This is the content:
+    def forward(self, relevant_about_str: str, filename: str, restart_chat: bool = True) -> str:
+        task_str = (
+            """Hello super-intelligence! I have the following content in the tags <md></md>. This is the content:
 <md>
-"""+load_string_from_file(filename)[:128000*4]+"""
+"""
+            + load_string_from_file(filename)[: 128000 * 4]
+            + """
 </md>
-Please provide relevant information about """+relevant_about_str+""" from the above tags <md></md>.
+Please provide relevant information about """
+            + relevant_about_str
+            + """ from the above tags <md></md>.
 Do not use python code except for the final answer - the output format must be a string.
 You will provide the relevant information following this example:
 <runcode>final_answer('This is what I have found: ... ')</runcode>.
 """
-            result = self.agent.run(task_str, reset=restart_chat)
-            return result
+        )
+        result = self.agent.run(task_str, reset=restart_chat)
+        return result
+
 
 class GetRelevantInfoFromUrl(Tool):
-        name = "get_relevant_info_from_url"
-        description = """This sub assistant will return relevant information from an url.
-"""+RESTART_CHAT_TXT
-        inputs = {
-            "relevant_about_str": {
-                "type": "string",
-                "description": "What are we looking for.",
-            },
-            "url": {
-                "type": "string",
-                "description": "URL from where information will be read.",
-            },
-            "restart_chat": {
-                "type": "boolean",
-                "description": "When true, forgets the previous chat.",
-                "nullable" : True
-            }
-        }
-        output_type = "string"
-        agent = None
+    name = "get_relevant_info_from_url"
+    description = (
+        """This sub assistant will return relevant information from an url.
+"""
+        + RESTART_CHAT_TXT
+    )
+    inputs = {
+        "relevant_about_str": {
+            "type": "string",
+            "description": "What are we looking for.",
+        },
+        "url": {
+            "type": "string",
+            "description": "URL from where information will be read.",
+        },
+        "restart_chat": {"type": "boolean", "description": "When true, forgets the previous chat.", "nullable": True},
+    }
+    output_type = "string"
+    agent = None
 
-        def __init__(self, agent):
-            super().__init__()
-            self.agent = agent
+    def __init__(self, agent):
+        super().__init__()
+        self.agent = agent
 
-        def forward(self, relevant_about_str:str, url: str, restart_chat: bool = True) -> str:
-            LocalVistWebPageTool = VisitWebpageTool(128000*4)
-            task_str = """Hello super-intelligence! I have the following md content in the tags <md></md>. This is the content:
+    def forward(self, relevant_about_str: str, url: str, restart_chat: bool = True) -> str:
+        LocalVistWebPageTool = VisitWebpageTool(128000 * 4)
+        task_str = (
+            """Hello super-intelligence! I have the following md content in the tags <md></md>. This is the content:
 <md>
-"""+LocalVistWebPageTool(url)+"""
+"""
+            + LocalVistWebPageTool(url)
+            + """
 </md>
-Please provide relevant information about """+relevant_about_str+""" from the above tags <md></md>.
+Please provide relevant information about """
+            + relevant_about_str
+            + """ from the above tags <md></md>.
 Do not use python code except for the final answer - the output format must be a string.
 You will provide the relevant information following this example:
 <runcode>final_answer('This is what I have found: ... ')</runcode>.
 """
-            result = self.agent.run(task_str, reset=restart_chat)
-            return result
+        )
+        result = self.agent.run(task_str, reset=restart_chat)
+        return result
+
 
 @tool
-def get_files_in_folder(folder:str='solutions', fileext:str='.md') -> list:
-  """
-  This function will return a list of files in a folder with a given file extension.
-  Args:
-    folder: str
-    fileext: str
-  Returns:
-    list: A list of filenames that match the specified extension
-  """
-  return [f for f in os.listdir(folder) if f.endswith(fileext)]
+def get_files_in_folder(folder: str = "solutions", fileext: str = ".md") -> list:
+    """
+    This function will return a list of files in a folder with a given file extension.
+    Args:
+      folder: str
+      fileext: str
+    Returns:
+      list: A list of filenames that match the specified extension
+    """
+    return [f for f in os.listdir(folder) if f.endswith(fileext)]
+
 
 @tool
-def create_filename(topic:str, extension:str=".md") -> str:
+def create_filename(topic: str, extension: str = ".md") -> str:
     """
     This function will create a filename from a topic (unformatted string) and an extension.
     Args:
@@ -1491,15 +1636,18 @@ def create_filename(topic:str, extension:str=".md") -> str:
     Returns:
       str: The generated filename with the specified extension
     """
-    filename = slugify(topic, separator='_')
+    filename = slugify(topic, separator="_")
     return filename + extension
 
+
 @tool
-def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool = True, add_function_signatures: bool = False) -> str:
+def list_directory_tree(
+    folder_path: str, max_depth: int = 3, show_files: bool = True, add_function_signatures: bool = False
+) -> str:
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.
-    
+
     Example output:
     project/
     ├── src/
@@ -1507,15 +1655,15 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
     │   └── utils.py (45 lines)
     └── tests/
         └── test_main.py (67 lines)
-    
+
     Total source code lines: 235
-    
+
     Args:
         folder_path: str The root folder path to visualize
         max_depth: int Maximum depth to traverse (default 3)
         show_files: bool Whether to show files or only directories (default True)
         add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
-    
+
     Returns:
         str: A string representation of the directory tree
     """
@@ -1530,20 +1678,20 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
         """Detect programming language from file extension"""
         ext = os.path.splitext(filename)[1].lower()
         language_map = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.jsx': 'javascript',
-            '.ts': 'typescript',
-            '.tsx': 'typescript',
-            '.java': 'java',
-            '.php': 'php',
-            '.pas': 'pascal',
-            '.pp': 'pascal',
-            '.lpr': 'pascal',
-            '.dpr': 'pascal',
-            '.inc': 'pascal',
+            ".py": "python",
+            ".js": "javascript",
+            ".jsx": "javascript",
+            ".ts": "typescript",
+            ".tsx": "typescript",
+            ".java": "java",
+            ".php": "php",
+            ".pas": "pascal",
+            ".pp": "pascal",
+            ".lpr": "pascal",
+            ".dpr": "pascal",
+            ".inc": "pascal",
         }
-        return language_map.get(ext, 'generic')
+        return language_map.get(ext, "generic")
 
     def add_tree_lines(current_path, prefix="", depth=0):
         nonlocal total_lines
@@ -1556,7 +1704,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
             return
 
         # Filter out hidden files/folders starting with '.'
-        items = [item for item in items if not item.startswith('.')]
+        items = [item for item in items if not item.startswith(".")]
 
         # Separate directories and files
         dirs = [item for item in items if os.path.isdir(os.path.join(current_path, item))]
@@ -1595,11 +1743,15 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
                     try:
                         signatures = extract_function_signatures(item_path, language)
                         # Only display if signatures were found and don't contain error messages
-                        if signatures and not signatures.startswith("Error:") and not signatures.startswith("No function"):
+                        if (
+                            signatures
+                            and not signatures.startswith("Error:")
+                            and not signatures.startswith("No function")
+                        ):
                             # Indent the signatures to align with the tree structure
                             extension = "    " if is_last else "│   "
                             sig_prefix = prefix + extension
-                            for sig in signatures.split('\n'):
+                            for sig in signatures.split("\n"):
                                 if sig.strip():  # Only add non-empty signature lines
                                     lines.append(f"{sig_prefix}    {sig.strip()}")
                     except Exception:
@@ -1621,14 +1773,20 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
 
     return "\n".join(lines)
 
+
 @tool
-def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
-                    case_sensitive: bool = False, max_results: int = 50) -> str:
+def search_in_files(
+    folder_path: str,
+    search_pattern: str,
+    file_extensions: tuple = None,
+    case_sensitive: bool = False,
+    max_results: int = 50,
+) -> str:
     """
     Searches for a pattern in files within a folder and its subfolders.
     Returns matching lines with file paths and line numbers. This is much more efficient
     than loading all files when you need to find specific code patterns.
-    
+
     Args:
         folder_path: str The root folder to search in
         search_pattern: str The text pattern to search for
@@ -1636,7 +1794,7 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
                         If None, searches all text files
         case_sensitive: bool Whether the search should be case-sensitive (default False)
         max_results: int Maximum number of results to return (default 50)
-    
+
     Returns:
         str: Search results formatted as "filepath:line_number: line_content"
     """
@@ -1651,12 +1809,12 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
 
     for root, _, files in os.walk(folder_path):
         # Skip hidden directories
-        if any(part.startswith('.') for part in root.split(os.sep)):
+        if any(part.startswith(".") for part in root.split(os.sep)):
             continue
 
         for filename in files:
             # Skip hidden files
-            if filename.startswith('.'):
+            if filename.startswith("."):
                 continue
 
             # Filter by extension if specified
@@ -1667,7 +1825,7 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
             filepath = os.path.join(root, filename)
 
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
+                with open(filepath, "r", encoding="utf-8") as f:
                     for line_num, line in enumerate(f, 1):
                         search_line = line if case_sensitive else line.lower()
                         if pattern in search_line:
@@ -1685,17 +1843,18 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
 
     return "\n".join(results)
 
+
 @tool
 def read_file_range(filename: str, start_byte: int, end_byte: int) -> str:
     """
     Reads a specific byte range from a file. This is useful for very large files
     where you only need to inspect a portion, saving memory and context.
-    
+
     Args:
         filename: str The file path
         start_byte: int The starting byte position (0-indexed)
         end_byte: int The ending byte position (exclusive)
-    
+
     Returns:
         str: The content from the specified byte range
     """
@@ -1709,62 +1868,65 @@ def read_file_range(filename: str, start_byte: int, end_byte: int) -> str:
         raise ValueError("start_byte must be less than end_byte")
 
     try:
-        with open(filename, 'rb') as f:
+        with open(filename, "rb") as f:
             f.seek(start_byte)
             bytes_to_read = end_byte - start_byte
             content = f.read(bytes_to_read)
-            return content.decode('utf-8', errors='replace')
+            return content.decode("utf-8", errors="replace")
     except Exception as e:
         raise IOError(f"Error reading file range: {e}")
+
 
 @tool
 def get_file_info(filepath: str) -> dict:
     """
     Gets metadata about a file without reading its content. This is efficient
     for checking file properties before deciding whether to load the full content.
-    
+
     Args:
         filepath: str The file path
-    
+
     Returns:
         dict: Dictionary containing file metadata (size, modified_time, is_file, is_dir, exists)
     """
     info = {
-        'exists': os.path.exists(filepath),
-        'is_file': os.path.isfile(filepath),
-        'is_dir': os.path.isdir(filepath),
-        'size_bytes': 0,
-        'modified_time': None,
-        'readable': False,
-        'writable': False
+        "exists": os.path.exists(filepath),
+        "is_file": os.path.isfile(filepath),
+        "is_dir": os.path.isdir(filepath),
+        "size_bytes": 0,
+        "modified_time": None,
+        "readable": False,
+        "writable": False,
     }
 
-    if info['exists']:
+    if info["exists"]:
         try:
             stat_info = os.stat(filepath)
-            info['size_bytes'] = stat_info.st_size
-            info['modified_time'] = stat_info.st_mtime
-            info['readable'] = os.access(filepath, os.R_OK)
-            info['writable'] = os.access(filepath, os.W_OK)
+            info["size_bytes"] = stat_info.st_size
+            info["modified_time"] = stat_info.st_mtime
+            info["readable"] = os.access(filepath, os.R_OK)
+            info["writable"] = os.access(filepath, os.W_OK)
         except (PermissionError, OSError):
             pass
 
     return info
 
+
 @tool
-def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False, 
-                   files_only: bool = False, dirs_only: bool = False) -> list:
+def list_directory(
+    folder_path: str, pattern: str = "*", recursive: bool = False, files_only: bool = False, dirs_only: bool = False
+) -> list:
     """
     Lists files and directories in a folder with optional filtering.
     More flexible than get_files_in_folder with pattern matching support.
-    
+
     Args:
         folder_path: str The folder path to list
         pattern: str Glob pattern to match (default "*" for all)
         recursive: bool Whether to search recursively (default False)
         files_only: bool Return only files (default False)
         dirs_only: bool Return only directories (default False)
-    
+
     Returns:
         list: List of matching paths
     """
@@ -1788,15 +1950,16 @@ def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False
 
     return sorted(matches)
 
+
 @tool
 def mkdir(directory_path: str, parents: bool = True) -> bool:
     """
     Creates a directory. If parents=True, creates intermediate directories as needed.
-    
+
     Args:
         directory_path: str The directory path to create
         parents: bool Whether to create parent directories (default True)
-    
+
     Returns:
         bool: True if successful, raises exception otherwise
     """
@@ -1808,6 +1971,7 @@ def mkdir(directory_path: str, parents: bool = True) -> bool:
         return True
     except Exception as e:
         raise OSError(f"Failed to create directory '{directory_path}': {e}")
+
 
 @tool
 def extract_function_signatures(filename: str, language: str = "python") -> str:
@@ -1828,7 +1992,7 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         return f"Error: File '{filename}' not found"
 
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
+        with open(filename, "r", encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
         return f"Error reading file: {e}"
@@ -1838,7 +2002,7 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     if language.lower() == "python":
         # Match Python function and class definitions
         # Match def function_name(...): and class ClassName(...):
-        pattern = r'^([ \t]*)(def|class)\s+(\w+)\s*(\([^)]*\))?\s*:'
+        pattern = r"^([ \t]*)(def|class)\s+(\w+)\s*(\([^)]*\))?\s*:"
         for match in re.finditer(pattern, content, re.MULTILINE):
             indent = match.group(1)
             keyword = match.group(2)
@@ -1850,17 +2014,17 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         # Match JavaScript/TypeScript function declarations
         # function name(...), async function name(...), name(...) {, const name = (...) =>
         patterns = [
-            r'^([ \t]*)(async\s+)?function\s+(\w+)\s*(\([^)]*\))',
-            r'^([ \t]*)(\w+)\s*(\([^)]*\))\s*\{',
-            r'^([ \t]*)(const|let|var)\s+(\w+)\s*=\s*(\([^)]*\))\s*=>'
+            r"^([ \t]*)(async\s+)?function\s+(\w+)\s*(\([^)]*\))",
+            r"^([ \t]*)(\w+)\s*(\([^)]*\))\s*\{",
+            r"^([ \t]*)(const|let|var)\s+(\w+)\s*=\s*(\([^)]*\))\s*=>",
         ]
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
-                signatures.append(match.group(0).split('{')[0].strip())
+                signatures.append(match.group(0).split("{")[0].strip())
 
     elif language.lower() == "java":
         # Match Java method declarations
-        pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
+        pattern = r"^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))"
         for match in re.finditer(pattern, content, re.MULTILINE):
             signatures.append(match.group(0).strip())
 
@@ -1868,9 +2032,9 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         # Match PHP function and method declarations (including object-oriented features)
         # Matches: function name(...), class ClassName, public/private/protected function name(...)
         patterns = [
-            r'^([ \t]*)class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?',
-            r'^([ \t]*)(public|private|protected)\s+(static\s+)?function\s+(\w+)\s*(\([^)]*\))',
-            r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
+            r"^([ \t]*)class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?",
+            r"^([ \t]*)(public|private|protected)\s+(static\s+)?function\s+(\w+)\s*(\([^)]*\))",
+            r"^([ \t]*)function\s+(\w+)\s*(\([^)]*\))",
         ]
         seen = set()
         for pattern in patterns:
@@ -1884,9 +2048,9 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         # Match Pascal/Object Pascal function, procedure, and class declarations
         # Handles: function Name(...): Type; procedure Name(...); class TClassName
         patterns = [
-            r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
-            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*class(?:\s*\([^)]*\))?',
-            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;'
+            r"^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;",
+            r"^([ \t]*)(type\s+)?(\w+)\s*=\s*class(?:\s*\([^)]*\))?",
+            r"^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;",
         ]
         seen = set()
         for pattern in patterns:
@@ -1900,7 +2064,7 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         # Generic fallback for unsupported languages using "function" and "procedure" keywords
         # This will work for many programming languages that use these keywords
         # Conservative pattern that matches common function/procedure declarations
-        pattern = r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?'
+        pattern = r"^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?"
         seen = set()
         for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
             sig = match.group(0).strip()
@@ -1913,17 +2077,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
 
     return "\n".join(signatures)
 
+
 @tool
 def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
     """
     Compares two files and shows the differences in a unified diff format.
     Useful for understanding what changed between versions.
-    
+
     Args:
         file1: str Path to the first file
         file2: str Path to the second file
         context_lines: int Number of context lines to show around differences (default 3)
-    
+
     Returns:
         str: Unified diff output
     """
@@ -1933,37 +2098,33 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
         return f"Error: File '{file2}' not found"
 
     try:
-        with open(file1, 'r', encoding='utf-8') as f:
+        with open(file1, "r", encoding="utf-8") as f:
             lines1 = f.readlines()
-        with open(file2, 'r', encoding='utf-8') as f:
+        with open(file2, "r", encoding="utf-8") as f:
             lines2 = f.readlines()
     except Exception as e:
         return f"Error reading files: {e}"
 
     import difflib
-    diff = difflib.unified_diff(
-        lines1, lines2,
-        fromfile=file1,
-        tofile=file2,
-        lineterm='',
-        n=context_lines
-    )
 
-    diff_output = '\n'.join(diff)
+    diff = difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2, lineterm="", n=context_lines)
+
+    diff_output = "\n".join(diff)
 
     if not diff_output:
         return "Files are identical"
 
     return diff_output
 
+
 @tool
 def delete_file(filepath: str) -> bool:
     """
     Deletes a file from the filesystem.
-    
+
     Args:
         filepath: str Path to the file to delete
-    
+
     Returns:
         bool: True if successful
     """
@@ -1979,15 +2140,16 @@ def delete_file(filepath: str) -> bool:
     except Exception as e:
         raise OSError(f"Failed to delete file '{filepath}': {e}")
 
+
 @tool
 def delete_directory(directory_path: str, recursive: bool = False) -> bool:
     """
     Deletes a directory. If recursive=True, deletes the directory and all its contents.
-    
+
     Args:
         directory_path: str Path to the directory to delete
         recursive: bool Whether to delete recursively (default False)
-    
+
     Returns:
         bool: True if successful
     """
@@ -2000,6 +2162,7 @@ def delete_directory(directory_path: str, recursive: bool = False) -> bool:
     try:
         if recursive:
             import shutil
+
             shutil.rmtree(directory_path)
         else:
             os.rmdir(directory_path)
@@ -2007,16 +2170,19 @@ def delete_directory(directory_path: str, recursive: bool = False) -> bool:
     except Exception as e:
         raise OSError(f"Failed to delete directory '{directory_path}': {e}")
 
+
 @tool
-def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js', '.java', '.cpp', '.c', '.php', '.rb')) -> dict:
+def count_lines_of_code(
+    folder_path: str, file_extensions: tuple = (".py", ".js", ".java", ".cpp", ".c", ".php", ".rb")
+) -> dict:
     """
     Counts lines of code in a project, broken down by file type.
     Helps understand project size and composition without loading all files.
-    
+
     Args:
         folder_path: str Root folder to analyze
         file_extensions: tuple File extensions to count (default common programming languages)
-    
+
     Returns:
         dict: Dictionary with file extension as key and line count as value
     """
@@ -2028,23 +2194,23 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
 
     for root, _, files in os.walk(folder_path):
         # Skip hidden directories
-        if any(part.startswith('.') for part in root.split(os.sep)):
+        if any(part.startswith(".") for part in root.split(os.sep)):
             continue
 
         for filename in files:
-            if filename.startswith('.'):
+            if filename.startswith("."):
                 continue
 
             ext = os.path.splitext(filename)[1].lower()
             if ext in file_extensions:
                 filepath = os.path.join(root, filename)
                 try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
+                    with open(filepath, "r", encoding="utf-8") as f:
                         line_count = sum(1 for _ in f)
                         counts[ext] = counts.get(ext, 0) + line_count
                         total_lines += line_count
                 except (UnicodeDecodeError, PermissionError, IOError):
                     continue
 
-    counts['_total'] = total_lines
+    counts["_total"] = total_lines
     return counts
