@@ -1774,13 +1774,13 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     """
     Extracts function and class signatures from a source code file without loading
     the full implementation. This helps understand code structure efficiently.
-    
+
     Currently supports: python, javascript, java, php, pascal, and generic fallback for most languages
-    
+
     Args:
         filename: str The source code file path
         language: str The programming language (default "python")
-    
+
     Returns:
         str: Extracted signatures, one per line
     """
@@ -1794,7 +1794,6 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
         return f"Error reading file: {e}"
 
     signatures = []
-    import re
 
     if language.lower() == "python":
         # Match Python function and class definitions
@@ -1860,17 +1859,14 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
     else:
         # Generic fallback for unsupported languages using "function" and "procedure" keywords
         # This will work for many programming languages that use these keywords
-        patterns = [
-            r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?',
-            r'^([ \t]*)(?:public|private|protected)?\s*(function|procedure)\s+(\w+)\s*(\([^)]*\))?'
-        ]
+        # Conservative pattern that matches common function/procedure declarations
+        pattern = r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?'
         seen = set()
-        for pattern in patterns:
-            for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
-                sig = match.group(0).strip()
-                if sig not in seen:
-                    signatures.append(sig)
-                    seen.add(sig)
+        for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
+            sig = match.group(0).strip()
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     if not signatures:
         return f"No function/class signatures found in '{filename}'"
