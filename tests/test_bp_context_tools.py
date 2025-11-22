@@ -64,6 +64,67 @@ class TestListDirectoryTree:
         """Test handling of invalid directory"""
         result = list_directory_tree("/nonexistent/path")
         assert "not a valid directory" in result
+    
+    def test_line_count_for_source_files(self, tmp_path):
+        """Test that source code files show line counts"""
+        # Create Python source file
+        (tmp_path / "test.py").write_text("line1\nline2\nline3\n")
+        
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+        
+        assert "test.py (3 lines)" in result
+        assert "Total source code lines: 3" in result
+    
+    def test_line_count_for_multiple_extensions(self, tmp_path):
+        """Test that various source code extensions are counted"""
+        # Create files with different source code extensions
+        (tmp_path / "script.py").write_text("line1\nline2\n")
+        (tmp_path / "styles.css").write_text("line1\nline2\nline3\n")
+        (tmp_path / "config.json").write_text("line1\n")
+        (tmp_path / "readme.md").write_text("line1\nline2\nline3\nline4\n")
+        
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+        
+        assert "script.py (2 lines)" in result
+        assert "styles.css (3 lines)" in result
+        assert "config.json (1 lines)" in result
+        assert "readme.md (4 lines)" in result
+        assert "Total source code lines: 10" in result
+    
+    def test_no_line_count_for_non_source_files(self, tmp_path):
+        """Test that non-source files don't show line counts"""
+        # Create non-source files
+        (tmp_path / "image.png").write_bytes(b'\x89PNG\r\n\x1a\n')
+        (tmp_path / "data.bin").write_bytes(b'\x00\x01\x02\x03')
+        
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+        
+        assert "image.png" in result
+        assert "lines" not in result.lower() or "Total source code lines:" not in result
+    
+    def test_line_count_in_nested_directories(self, tmp_path):
+        """Test that line counts work in nested directories"""
+        # Create nested structure with source files
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("line1\nline2\nline3\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test.py").write_text("line1\nline2\n")
+        
+        result = list_directory_tree(str(tmp_path), max_depth=2, show_files=True)
+        
+        assert "main.py (3 lines)" in result
+        assert "test.py (2 lines)" in result
+        assert "Total source code lines: 5" in result
+    
+    def test_no_total_when_no_source_files(self, tmp_path):
+        """Test that total is not shown when there are no source files"""
+        # Create only non-source files
+        (tmp_path / "image.png").write_bytes(b'\x89PNG\r\n\x1a\n')
+        (tmp_path / "dir1").mkdir()
+        
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True)
+        
+        assert "Total source code lines:" not in result
 
 
 class TestSearchInFiles:

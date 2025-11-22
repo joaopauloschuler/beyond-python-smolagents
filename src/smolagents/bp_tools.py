@@ -1503,10 +1503,12 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
     Example output:
     project/
     ├── src/
-    │   ├── main.py
-    │   └── utils.py
+    │   ├── main.py (123 lines)
+    │   └── utils.py (45 lines)
     └── tests/
-        └── test_main.py
+        └── test_main.py (67 lines)
+    
+    Total source code lines: 235
     
     Args:
         folder_path: str The root folder path to visualize
@@ -1520,8 +1522,10 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
         return f"Error: '{folder_path}' is not a valid directory"
     
     lines = []
+    total_lines = 0
     
     def add_tree_lines(current_path, prefix="", depth=0):
+        nonlocal total_lines
         if depth > max_depth:
             return
         
@@ -1545,7 +1549,21 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
             
             # Choose the appropriate tree characters
             connector = "└── " if is_last else "├── "
-            lines.append(f"{prefix}{connector}{item}{'/' if os.path.isdir(item_path) else ''}")
+            
+            # Check if file is a source code file and count lines
+            line_count_str = ""
+            if os.path.isfile(item_path):
+                _, ext = os.path.splitext(item)
+                if ext.lower() in DEFAULT_SOURCE_CODE_EXTENSIONS:
+                    try:
+                        num_lines = get_file_lines(item_path)
+                        line_count_str = f" ({num_lines} lines)"
+                        total_lines += num_lines
+                    except Exception:
+                        # If we can't read the file, just skip the line count
+                        pass
+            
+            lines.append(f"{prefix}{connector}{item}{'/' if os.path.isdir(item_path) else ''}{line_count_str}")
             
             # Recurse into subdirectories
             if os.path.isdir(item_path):
@@ -1555,6 +1573,10 @@ def list_directory_tree(folder_path: str, max_depth: int = 3, show_files: bool =
     # Add root folder
     lines.append(f"{os.path.basename(folder_path)}/")
     add_tree_lines(folder_path, "", 0)
+    
+    # Add total line count at the end if any source code files were found
+    if total_lines > 0:
+        lines.append(f"\nTotal source code lines: {total_lines}")
     
     return "\n".join(lines)
 
