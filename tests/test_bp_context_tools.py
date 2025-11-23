@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from smolagents.bp_tools import (
     compare_files,
+    compare_folders,
     count_lines_of_code,
     delete_directory,
     delete_file,
@@ -663,6 +664,146 @@ class TestCompareFiles:
 
         result = compare_files(str(file1), "/nonexistent/file.txt")
         assert "not found" in result.lower()
+
+
+class TestCompareFolders:
+    def test_identical_folders(self, tmp_path):
+        """Test comparing identical folders"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Create identical source files
+        (folder1 / "test.py").write_text("def hello():\n    pass\n")
+        (folder2 / "test.py").write_text("def hello():\n    pass\n")
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "identical" in result.lower()
+
+    def test_folders_with_different_files(self, tmp_path):
+        """Test comparing folders with different content"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Create different content
+        (folder1 / "test.py").write_text("def hello():\n    pass\n")
+        (folder2 / "test.py").write_text("def hello():\n    print('hi')\n")
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "DIFFERENCES" in result
+        assert "test.py" in result
+
+    def test_folders_with_unique_files(self, tmp_path):
+        """Test comparing folders where each has unique files"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Files only in folder1
+        (folder1 / "only_in_1.py").write_text("code here")
+        
+        # Files only in folder2
+        (folder2 / "only_in_2.js").write_text("code here")
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "ONLY IN FOLDER 1" in result
+        assert "only_in_1.py" in result
+        assert "ONLY IN FOLDER 2" in result
+        assert "only_in_2.js" in result
+
+    def test_folders_with_nested_structure(self, tmp_path):
+        """Test comparing folders with nested directory structure"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Create nested structure
+        (folder1 / "subdir").mkdir()
+        (folder2 / "subdir").mkdir()
+        
+        (folder1 / "subdir" / "nested.py").write_text("def func1():\n    pass\n")
+        (folder2 / "subdir" / "nested.py").write_text("def func2():\n    pass\n")
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "subdir" in result or "nested.py" in result
+        assert "DIFFERENCES" in result
+
+    def test_only_source_code_files_compared(self, tmp_path):
+        """Test that only source code files are compared"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Create source code files (should be compared)
+        (folder1 / "test.py").write_text("python code")
+        (folder2 / "test.py").write_text("different python")
+        
+        # Create binary files (should be ignored)
+        (folder1 / "data.bin").write_bytes(b'\x00\x01\x02')
+        (folder2 / "data.bin").write_bytes(b'\xff\xfe\xfd')
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        # Should report difference in .py file
+        assert "test.py" in result
+        # Should NOT mention .bin file
+        assert "data.bin" not in result
+
+    def test_nonexistent_folder(self, tmp_path):
+        """Test comparing with nonexistent folder"""
+        folder1 = tmp_path / "exists"
+        folder1.mkdir()
+        
+        result = compare_folders(str(folder1), "/nonexistent/folder")
+        assert "not found" in result.lower()
+
+    def test_empty_folders(self, tmp_path):
+        """Test comparing empty folders"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "identical" in result.lower()
+
+    def test_mixed_scenario(self, tmp_path):
+        """Test a complex scenario with identical, different, and unique files"""
+        folder1 = tmp_path / "folder1"
+        folder2 = tmp_path / "folder2"
+        folder1.mkdir()
+        folder2.mkdir()
+        
+        # Identical file
+        (folder1 / "same.py").write_text("same content")
+        (folder2 / "same.py").write_text("same content")
+        
+        # Different file
+        (folder1 / "diff.js").write_text("version 1")
+        (folder2 / "diff.js").write_text("version 2")
+        
+        # Unique files
+        (folder1 / "unique1.html").write_text("only in 1")
+        (folder2 / "unique2.css").write_text("only in 2")
+        
+        result = compare_folders(str(folder1), str(folder2))
+        
+        assert "SUMMARY" in result
+        assert "same.py" not in result or "Identical files: 1" in result
+        assert "diff.js" in result
+        assert "unique1.html" in result
+        assert "unique2.css" in result
 
 
 class TestDeleteOperations:
