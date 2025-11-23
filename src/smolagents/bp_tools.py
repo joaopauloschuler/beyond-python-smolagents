@@ -2,6 +2,7 @@
 
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
+import difflib
 import os
 import subprocess
 import shlex
@@ -1950,7 +1951,6 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
     except Exception as e:
         return f"Error reading files: {e}"
 
-    import difflib
     diff = difflib.unified_diff(
         lines1, lines2,
         fromfile=file1,
@@ -1980,12 +1980,13 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
     Returns:
         str: Comparison report showing files only in each folder and diffs for changed files
     """
-    import difflib
-    
     if not os.path.isdir(folder1):
         return f"Error: Folder '{folder1}' not found"
     if not os.path.isdir(folder2):
         return f"Error: Folder '{folder2}' not found"
+    
+    # Cache lowercased extensions for performance
+    source_extensions = tuple(ext.lower() for ext in DEFAULT_SOURCE_CODE_EXTENSIONS)
     
     # Get all source code files from both folders
     def get_source_files(folder):
@@ -1994,7 +1995,7 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
         for root, _, files in os.walk(folder):
             for filename in files:
                 # Check if file has a source code extension
-                if filename.lower().endswith(DEFAULT_SOURCE_CODE_EXTENSIONS):
+                if filename.lower().endswith(source_extensions):
                     full_path = os.path.join(root, filename)
                     # Store relative path as key
                     rel_path = os.path.relpath(full_path, folder)
@@ -2044,10 +2045,20 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
         path2 = files2[file]
         
         try:
-            with open(path1, 'r', encoding='utf-8') as f:
-                lines1 = f.readlines()
-            with open(path2, 'r', encoding='utf-8') as f:
-                lines2 = f.readlines()
+            # Try utf-8 first, then fallback to latin-1 like load_string_from_file
+            try:
+                with open(path1, 'r', encoding='utf-8') as f:
+                    lines1 = f.readlines()
+            except UnicodeDecodeError:
+                with open(path1, 'r', encoding='latin-1') as f:
+                    lines1 = f.readlines()
+            
+            try:
+                with open(path2, 'r', encoding='utf-8') as f:
+                    lines2 = f.readlines()
+            except UnicodeDecodeError:
+                with open(path2, 'r', encoding='latin-1') as f:
+                    lines2 = f.readlines()
             
             # Check if files are different
             if lines1 != lines2:
