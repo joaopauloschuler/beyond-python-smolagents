@@ -1967,6 +1967,126 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
     return diff_output
 
 @tool
+def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
+    """
+    Compares two folders and shows the differences for source code files.
+    Only files with extensions in DEFAULT_SOURCE_CODE_EXTENSIONS are compared.
+    
+    Args:
+        folder1: str Path to the first folder
+        folder2: str Path to the second folder
+        context_lines: int Number of context lines to show around differences (default 3)
+    
+    Returns:
+        str: Comparison report showing files only in each folder and diffs for changed files
+    """
+    import difflib
+    
+    if not os.path.isdir(folder1):
+        return f"Error: Folder '{folder1}' not found"
+    if not os.path.isdir(folder2):
+        return f"Error: Folder '{folder2}' not found"
+    
+    # Get all source code files from both folders
+    def get_source_files(folder):
+        """Get all source code files recursively from a folder"""
+        source_files = {}
+        for root, _, files in os.walk(folder):
+            for filename in files:
+                # Check if file has a source code extension
+                if filename.lower().endswith(DEFAULT_SOURCE_CODE_EXTENSIONS):
+                    full_path = os.path.join(root, filename)
+                    # Store relative path as key
+                    rel_path = os.path.relpath(full_path, folder)
+                    source_files[rel_path] = full_path
+        return source_files
+    
+    files1 = get_source_files(folder1)
+    files2 = get_source_files(folder2)
+    
+    # Find files only in folder1, only in folder2, and in both
+    only_in_folder1 = set(files1.keys()) - set(files2.keys())
+    only_in_folder2 = set(files2.keys()) - set(files1.keys())
+    common_files = set(files1.keys()) & set(files2.keys())
+    
+    # Build the comparison report
+    output = []
+    
+    # Summary
+    output.append("=== FOLDER COMPARISON SUMMARY ===")
+    output.append(f"Folder 1: {folder1}")
+    output.append(f"Folder 2: {folder2}")
+    output.append(f"Files only in folder 1: {len(only_in_folder1)}")
+    output.append(f"Files only in folder 2: {len(only_in_folder2)}")
+    output.append(f"Common files: {len(common_files)}")
+    output.append("")
+    
+    # Files only in folder1
+    if only_in_folder1:
+        output.append("=== FILES ONLY IN FOLDER 1 ===")
+        for file in sorted(only_in_folder1):
+            output.append(f"  {file}")
+        output.append("")
+    
+    # Files only in folder2
+    if only_in_folder2:
+        output.append("=== FILES ONLY IN FOLDER 2 ===")
+        for file in sorted(only_in_folder2):
+            output.append(f"  {file}")
+        output.append("")
+    
+    # Compare common files
+    different_files = []
+    identical_files = []
+    
+    for file in sorted(common_files):
+        path1 = files1[file]
+        path2 = files2[file]
+        
+        try:
+            with open(path1, 'r', encoding='utf-8') as f:
+                lines1 = f.readlines()
+            with open(path2, 'r', encoding='utf-8') as f:
+                lines2 = f.readlines()
+            
+            # Check if files are different
+            if lines1 != lines2:
+                different_files.append((file, path1, path2, lines1, lines2))
+            else:
+                identical_files.append(file)
+        except Exception as e:
+            output.append(f"Error comparing {file}: {e}")
+            output.append("")
+    
+    # Report identical and different files
+    output.append(f"=== COMPARISON RESULTS ===")
+    output.append(f"Identical files: {len(identical_files)}")
+    output.append(f"Different files: {len(different_files)}")
+    output.append("")
+    
+    # Show diffs for different files
+    if different_files:
+        output.append("=== DIFFERENCES ===")
+        for file, path1, path2, lines1, lines2 in different_files:
+            output.append(f"\n--- {file} ---")
+            diff = difflib.unified_diff(
+                lines1, lines2,
+                fromfile=f"folder1/{file}",
+                tofile=f"folder2/{file}",
+                lineterm='',
+                n=context_lines
+            )
+            diff_output = '\n'.join(diff)
+            output.append(diff_output)
+            output.append("")
+    
+    # If folders are identical
+    if not only_in_folder1 and not only_in_folder2 and not different_files:
+        return "Folders are identical (all source code files match)"
+    
+    return '\n'.join(output)
+
+@tool
 def delete_file(filepath: str) -> bool:
     """
     Deletes a file from the filesystem.
