@@ -9,6 +9,7 @@ DEFAULT_THINKER_STEP_CALLBACKS = []
 DEFAULT_THINKER_MAX_STEPS = 50
 DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
 DEFAULT_THINKER_PLANNING_INTERVAL = None
+DEFAULT_THINKER_LOG_LEVEL = LogLevel.ERROR
 
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
@@ -228,7 +229,7 @@ def evolutive_problem_solver(p_coder_model,
   executor_type=DEFAULT_THINKER_EXECUTOR_TYPE,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
-  log_level = LogLevel.DEBUG,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
   refine = True,
   start_coder_model = None,
   mixer_model = None,
@@ -485,7 +486,7 @@ def fast_solver(p_coder_model,
   executor_type=DEFAULT_THINKER_EXECUTOR_TYPE,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
-  log_level = LogLevel.ERROR,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
   p_coder_model2 = None,
   p_coder_model3 = None,
   p_coder_model_final = None,
@@ -561,7 +562,7 @@ If one of the solutions is already perfect, you can just copy it into the final 
     final_file_name+after_finish_description, reset=False)
   return load_string_from_file(final_file_name)  
 
-def get_relevant_info_from_search_fast(coder_model, research_subject, agent_steps = 10, step_callbacks=[], log_level = LogLevel.ERROR):
+def get_relevant_info_from_search_fast(coder_model, research_subject, agent_steps = 10, step_callbacks=[], log_level = DEFAULT_THINKER_LOG_LEVEL):
   search_agent = CodeAgent(
       tools=[],
       model=coder_model,
@@ -602,7 +603,7 @@ def evolutive_problem_solver_folder(p_coder_model,
   executor_type=DEFAULT_THINKER_EXECUTOR_TYPE,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
-  log_level = LogLevel.DEBUG,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
   refine = True,
   start_coder_model = None,
   mixer_model = None,
@@ -846,7 +847,7 @@ def kb_generator(p_coder_model,
   executor_type=DEFAULT_THINKER_EXECUTOR_TYPE,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
-  log_level = LogLevel.DEBUG,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
   p_coder_model2 = None,
   p_coder_model3 = None,
   p_coder_model_final = None,
@@ -936,7 +937,7 @@ def kb_updater(p_coder_model,
   executor_type=DEFAULT_THINKER_EXECUTOR_TYPE,
   add_base_tools=True,
   step_callbacks=DEFAULT_THINKER_STEP_CALLBACKS,
-  log_level = LogLevel.DEBUG,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
   p_coder_model2 = None,
   p_coder_model3 = None,
   p_coder_model_final = None,
@@ -987,3 +988,25 @@ Your goal is to improve it, make it better, include better references or make it
       outpt_text = local_fast_solver(new_kb_task, fileext)
       shutil.copyfile('final_solution'+fileext, file_name_resume)
 
+def get_default_thinker_agent(
+  model,
+  system_prompt = DEFAULT_THINKER_SYSTEM_PROMPT,
+  tools = DEFAULT_THINKER_TOOLS,
+  add_base_tools = True,
+  max_steps = DEFAULT_THINKER_MAX_STEPS,
+  step_callbacks = DEFAULT_THINKER_STEP_CALLBACKS,
+  executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
+  log_level = DEFAULT_THINKER_LOG_LEVEL
+):
+  coder_agent = CodeAgent(
+      tools=tools,
+      model=model,
+      additional_authorized_imports=['*'],
+      add_base_tools=add_base_tools,
+      max_steps=max_steps,
+      step_callbacks=step_callbacks,
+      executor_type=executor_type
+      )
+  coder_agent.set_system_prompt(system_prompt)
+  coder_agent.logger.log_level = log_level
+  return coder_agent
