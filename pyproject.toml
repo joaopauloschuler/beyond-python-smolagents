@@ -21,6 +21,7 @@ dependencies = [
   "ddgs>=9.0.0",  # DuckDuckGoSearchTool
   "markdownify>=0.14.1",  # VisitWebpageTool
   "python-slugify",
+  "difflib",
 ]
 
 [project.optional-dependencies]
