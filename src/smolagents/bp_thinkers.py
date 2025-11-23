@@ -608,7 +608,8 @@ def evolutive_problem_solver_folder(p_coder_model,
   mixer_model = None,
   secondary_improvement_model = None,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
-  load_full_source = False
+  load_full_source = False,
+  add_function_signatures = False,
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -695,9 +696,12 @@ with any advice that you would like to give to yourself to a future version of y
 """
       else:
         solutions_string = """
-<solution1>"""+list_directory_tree('solution1/', add_function_signatures=True)+"""</solution1>
-<solution2>"""+list_directory_tree('solution2/', add_function_signatures=True)+"""</solution2>
-<solution3>"""+list_directory_tree('solution3/', add_function_signatures=True)+"""</solution3>
+This is solution 3:
+<solution3>"""+list_directory_tree('solution3/', add_function_signatures=add_function_signatures)+"""</solution3>
+This is how the solution 1 differs from the solution 3:
+<solution1>"""+compare_folders('solution1/', 'solution3/')+"""</solution1>
+This is how the solution 2 differs from the solution 3:
+<solution2>"""+compare_folders('solution2/', 'solution3/')+"""</solution2>
 """
       task_description=""" Hello super-intelligence!
 We have 3 possible solutions for the task <task>"""+local_task_description+"""</task>
