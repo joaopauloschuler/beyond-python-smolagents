@@ -996,7 +996,8 @@ def get_default_thinker_agent(
   max_steps = DEFAULT_THINKER_MAX_STEPS,
   step_callbacks = DEFAULT_THINKER_STEP_CALLBACKS,
   executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
-  log_level = DEFAULT_THINKER_LOG_LEVEL
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
 ):
   coder_agent = CodeAgent(
       tools=tools,
@@ -1005,8 +1006,37 @@ def get_default_thinker_agent(
       add_base_tools=add_base_tools,
       max_steps=max_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type
+      executor_type=executor_type,
+      planning_interval=planning_interval
       )
   coder_agent.set_system_prompt(system_prompt)
   coder_agent.logger.log_level = log_level
   return coder_agent
+
+def run_agent_cycles(
+  model,
+  task_str,
+  cycles_cnt:int,
+  system_prompt = DEFAULT_THINKER_SYSTEM_PROMPT,
+  tools = DEFAULT_THINKER_TOOLS,
+  add_base_tools = True,
+  max_steps = DEFAULT_THINKER_MAX_STEPS,
+  step_callbacks = DEFAULT_THINKER_STEP_CALLBACKS,
+  executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
+  log_level = DEFAULT_THINKER_LOG_LEVEL,
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+):
+  local_agent = get_default_thinker_agent(
+    model=model,
+    system_prompt=system_prompt,
+    tools=tools,
+    add_base_tools=add_base_tools,
+    max_steps=max_steps,
+    step_callbacks=step_callbacks,
+    executor_type=executor_type,
+    log_level=log_level,
+    planning_interval=planning_interval
+  )
+  for i in range(cycles_cnt):
+    print("Running agent cycle:", i)
+    local_agent.run(task_str, reset=True)
