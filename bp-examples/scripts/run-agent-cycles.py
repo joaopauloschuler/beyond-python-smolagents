@@ -1,10 +1,25 @@
-KEY_VALUE = ''
-MODEL_ID = "Claude-Haiku-4.5"
-API_ENDPOINT="https://api.poe.com/v1"
+# Get mandatory KEY_VALUE from user
+KEY_VALUE = input("Enter your API key (mandatory): ").strip()
+while not KEY_VALUE:
+    print("API key is required!")
+    KEY_VALUE = input("Enter your API key (mandatory): ").strip()
 
-MODEL_ID = "Claude-Haiku-4.5"
-API_ENDPOINT="https://api.poe.com/v1"
-CYCLES_CNT = 1
+# Get optional parameters with defaults
+api_endpoint_input = input("Enter API endpoint (press Enter for default: https://api.poe.com/v1): ").strip()
+API_ENDPOINT = api_endpoint_input if api_endpoint_input else "https://api.poe.com/v1"
+
+model_id_input = input("Enter model ID (press Enter for default: Claude-Haiku-4.5): ").strip()
+MODEL_ID = model_id_input if model_id_input else "Claude-Haiku-4.5"
+
+cycles_cnt_input = input("Enter number of cycles (press Enter for default: 1): ").strip()
+if cycles_cnt_input:
+    try:
+        CYCLES_CNT = int(cycles_cnt_input)
+    except ValueError:
+        print(f"Invalid number '{cycles_cnt_input}', using default: 1")
+        CYCLES_CNT = 1
+else:
+    CYCLES_CNT = 1
 MAX_STEPS_PER_CYCLE = 50
 PLANNING_INTERVAL = 22
 
