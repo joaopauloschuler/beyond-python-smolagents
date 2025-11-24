@@ -249,7 +249,7 @@ def force_directories(file_path: str) -> None:
       os.makedirs(directory_path, exist_ok=True)
 
 @tool
-def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 536870912) -> str:
+def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 274877906944) -> str:
     """
 Runs an OS command and returns the output.
 This implementation uses Popen with shell=False.
