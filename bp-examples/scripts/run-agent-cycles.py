@@ -5,6 +5,8 @@ API_ENDPOINT="https://api.poe.com/v1"
 MODEL_ID = "Claude-Haiku-4.5"
 API_ENDPOINT="https://api.poe.com/v1"
 CYCLES_CNT = 1
+MAX_STEPS_PER_CYCLE = 50
+PLANNING_INTERVAL = 22
 
 POSTPEND_GEMINI_FLASH_VIA_POE = ''
 POSTPEND_GEMINI_FLASH_VIA_GOOGLE = ''
@@ -168,4 +170,8 @@ print(list_directory_tree(folder_path = 'solution1', add_function_signatures = T
 </your-task>
 May the force be with you. I do trust your judgement."""
 
-run_agent_cycles(model=model, task_str=task_str, cycles_cnt=CYCLES_CNT, planning_interval=22)
+run_agent_cycles(model=model,
+    task_str=task_str,
+    cycles_cnt=CYCLES_CNT,
+    planning_interval=PLANNING_INTERVAL,
+    max_steps=MAX_STEPS_PER_CYCLE)
