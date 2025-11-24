@@ -41,6 +41,8 @@ if planning_interval_input:
 else:
     PLANNING_INTERVAL = 22
 
+task_file_input = input("Enter task description file path (press Enter to use default task): ").strip()
+
 POSTPEND_GEMINI_FLASH_VIA_POE = ''
 POSTPEND_GEMINI_FLASH_VIA_GOOGLE = ''
 POSTPEND_CLAUDE = ''
@@ -207,8 +209,20 @@ print(list_directory_tree(folder_path = 'solution1', add_function_signatures = T
 </your-task>
 May the force be with you. I do trust your judgement."""
 
+# Load task from file if provided, otherwise use DEFAULT_TASK
+task_description = DEFAULT_TASK
+if task_file_input:
+    try:
+        with open(task_file_input, 'r', encoding='utf-8') as f:
+            task_description = f.read()
+        print(f"Task description loaded from: {task_file_input}")
+    except FileNotFoundError:
+        print(f"Warning: File '{task_file_input}' not found. Using default task.")
+    except Exception as e:
+        print(f"Warning: Error reading file '{task_file_input}': {e}. Using default task.")
+
 run_agent_cycles(model=model,
-    task_str=DEFAULT_TASK,
+    task_str=task_description,
     cycles_cnt=CYCLES_CNT,
     planning_interval=PLANNING_INTERVAL,
     max_steps=MAX_STEPS_PER_CYCLE)
