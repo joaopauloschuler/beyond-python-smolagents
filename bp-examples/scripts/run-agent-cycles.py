@@ -20,8 +20,26 @@ if cycles_cnt_input:
         CYCLES_CNT = 1
 else:
     CYCLES_CNT = 1
-MAX_STEPS_PER_CYCLE = 50
-PLANNING_INTERVAL = 22
+
+max_steps_input = input("Enter max steps per cycle (press Enter for default: 50): ").strip()
+if max_steps_input:
+    try:
+        MAX_STEPS_PER_CYCLE = int(max_steps_input)
+    except ValueError:
+        print(f"Invalid number '{max_steps_input}', using default: 50")
+        MAX_STEPS_PER_CYCLE = 50
+else:
+    MAX_STEPS_PER_CYCLE = 50
+
+planning_interval_input = input("Enter planning interval (press Enter for default: 22): ").strip()
+if planning_interval_input:
+    try:
+        PLANNING_INTERVAL = int(planning_interval_input)
+    except ValueError:
+        print(f"Invalid number '{planning_interval_input}', using default: 22")
+        PLANNING_INTERVAL = 22
+else:
+    PLANNING_INTERVAL = 22
 
 POSTPEND_GEMINI_FLASH_VIA_POE = ''
 POSTPEND_GEMINI_FLASH_VIA_GOOGLE = ''
