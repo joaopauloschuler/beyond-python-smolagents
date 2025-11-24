@@ -166,7 +166,7 @@ YOU ARE THE BRAIN OF AN AGENT INSIDE OF THE FANTASTIC BEYOND PYTHON SMOLAGENTS: 
 As you are the brain of an agent, this is why you are required to respond with "final_answer" at each conclusive reply from you.
 """
 
-task_str = """Hello super-intelligence!
+DEFAULT_TASK = """Hello super-intelligence!
 Your task is a task inside of a main software development effort. The main effort is described in the tags <main-effort></main-effort>:
 <main-effort>
 """+task+"""
@@ -208,7 +208,7 @@ print(list_directory_tree(folder_path = 'solution1', add_function_signatures = T
 May the force be with you. I do trust your judgement."""
 
 run_agent_cycles(model=model,
-    task_str=task_str,
+    task_str=DEFAULT_TASK,
     cycles_cnt=CYCLES_CNT,
     planning_interval=PLANNING_INTERVAL,
     max_steps=MAX_STEPS_PER_CYCLE)
