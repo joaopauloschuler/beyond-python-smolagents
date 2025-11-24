@@ -193,6 +193,10 @@ NEVER EVER COMMIT CODE THAT IS NOT COMPILING.
 NEVER EVER COMMIT BINARY FILES.
 NEVER CHANGE THE WORKING DIRECTORY. CHANGING THE WORKING DIRECTORY MAY CAUSE UNEXPECTED BEHAVIOR.
 ALL FILES MUST BE CREATED INSIDE OF THE solution1 FOLDER.
+AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
+<runcode>
+final_answer("I have just committed code that is compiling and tested ok. Moving to the next part of the project.")
+</runcode>
 
 Please create md files that explain the project as you progress.
 
