@@ -33,6 +33,7 @@ from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, remove_after_markers
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
+from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
 import yaml
 from huggingface_hub import create_repo, metadata_update, snapshot_download, upload_folder
@@ -1986,7 +1987,7 @@ You can combine the above to be able to run very large portions of python code i
         observation = ''
         try:
             code_output = self.python_executor(code_action)
-            code_output.logs = truncate_content(code_output.logs, 20000) # execution log is truncated to 20K
+            code_output.logs = truncate_content(code_output.logs, MAX_LENGTH_TRUNCATE_CONTENT) # execution log is truncated to 20K
             execution_outputs_console = []
             if len(code_output.logs) > 0:
                 execution_outputs_console += [
