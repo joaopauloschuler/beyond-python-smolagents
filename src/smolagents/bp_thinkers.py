@@ -1029,18 +1029,21 @@ def run_agent_cycles(
   # save the current folder for later restoration
   original_folder = os.getcwd()
   for i in range(cycles_cnt):
-    print("Running agent cycle:", i)
-    # restore the original folder
-    os.chdir(original_folder)
-    local_agent = get_default_thinker_agent(
-      model=model,
-      system_prompt=system_prompt,
-      tools=tools,
-      add_base_tools=add_base_tools,
-      max_steps=max_steps,
-      step_callbacks=step_callbacks,
-      executor_type=executor_type,
-      log_level=log_level,
-      planning_interval=planning_interval
-    )
-    local_agent.run(task_str, reset=True)
+    try:        
+      print("Running agent cycle:", i)
+      # restore the original folder
+      os.chdir(original_folder)
+      local_agent = get_default_thinker_agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=tools,
+        add_base_tools=add_base_tools,
+        max_steps=max_steps,
+        step_callbacks=step_callbacks,
+        executor_type=executor_type,
+        log_level=log_level,
+        planning_interval=planning_interval
+      )
+      local_agent.run(task_str, reset=True)
+    except Exception as e:
+      print(f"Exception: {e}", "at cycle", i)
