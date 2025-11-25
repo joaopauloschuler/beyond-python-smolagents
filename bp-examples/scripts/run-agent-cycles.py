@@ -21,15 +21,15 @@ if cycles_cnt_input:
 else:
     CYCLES_CNT = 1
 
-max_steps_input = input("Enter max steps per cycle (press Enter for default: 50): ").strip()
+max_steps_input = input("Enter max steps per cycle (press Enter for default: 100): ").strip()
 if max_steps_input:
     try:
         MAX_STEPS_PER_CYCLE = int(max_steps_input)
     except ValueError:
-        print(f"Invalid number '{max_steps_input}', using default: 50")
-        MAX_STEPS_PER_CYCLE = 50
+        print(f"Invalid number '{max_steps_input}', using default: 100")
+        MAX_STEPS_PER_CYCLE = 100
 else:
-    MAX_STEPS_PER_CYCLE = 50
+    MAX_STEPS_PER_CYCLE = 100
 
 planning_interval_input = input("Enter planning interval (press Enter for default: 22): ").strip()
 if planning_interval_input:
@@ -177,11 +177,7 @@ Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
 Inside the solution1 folder, code a task manager in plain pascal.
 If the folder is empty, start from scratch please. Otherwise, add new features.
-Each pascal file should not exceed 500 lines. This is done to save the context size of AI when working on this project.
-
-To make pascal files to respect the line count limit size, you can inherit classes.
-
-You can create as many pascal files you would like as long as you respect the line count limit.
+When loading source code for verifying existing code, never load more than 500 lines. When saving, never save more than 500 lines. Try to save only what is changing. This is done to save the context size of AI when working on this project.
 
 Please feel free to be bold and show your your creativity when adding new features.
 
