@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from .monitoring import TokenUsage
 from .tools import Tool
-from .utils import RateLimiter, _is_package_available, encode_image_base64, make_image_url, parse_json_blob
+from .utils import RateLimiter, _is_package_available, encode_image_base64, make_image_url, parse_json_blob, MAX_LENGTH_TRUNCATE_CONTENT
 
 
 if TYPE_CHECKING:
@@ -433,7 +433,7 @@ class Model:
         self.kwargs = kwargs
         self.model_id: str | None = model_id
         self.postpend_string = ''
-        self.max_len_truncate_content = 20000
+        self.max_len_truncate_content = MAX_LENGTH_TRUNCATE_CONTENT
 
     def _prepare_completion_kwargs(
         self,
