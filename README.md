@@ -382,3 +382,16 @@ the_boss.run(task_str)
 
 **USE THIS SOFTWARE ENTIRELY AT YOUR OWN RISK! The developers explicitly disclaim responsibility for any damage, data loss, security breaches, or other negative consequences resulting from the use of this software in an insecure or inappropriate environment.** This warning cannot be overstated.
 ***
+
+## Other Publications from the Author of this Fork
+
+Optimizing the first layers of a convolutional neural network:
+- [Color-aware two-branch DCNN for efficient plant disease classification](https://www.researchgate.net/publication/361511874_Color-Aware_Two-Branch_DCNN_for_Efficient_Plant_Disease_Classification).
+- [Reliable Deep Learning Plant Leaf Disease Classification Based on Light-Chroma Separated Branches](https://www.researchgate.net/publication/355215213_Reliable_Deep_Learning_Plant_Leaf_Disease_Classification_Based_on_Light-Chroma_Separated_Branches)
+
+Optimizing deep layers of a convolutional neural network:
+- [Grouped Pointwise Convolutions Reduce Parameters in Convolutional Neural Networks](https://www.researchgate.net/publication/360226228_Grouped_Pointwise_Convolutions_Reduce_Parameters_in_Convolutional_Neural_Networks)
+- [An Enhanced Scheme for Reducing the Complexity of Pointwise Convolutions in CNNs for Image Classification Based on Interleaved Grouped Filters without Divisibility Constraints](https://www.researchgate.net/publication/363413038_An_Enhanced_Scheme_for_Reducing_the_Complexity_of_Pointwise_Convolutions_in_CNNs_for_Image_Classification_Based_on_Interleaved_Grouped_Filters_without_Divisibility_Constraints)
+
+Optimizing LLMs:
+- [Saving 77\% of the Parameters in Large Language Models Technical Report](https://www.researchgate.net/publication/388835829_SAVING_77_OF_THE_PARAMETERS_IN_LARGE_LANGUAGE_MODELS_TECHNICAL_REPORT)
