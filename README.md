@@ -79,10 +79,16 @@ coder_model_id = "gemini/gemini-2.5-flash"
 coder_model = LiteLLMModel(model_id=coder_model_id, api_key=YOUR_KEY_VALUE, max_tokens=MAX_TOKENS)
 
 tools = [ run_os_command,
-  compile_and_run_pascal_code, run_php_file,
-  pascal_interface_to_string, source_code_to_string, string_to_source_code,  
-  save_string_to_file, load_string_from_file, 
-  copy_file, replace_on_file, replace_on_file_with_files, get_file_size, 
+  copy_file, is_file, 
+  print_source_code_lines, get_line_from_file, get_file_lines,
+  read_file_range, insert_lines_into_file, replace_line_in_file,
+  remove_pascal_comments_from_string, pascal_interface_to_string,
+  source_code_to_string, string_to_source_code,
+  run_os_command, replace_on_file, replace_on_file_with_files,
+  get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
+  list_directory_tree, search_in_files, get_file_info, list_directory,
+  extract_function_signatures, compare_files, count_lines_of_code,
+  mkdir, delete_file, delete_directory, compare_folders
   ]
 
 coder_agent = CodeAgent( model=coder_model, tools = tools, add_base_tools=True)
