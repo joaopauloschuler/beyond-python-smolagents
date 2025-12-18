@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hai aku Hacker</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #fce4ec;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.card {
+  background: white;
+  border-radius: 20px;
+  padding: 20px;
+  width: 300px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+button {
+  background: #25D366;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+input {
+  width: 90%;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+  <h3>Hai aku Hacker</h3>
+  <p id="q">Siapa namamu?</p>
+
+  <input id="inp" placeholder="Tulis jawaban">
+  <br>
+  <button onclick="next()">Kirim</button>
+
+  <div id="end"></div>
+</div>
+
+<script>
+let step = 0;
+let nameUser = "";
+
+function next() {
+  const inp = document.getElementById("inp");
+  const q = document.getElementById("q");
+  const end = document.getElementById("end");
+
+  if (inp.value.trim() === "") {
+    alert("Isi dulu");
+    return;
+  }
+
+  if (step === 0) {
+    nameUser = inp.value;
+    q.innerHTML = "Senang kenal, " + nameUser + ". Lagi apa sekarang?";
+    inp.value = "";
+    step++;
+  } else if (step === 1) {
+    q.innerHTML = "Pertanyaan terakhir. Mau chat Hacker di WhatsApp?";
+    inp.style.display = "none";
+    end.innerHTML = `
+      <br>
+    <a href="https://instagram.com/willzone_" target="_blank">
+  Buka Instagram willzone_
+</a>
+    `;
+  }
+}
+</script>
+
+</body>
+</html>
