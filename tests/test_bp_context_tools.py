@@ -975,19 +975,19 @@ class TestFileExists:
         test_file = tmp_path / "test.txt"
         test_file.write_text("content")
 
-        assert file_exists(str(test_file)) == True
+        assert file_exists(str(test_file))
 
     def test_file_exists_false(self):
         """Test file_exists returns False for nonexistent file"""
         from smolagents.bp_tools import file_exists
 
-        assert file_exists("/nonexistent/file.txt") == False
+        assert not file_exists("/nonexistent/file.txt")
 
     def test_file_exists_directory(self, tmp_path):
         """Test file_exists returns False for directory"""
         from smolagents.bp_tools import file_exists
 
-        assert file_exists(str(tmp_path)) == False
+        assert not file_exists(str(tmp_path))
 
 
 class TestDirectoryExists:
@@ -995,13 +995,13 @@ class TestDirectoryExists:
         """Test directory_exists returns True for existing directory"""
         from smolagents.bp_tools import directory_exists
 
-        assert directory_exists(str(tmp_path)) == True
+        assert directory_exists(str(tmp_path))
 
     def test_directory_exists_false(self):
         """Test directory_exists returns False for nonexistent directory"""
         from smolagents.bp_tools import directory_exists
 
-        assert directory_exists("/nonexistent/dir") == False
+        assert not directory_exists("/nonexistent/dir")
 
     def test_directory_exists_file(self, tmp_path):
         """Test directory_exists returns False for file"""
@@ -1010,7 +1010,7 @@ class TestDirectoryExists:
         test_file = tmp_path / "test.txt"
         test_file.write_text("content")
 
-        assert directory_exists(str(test_file)) == False
+        assert not directory_exists(str(test_file))
 
 
 class TestFindAndReplaceRegex:
