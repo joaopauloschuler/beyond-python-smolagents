@@ -176,6 +176,7 @@ Your task is a task inside of a main software development effort. The main effor
 Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
 Inside the solution1 folder, code a task manager in plain pascal.
+The source code must be easy to understand and easy to maintain. Documenting the source code is important.
 If the folder is empty, start from scratch please. Otherwise, add new features.
 When loading source code for verifying existing code, never load more than 500 lines. When saving, never save more than 500 lines. Try to save only what is changing. This is done to save the context size of AI when working on this project.
 
@@ -222,3 +223,4 @@ run_agent_cycles(model=model,
     cycles_cnt=CYCLES_CNT,
     planning_interval=PLANNING_INTERVAL,
     max_steps=MAX_STEPS_PER_CYCLE)
+
