@@ -1,13 +1,16 @@
 # beyond python tools
 
-from .tools import tool, Tool
-from .default_tools import VisitWebpageTool
 import difflib
 import os
-import subprocess
-import shlex
 import re
+import shlex
+import subprocess
+
 from slugify import slugify
+
+from .default_tools import VisitWebpageTool
+from .tools import Tool, tool
+
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -26,10 +29,10 @@ DEFAULT_SOURCE_CODE_EXTENSIONS:tuple = (
         '.hs', '.ml', '.mli', '.fs', '.fsx', '.clj', '.cljs', '.scm', '.lisp',
         '.html', '.htm', '.js', '.css', '.ts', '.tsx', '.jsx',
         '.java', '.kt', '.kts', '.scala',
-        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm', 
-        '.php', 
+        '.pas', '.inc',  '.pp', '.lpr', '.dpr', '.lfm', '.dfm',
+        '.php',
         '.py', '.ipynb',
-        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',        
+        '.rb','.pl', '.pm','.sh', '.bash', '.ps1','.bat', '.cmd',
         '.r', '.R', '.m', '.sql',
         '.txt', '.csv', '.md',
         '.toml', '.ini', '.cfg',
@@ -249,15 +252,27 @@ def force_directories(file_path: str) -> None:
       os.makedirs(directory_path, exist_ok=True)
 
 @tool
-def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 274877906944) -> str:
+def run_os_command(str_command: str, timeout: int = 60, max_memory: int = 274877906944, use_shell: bool = False) -> str:
     """
 Runs an OS command and returns the output.
-This implementation uses Popen with shell=False.
+
+By default, this implementation uses Popen with shell=False which is safer but doesn't support
+shell features like pipes (|), redirects (>, 2>/dev/null), or command chaining (&&, ||).
+
+If you need shell features, set use_shell=True, but be careful with untrusted input.
 
 For finding files in the file system, use this example:
 <example>
 <runcode>
-print(run_os_command('find / -type f -iname "UTF8P*" 2>/dev/null'))
+print(run_os_command('find / -type f -iname "UTF8P*"'))
+</runcode>
+</example>
+
+For commands with pipes or redirects, use shell mode:
+<example>
+<runcode>
+print(run_os_command('ls -la | grep .py', use_shell=True))
+print(run_os_command('find / -name "*.py" 2>/dev/null | head -5', use_shell=True))
 </runcode>
 </example>
 
@@ -275,38 +290,62 @@ print(run_os_command("php hello.php", timeout=60, max_memory=512*1024*1024))
 As you can see in the above command, you can use any computer language that is available in the system. If it is not, you can install it using the run_os_command tool.
 
     Args:
-      str_command: str
-      timeout: int seconds
-      max_memory: int bytes
+      str_command: str - The command to run
+      timeout: int - Timeout in seconds (default 60)
+      max_memory: int - Max memory in bytes (default ~256GB, set to 0 to disable)
+      use_shell: bool - If True, use shell mode for pipes, redirects, etc. (default False)
     """
-    if (max_memory>0):
-        command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
-    else:
-        command = shlex.split(str_command)
     result = ""
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        if use_shell:
+            # Shell mode: pass command as string, shell handles parsing
+            if max_memory > 0:
+                full_command = f"prlimit --as={max_memory} {str_command}"
+            else:
+                full_command = str_command
+            proc = subprocess.Popen(
+                full_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True
+            )
+        else:
+            # Non-shell mode: safer, parse command ourselves
+            if max_memory > 0:
+                command = shlex.split("prlimit --as=" + str(max_memory) + " " + str_command)
+            else:
+                command = shlex.split(str_command)
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=False
+            )
         try:
-            outs, errs = proc.communicate(input="", timeout=timeout)
+            outs, errs = proc.communicate(input=b"", timeout=timeout)
         except subprocess.TimeoutExpired:
             result += "ERROR: timeout has expired. "
             proc.kill()
             outs, errs = proc.communicate()
-        except:
+        except Exception:
             proc.kill()
             outs, errs = proc.communicate()
     except Exception as e:
         result += f"ERROR: {e}"
 
-    if outs is not None: result += outs.decode('utf-8')
-    if errs is not None: result += errs.decode('utf-8')
+    if outs is not None:
+        result += outs.decode('utf-8', errors='replace')
+    if errs is not None:
+        result += errs.decode('utf-8', errors='replace')
     return result
 
 @tool
 def print_source_code_lines(filename: str, start_line: int, end_line: int) -> None:
-  """ 
+  """
   This tool prints the lines from the start_line to the end_line of the file filename.
   In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
 
@@ -323,7 +362,7 @@ def print_source_code_lines(filename: str, start_line: int, end_line: int) -> No
 
 @tool
 def get_file_lines(filename: str) -> int:
-  """ 
+  """
   This tool returns the number of lines in a text file.
 
   Args:
@@ -409,10 +448,10 @@ def replace_line_in_file(file_name: str, line_number: int, new_content: str) -> 
     Example usage:
         # Replace line 301 with a corrected version
         replace_line_in_file('solution1/src/jpmmath.pas', 301, 'function Result: Integer;')
-        
+
         # Replace line 10 with multiple lines
         replace_line_in_file('test.txt', 10, 'Line 10a\\nLine 10b\\nLine 10c')
-        
+
         # Fix a compiler error
         error_line = get_line_from_file('solution1/src/jpmmath.pas', 301)
         print(f"Original: {error_line}")
@@ -494,13 +533,13 @@ def insert_lines_into_file(file_name: str, line_number: int, new_content: str) -
     Example usage:
         # Insert a new line before line 301
         insert_lines_into_file('solution1/src/jpmmath.pas', 301, 'var Result: Integer;')
-        
+
         # Insert multiple lines before line 10
         insert_lines_into_file('test.txt', 10, 'Line 9a\\nLine 9b\\nLine 9c')
-        
+
         # Insert at the beginning of the file
         insert_lines_into_file('test.txt', 1, '// File header comment')
-        
+
         # Append to the end of the file (if file has 100 lines, use 101)
         insert_lines_into_file('test.txt', 101, 'New last line')
 
@@ -629,7 +668,7 @@ compile_and_run_pascal_code("hello.pas", timeout=60)
 def remove_pascal_comments_from_string(code_string: str) -> str:
     """
     Remove all comments from a Delphi/Pascal code string.
-    
+
     Handles:
     - Single-line comments (//)
     - Brace comments ({ }) with nesting
@@ -729,7 +768,7 @@ def remove_pascal_comments_from_string(code_string: str) -> str:
     return ''.join(result)
 
 @tool
-def source_code_to_string(folder_name: str, 
+def source_code_to_string(folder_name: str,
     allowed_extensions: tuple = DEFAULT_SOURCE_CODE_EXTENSIONS,
     remove_pascal_comments: bool = False,
     exclude_list: tuple = ('excluded_folder','excluded_file.pas')) -> str:
@@ -771,7 +810,7 @@ def source_code_to_string(folder_name: str,
 
             if not_exclude and \
                 (file_extension_lower in allowed_extensions) and \
-                (not (filename in exclude_list)):
+                (filename not in exclude_list):
                 # Store full path for sorting, base filename for output tag, and extension
                 relevant_files_info.append({
                     'filepath': filepath,
@@ -1382,7 +1421,7 @@ class CoderSubassistant(Tool):
         def forward(self, task_str: str, restart_chat: bool = True) -> str:
             local_task_str = """Hello super intelligence!
 Please code '"""+task_str+"""'.
-Then, please reply with your code via 
+Then, please reply with your code via
 <final_answer>
 # my code ...
 ...
@@ -1500,7 +1539,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.
-    
+
     Example output:
     project/
     ├── src/
@@ -1508,15 +1547,15 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
     │   └── utils.py (45 lines)
     └── tests/
         └── test_main.py (67 lines)
-    
+
     Total source code lines: 235
-    
+
     Args:
         folder_path: str The root folder path to visualize
         max_depth: int Maximum depth to traverse (default 3)
         show_files: bool Whether to show files or only directories (default True)
         add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
-    
+
     Returns:
         str: A string representation of the directory tree
     """
@@ -1633,13 +1672,13 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
     return "\n".join(lines)
 
 @tool
-def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
+def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None,
                     case_sensitive: bool = False, max_results: int = 50) -> str:
     """
     Searches for a pattern in files within a folder and its subfolders.
     Returns matching lines with file paths and line numbers. This is much more efficient
     than loading all files when you need to find specific code patterns.
-    
+
     Args:
         folder_path: str The root folder to search in
         search_pattern: str The text pattern to search for
@@ -1647,7 +1686,7 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
                         If None, searches all text files
         case_sensitive: bool Whether the search should be case-sensitive (default False)
         max_results: int Maximum number of results to return (default 50)
-    
+
     Returns:
         str: Search results formatted as "filepath:line_number: line_content"
     """
@@ -1701,12 +1740,12 @@ def read_file_range(filename: str, start_byte: int, end_byte: int) -> str:
     """
     Reads a specific byte range from a file. This is useful for very large files
     where you only need to inspect a portion, saving memory and context.
-    
+
     Args:
         filename: str The file path
         start_byte: int The starting byte position (0-indexed)
         end_byte: int The ending byte position (exclusive)
-    
+
     Returns:
         str: The content from the specified byte range
     """
@@ -1733,10 +1772,10 @@ def get_file_info(filepath: str) -> dict:
     """
     Gets metadata about a file without reading its content. This is efficient
     for checking file properties before deciding whether to load the full content.
-    
+
     Args:
         filepath: str The file path
-    
+
     Returns:
         dict: Dictionary containing file metadata (size, modified_time, is_file, is_dir, exists)
     """
@@ -1763,19 +1802,19 @@ def get_file_info(filepath: str) -> dict:
     return info
 
 @tool
-def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False, 
+def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False,
                    files_only: bool = False, dirs_only: bool = False) -> list:
     """
     Lists files and directories in a folder with optional filtering.
     More flexible than get_files_in_folder with pattern matching support.
-    
+
     Args:
         folder_path: str The folder path to list
         pattern: str Glob pattern to match (default "*" for all)
         recursive: bool Whether to search recursively (default False)
         files_only: bool Return only files (default False)
         dirs_only: bool Return only directories (default False)
-    
+
     Returns:
         list: List of matching paths
     """
@@ -1803,11 +1842,11 @@ def list_directory(folder_path: str, pattern: str = "*", recursive: bool = False
 def mkdir(directory_path: str, parents: bool = True) -> bool:
     """
     Creates a directory. If parents=True, creates intermediate directories as needed.
-    
+
     Args:
         directory_path: str The directory path to create
         parents: bool Whether to create parent directories (default True)
-    
+
     Returns:
         bool: True if successful, raises exception otherwise
     """
@@ -1929,12 +1968,12 @@ def compare_files(file1: str, file2: str, context_lines: int = 3) -> str:
     """
     Compares two files and shows the differences in a unified diff format.
     Useful for understanding what changed between versions.
-    
+
     Args:
         file1: str Path to the first file
         file2: str Path to the second file
         context_lines: int Number of context lines to show around differences (default 3)
-    
+
     Returns:
         str: Unified diff output
     """
@@ -1971,12 +2010,12 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
     """
     Compares two folders and shows the differences for source code files.
     Only files with extensions in DEFAULT_SOURCE_CODE_EXTENSIONS are compared.
-    
+
     Args:
         folder1: str Path to the first folder
         folder2: str Path to the second folder
         context_lines: int Number of context lines to show around differences (default 3)
-    
+
     Returns:
         str: Comparison report showing files only in each folder and diffs for changed files
     """
@@ -1984,10 +2023,10 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
         return f"Error: Folder '{folder1}' not found"
     if not os.path.isdir(folder2):
         return f"Error: Folder '{folder2}' not found"
-    
+
     # Cache lowercased extensions for performance
     source_extensions = tuple(ext.lower() for ext in DEFAULT_SOURCE_CODE_EXTENSIONS)
-    
+
     # Get all source code files from both folders
     def get_source_files(folder):
         """Get all source code files recursively from a folder"""
@@ -2001,18 +2040,18 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
                     rel_path = os.path.relpath(full_path, folder)
                     source_files[rel_path] = full_path
         return source_files
-    
+
     files1 = get_source_files(folder1)
     files2 = get_source_files(folder2)
-    
+
     # Find files only in folder1, only in folder2, and in both
     only_in_folder1 = set(files1.keys()) - set(files2.keys())
     only_in_folder2 = set(files2.keys()) - set(files1.keys())
     common_files = set(files1.keys()) & set(files2.keys())
-    
+
     # Build the comparison report
     output = []
-    
+
     # Summary
     output.append("=== FOLDER COMPARISON SUMMARY ===")
     output.append(f"Folder 1: {folder1}")
@@ -2021,29 +2060,29 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
     output.append(f"Files only in folder 2: {len(only_in_folder2)}")
     output.append(f"Common files: {len(common_files)}")
     output.append("")
-    
+
     # Files only in folder1
     if only_in_folder1:
         output.append("=== FILES ONLY IN FOLDER 1 ===")
         for file in sorted(only_in_folder1):
             output.append(f"  {file}")
         output.append("")
-    
+
     # Files only in folder2
     if only_in_folder2:
         output.append("=== FILES ONLY IN FOLDER 2 ===")
         for file in sorted(only_in_folder2):
             output.append(f"  {file}")
         output.append("")
-    
+
     # Compare common files
     different_files = []
     identical_files = []
-    
+
     for file in sorted(common_files):
         path1 = files1[file]
         path2 = files2[file]
-        
+
         try:
             # Try utf-8 first, then fallback to latin-1 like load_string_from_file
             try:
@@ -2052,14 +2091,14 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
             except UnicodeDecodeError:
                 with open(path1, 'r', encoding='latin-1') as f:
                     lines1 = f.readlines()
-            
+
             try:
                 with open(path2, 'r', encoding='utf-8') as f:
                     lines2 = f.readlines()
             except UnicodeDecodeError:
                 with open(path2, 'r', encoding='latin-1') as f:
                     lines2 = f.readlines()
-            
+
             # Check if files are different
             if lines1 != lines2:
                 different_files.append((file, path1, path2, lines1, lines2))
@@ -2068,13 +2107,13 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
         except Exception as e:
             output.append(f"Error comparing {file}: {e}")
             output.append("")
-    
+
     # Report identical and different files
-    output.append(f"=== COMPARISON RESULTS ===")
+    output.append("=== COMPARISON RESULTS ===")
     output.append(f"Identical files: {len(identical_files)}")
     output.append(f"Different files: {len(different_files)}")
     output.append("")
-    
+
     # Show diffs for different files
     if different_files:
         output.append("=== DIFFERENCES ===")
@@ -2090,21 +2129,21 @@ def compare_folders(folder1: str, folder2: str, context_lines: int = 3) -> str:
             diff_output = '\n'.join(diff)
             output.append(diff_output)
             output.append("")
-    
+
     # If folders are identical
     if not only_in_folder1 and not only_in_folder2 and not different_files:
         return "Folders are identical (all source code files match)"
-    
+
     return '\n'.join(output)
 
 @tool
 def delete_file(filepath: str) -> bool:
     """
     Deletes a file from the filesystem.
-    
+
     Args:
         filepath: str Path to the file to delete
-    
+
     Returns:
         bool: True if successful
     """
@@ -2124,11 +2163,11 @@ def delete_file(filepath: str) -> bool:
 def delete_directory(directory_path: str, recursive: bool = False) -> bool:
     """
     Deletes a directory. If recursive=True, deletes the directory and all its contents.
-    
+
     Args:
         directory_path: str Path to the directory to delete
         recursive: bool Whether to delete recursively (default False)
-    
+
     Returns:
         bool: True if successful
     """
@@ -2153,11 +2192,11 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
     """
     Counts lines of code in a project, broken down by file type.
     Helps understand project size and composition without loading all files.
-    
+
     Args:
         folder_path: str Root folder to analyze
         file_extensions: tuple File extensions to count (default common programming languages)
-    
+
     Returns:
         dict: Dictionary with file extension as key and line count as value
     """
@@ -2189,3 +2228,495 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
 
     counts['_total'] = total_lines
     return counts
+
+
+@tool
+def move_file(source: str, destination: str) -> bool:
+    """
+    Moves a file from source to destination. This can also be used to rename a file
+    by specifying the new name in the destination path.
+
+    If the destination directory doesn't exist, it will be created.
+
+    Args:
+        source: str Path to the source file
+        destination: str Path to the destination (can include new filename)
+
+    Returns:
+        bool: True if successful
+    """
+    if not os.path.exists(source):
+        raise FileNotFoundError(f"Source file '{source}' not found")
+
+    if os.path.isdir(source):
+        raise IsADirectoryError(f"'{source}' is a directory, use move for files only")
+
+    # Create destination directory if needed
+    dest_dir = os.path.dirname(destination)
+    if dest_dir and not os.path.exists(dest_dir):
+        os.makedirs(dest_dir, exist_ok=True)
+
+    try:
+        import shutil
+        shutil.move(source, destination)
+        return True
+    except Exception as e:
+        raise OSError(f"Failed to move file '{source}' to '{destination}': {e}")
+
+
+@tool
+def rename_file(filepath: str, new_name: str) -> str:
+    """
+    Renames a file while keeping it in the same directory.
+
+    Args:
+        filepath: str Path to the file to rename
+        new_name: str New filename (just the name, not a full path)
+
+    Returns:
+        str: The new full path of the renamed file
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File '{filepath}' not found")
+
+    if os.path.isdir(filepath):
+        raise IsADirectoryError(f"'{filepath}' is a directory")
+
+    if os.path.sep in new_name or (os.altsep and os.altsep in new_name):
+        raise ValueError("new_name should be just a filename, not a path")
+
+    directory = os.path.dirname(filepath)
+    new_path = os.path.join(directory, new_name) if directory else new_name
+
+    if os.path.exists(new_path):
+        raise FileExistsError(f"A file already exists at '{new_path}'")
+
+    try:
+        os.rename(filepath, new_path)
+        return new_path
+    except Exception as e:
+        raise OSError(f"Failed to rename '{filepath}' to '{new_name}': {e}")
+
+
+@tool
+def file_exists(filepath: str) -> bool:
+    """
+    Checks if a file exists at the given path.
+    This is more intuitive than is_file() for checking file existence.
+
+    Args:
+        filepath: str Path to check
+
+    Returns:
+        bool: True if file exists and is a file (not a directory), False otherwise
+    """
+    return os.path.isfile(filepath)
+
+
+@tool
+def directory_exists(dirpath: str) -> bool:
+    """
+    Checks if a directory exists at the given path.
+
+    Args:
+        dirpath: str Path to check
+
+    Returns:
+        bool: True if directory exists, False otherwise
+    """
+    return os.path.isdir(dirpath)
+
+
+@tool
+def find_and_replace_regex(filename: str, pattern: str, replacement: str, count: int = 0) -> str:
+    """
+    Performs a regex-based find and replace in a file.
+    This is useful for more complex text transformations that require patterns.
+
+    Args:
+        filename: str Path to the file
+        pattern: str Regular expression pattern to find
+        replacement: str Replacement string (can include backreferences like \\1, \\2)
+        count: int Maximum number of replacements (0 means replace all)
+
+    Returns:
+        str: The updated file content
+
+    Example usage:
+        # Change all function definitions to have a 'new_' prefix
+        find_and_replace_regex('myfile.py', r'def (\\w+)\\(', r'def new_\\1(')
+
+        # Remove all single-line comments
+        find_and_replace_regex('code.py', r'#.*$', '', flags=re.MULTILINE)
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    content = load_string_from_file(filename)
+    new_content = re.sub(pattern, replacement, content, count=count)
+    save_string_to_file(new_content, filename)
+    return new_content
+
+
+@tool
+def get_file_extension(filepath: str) -> str:
+    """
+    Returns the file extension of a given filepath.
+
+    Args:
+        filepath: str Path to the file
+
+    Returns:
+        str: The file extension (including the dot), or empty string if no extension
+
+    Example:
+        get_file_extension('path/to/file.txt')  # Returns '.txt'
+        get_file_extension('path/to/file')       # Returns ''
+        get_file_extension('file.tar.gz')        # Returns '.gz'
+    """
+    return os.path.splitext(filepath)[1]
+
+
+@tool
+def get_filename(filepath: str, include_extension: bool = True) -> str:
+    """
+    Returns just the filename from a full path.
+
+    Args:
+        filepath: str Full path to the file
+        include_extension: bool Whether to include the file extension (default True)
+
+    Returns:
+        str: The filename
+
+    Example:
+        get_filename('/path/to/file.txt')  # Returns 'file.txt'
+        get_filename('/path/to/file.txt', include_extension=False)  # Returns 'file'
+    """
+    filename = os.path.basename(filepath)
+    if not include_extension:
+        filename = os.path.splitext(filename)[0]
+    return filename
+
+
+@tool
+def join_files(output_file: str, input_files: list, separator: str = "\n") -> bool:
+    """
+    Concatenates multiple files into a single output file.
+
+    Args:
+        output_file: str Path to the output file
+        input_files: list List of paths to the input files to concatenate
+        separator: str String to insert between file contents (default newline)
+
+    Returns:
+        bool: True if successful
+
+    Example:
+        join_files('combined.txt', ['file1.txt', 'file2.txt', 'file3.txt'])
+        join_files('combined.txt', ['file1.txt', 'file2.txt'], separator='\\n---\\n')
+    """
+    if not input_files:
+        raise ValueError("At least one input file must be provided")
+
+    contents = []
+    for filepath in input_files:
+        if not os.path.isfile(filepath):
+            raise FileNotFoundError(f"Input file '{filepath}' not found")
+        contents.append(load_string_from_file(filepath))
+
+    combined = separator.join(contents)
+    save_string_to_file(combined, output_file)
+    return True
+
+
+@tool
+def run_python_file(filename: str, args: str = "", timeout: int = 60) -> str:
+    """
+    Runs a Python file and returns the output.
+
+    Example usage:
+    <example>
+    <savetofile filename="hello.py">
+    print("Hello from Python!")
+    </savetofile>
+    <runcode>
+    print(run_python_file("hello.py", timeout=60))
+    </runcode>
+    </example>
+
+    You can also pass command-line arguments:
+    <example>
+    <savetofile filename="greet.py">
+    import sys
+    name = sys.argv[1] if len(sys.argv) > 1 else "World"
+    print(f"Hello, {name}!")
+    </savetofile>
+    <runcode>
+    print(run_python_file("greet.py", args="Alice"))
+    </runcode>
+    </example>
+
+    Args:
+        filename: str Path to the Python file to run
+        args: str Command-line arguments to pass to the script (default "")
+        timeout: int Timeout in seconds (default 60)
+
+    Returns:
+        str: The output from running the Python file
+    """
+    import sys
+    python_path = sys.executable  # Use the same Python interpreter
+    command = f'"{python_path}" "{filename}"'
+    if args:
+        command += f" {args}"
+    return run_os_command(command, timeout=timeout, max_memory=0)
+
+
+@tool
+def get_working_directory() -> str:
+    """
+    Returns the current working directory.
+
+    Returns:
+        str: The current working directory path
+    """
+    return os.getcwd()
+
+
+@tool
+def change_directory(path: str) -> str:
+    """
+    Changes the current working directory.
+
+    Args:
+        path: str Path to change to (absolute or relative)
+
+    Returns:
+        str: The new current working directory
+    """
+    if not os.path.isdir(path):
+        raise NotADirectoryError(f"'{path}' is not a valid directory")
+
+    os.chdir(path)
+    return os.getcwd()
+
+
+@tool
+def delete_lines_from_file(filename: str, start_line: int, end_line: int = None) -> str:
+    """
+    Deletes specific lines from a file.
+
+    Args:
+        filename: str Path to the file
+        start_line: int The first line to delete (1-based index)
+        end_line: int The last line to delete (1-based, inclusive).
+                  If None, only deletes the start_line.
+
+    Returns:
+        str: The updated file content
+
+    Example:
+        # Delete line 5
+        delete_lines_from_file('code.py', 5)
+
+        # Delete lines 10-15 (inclusive)
+        delete_lines_from_file('code.py', 10, 15)
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    if start_line < 1:
+        raise ValueError("start_line must be >= 1")
+
+    if end_line is None:
+        end_line = start_line
+
+    if end_line < start_line:
+        raise ValueError("end_line must be >= start_line")
+
+    with open(filename, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    total_lines = len(lines)
+    if start_line > total_lines:
+        raise IndexError(f"start_line {start_line} is beyond file length ({total_lines} lines)")
+
+    # Remove the specified lines (convert to 0-based index)
+    del lines[start_line - 1:end_line]
+
+    content = ''.join(lines)
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    return content
+
+
+@tool
+def get_parent_directory(filepath: str) -> str:
+    """
+    Returns the parent directory of a file or directory path.
+
+    Args:
+        filepath: str The file or directory path
+
+    Returns:
+        str: The parent directory path
+
+    Example:
+        get_parent_directory('/home/user/file.txt')  # Returns '/home/user'
+        get_parent_directory('/home/user/')          # Returns '/home'
+    """
+    return os.path.dirname(os.path.normpath(filepath))
+
+
+@tool
+def get_absolute_path(path: str) -> str:
+    """
+    Converts a relative path to an absolute path.
+
+    Args:
+        path: str The path to convert (can be relative or absolute)
+
+    Returns:
+        str: The absolute path
+    """
+    return os.path.abspath(path)
+
+
+@tool
+def path_join(parts: list) -> str:
+    """
+    Joins path components intelligently using the correct separator for the OS.
+
+    Args:
+        parts: list List of path components to join
+
+    Returns:
+        str: The joined path
+
+    Example:
+        path_join(['home', 'user', 'file.txt'])  # Returns 'home/user/file.txt' on Unix
+    """
+    return os.path.join(*parts)
+
+
+@tool
+def read_first_n_lines(filename: str, n: int) -> str:
+    """
+    Reads the first n lines of a file. Useful for previewing large files
+    without loading everything into memory.
+
+    Args:
+        filename: str Path to the file
+        n: int Number of lines to read
+
+    Returns:
+        str: The first n lines of the file
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    if n < 1:
+        raise ValueError("n must be >= 1")
+
+    lines = []
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            for i, line in enumerate(f):
+                if i >= n:
+                    break
+                lines.append(line)
+    except UnicodeDecodeError:
+        with open(filename, 'r', encoding='latin-1') as f:
+            for i, line in enumerate(f):
+                if i >= n:
+                    break
+                lines.append(line)
+
+    return ''.join(lines)
+
+
+@tool
+def read_last_n_lines(filename: str, n: int) -> str:
+    """
+    Reads the last n lines of a file. Useful for reading log files or
+    checking the end of large files.
+
+    Args:
+        filename: str Path to the file
+        n: int Number of lines to read from the end
+
+    Returns:
+        str: The last n lines of the file
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    if n < 1:
+        raise ValueError("n must be >= 1")
+
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except UnicodeDecodeError:
+        with open(filename, 'r', encoding='latin-1') as f:
+            lines = f.readlines()
+
+    return ''.join(lines[-n:])
+
+
+@tool
+def count_occurrences_in_file(filename: str, search_string: str, case_sensitive: bool = True) -> int:
+    """
+    Counts how many times a string appears in a file.
+
+    Args:
+        filename: str Path to the file
+        search_string: str The string to search for
+        case_sensitive: bool Whether the search should be case-sensitive (default True)
+
+    Returns:
+        int: The number of occurrences
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    content = load_string_from_file(filename)
+
+    if not case_sensitive:
+        content = content.lower()
+        search_string = search_string.lower()
+
+    return content.count(search_string)
+
+
+@tool
+def find_line_numbers(filename: str, search_string: str, case_sensitive: bool = True) -> list:
+    """
+    Finds all line numbers where a string appears in a file.
+
+    Args:
+        filename: str Path to the file
+        search_string: str The string to search for
+        case_sensitive: bool Whether the search should be case-sensitive (default True)
+
+    Returns:
+        list: List of line numbers (1-based) where the string was found
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    content = load_string_from_file(filename)
+    lines = content.splitlines()
+
+    if not case_sensitive:
+        search_string = search_string.lower()
+
+    found_lines = []
+    for i, line in enumerate(lines, 1):
+        check_line = line if case_sensitive else line.lower()
+        if search_string in check_line:
+            found_lines.append(i)
+
+    return found_lines

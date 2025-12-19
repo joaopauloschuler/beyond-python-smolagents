@@ -13,17 +13,39 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from smolagents.bp_tools import (
+    change_directory,
     compare_files,
     compare_folders,
     count_lines_of_code,
+    count_occurrences_in_file,
     delete_directory,
     delete_file,
+    delete_lines_from_file,
+    directory_exists,
     extract_function_signatures,
+    file_exists,
+    find_and_replace_regex,
+    find_line_numbers,
+    get_absolute_path,
+    get_file_extension,
     get_file_info,
+    get_filename,
+    get_parent_directory,
+    get_working_directory,
+    join_files,
     list_directory,
     list_directory_tree,
+    load_string_from_file,
     mkdir,
+    move_file,
+    path_join,
     read_file_range,
+    read_first_n_lines,
+    read_last_n_lines,
+    rename_file,
+    run_os_command,
+    run_python_file,
+    save_string_to_file,
     search_in_files,
 )
 
@@ -876,6 +898,425 @@ class TestCountLinesOfCode:
         result = count_lines_of_code("/nonexistent/path")
 
         assert 'error' in result
+
+
+class TestMoveFile:
+    def test_basic_move(self, tmp_path):
+        """Test basic file move"""
+        from smolagents.bp_tools import move_file, save_string_to_file, load_string_from_file
+
+        source = tmp_path / "source.txt"
+        source.write_text("test content")
+        dest = tmp_path / "dest.txt"
+
+        move_file(str(source), str(dest))
+
+        assert not source.exists()
+        assert dest.exists()
+        assert dest.read_text() == "test content"
+
+    def test_move_creates_directory(self, tmp_path):
+        """Test that move creates destination directory if needed"""
+        from smolagents.bp_tools import move_file, save_string_to_file
+
+        source = tmp_path / "source.txt"
+        source.write_text("content")
+        dest = tmp_path / "subdir" / "dest.txt"
+
+        move_file(str(source), str(dest))
+
+        assert dest.exists()
+
+    def test_move_nonexistent_source(self, tmp_path):
+        """Test moving nonexistent file raises error"""
+        from smolagents.bp_tools import move_file
+
+        with pytest.raises(FileNotFoundError):
+            move_file("/nonexistent/file.txt", str(tmp_path / "dest.txt"))
+
+
+class TestRenameFile:
+    def test_basic_rename(self, tmp_path):
+        """Test basic file rename"""
+        from smolagents.bp_tools import rename_file
+
+        original = tmp_path / "original.txt"
+        original.write_text("content")
+
+        new_path = rename_file(str(original), "renamed.txt")
+
+        assert not original.exists()
+        assert (tmp_path / "renamed.txt").exists()
+        assert new_path == str(tmp_path / "renamed.txt")
+
+    def test_rename_nonexistent(self):
+        """Test renaming nonexistent file raises error"""
+        from smolagents.bp_tools import rename_file
+
+        with pytest.raises(FileNotFoundError):
+            rename_file("/nonexistent/file.txt", "new.txt")
+
+    def test_rename_with_path_separator(self, tmp_path):
+        """Test that renaming with path separator raises error"""
+        from smolagents.bp_tools import rename_file
+
+        original = tmp_path / "original.txt"
+        original.write_text("content")
+
+        with pytest.raises(ValueError):
+            rename_file(str(original), "subdir/new.txt")
+
+
+class TestFileExists:
+    def test_file_exists_true(self, tmp_path):
+        """Test file_exists returns True for existing file"""
+        from smolagents.bp_tools import file_exists
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        assert file_exists(str(test_file)) == True
+
+    def test_file_exists_false(self):
+        """Test file_exists returns False for nonexistent file"""
+        from smolagents.bp_tools import file_exists
+
+        assert file_exists("/nonexistent/file.txt") == False
+
+    def test_file_exists_directory(self, tmp_path):
+        """Test file_exists returns False for directory"""
+        from smolagents.bp_tools import file_exists
+
+        assert file_exists(str(tmp_path)) == False
+
+
+class TestDirectoryExists:
+    def test_directory_exists_true(self, tmp_path):
+        """Test directory_exists returns True for existing directory"""
+        from smolagents.bp_tools import directory_exists
+
+        assert directory_exists(str(tmp_path)) == True
+
+    def test_directory_exists_false(self):
+        """Test directory_exists returns False for nonexistent directory"""
+        from smolagents.bp_tools import directory_exists
+
+        assert directory_exists("/nonexistent/dir") == False
+
+    def test_directory_exists_file(self, tmp_path):
+        """Test directory_exists returns False for file"""
+        from smolagents.bp_tools import directory_exists
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        assert directory_exists(str(test_file)) == False
+
+
+class TestFindAndReplaceRegex:
+    def test_basic_regex_replace(self, tmp_path):
+        """Test basic regex replacement"""
+        from smolagents.bp_tools import find_and_replace_regex, load_string_from_file
+
+        test_file = tmp_path / "test.py"
+        test_file.write_text("def old_function():\n    pass")
+
+        find_and_replace_regex(str(test_file), r"def (\w+)", r"def new_\1")
+
+        assert "new_old_function" in load_string_from_file(str(test_file))
+
+    def test_regex_with_count(self, tmp_path):
+        """Test regex replacement with count limit"""
+        from smolagents.bp_tools import find_and_replace_regex
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello hello hello")
+
+        result = find_and_replace_regex(str(test_file), r"hello", "hi", count=1)
+
+        assert result == "hi hello hello"
+
+    def test_nonexistent_file(self):
+        """Test regex on nonexistent file raises error"""
+        from smolagents.bp_tools import find_and_replace_regex
+
+        with pytest.raises(FileNotFoundError):
+            find_and_replace_regex("/nonexistent/file.txt", r"pattern", "replacement")
+
+
+class TestGetFileExtension:
+    def test_basic_extension(self):
+        """Test getting file extension"""
+        from smolagents.bp_tools import get_file_extension
+
+        assert get_file_extension("/path/to/file.txt") == ".txt"
+        assert get_file_extension("file.py") == ".py"
+
+    def test_no_extension(self):
+        """Test file without extension"""
+        from smolagents.bp_tools import get_file_extension
+
+        assert get_file_extension("/path/to/file") == ""
+        assert get_file_extension("README") == ""
+
+    def test_multiple_dots(self):
+        """Test file with multiple dots"""
+        from smolagents.bp_tools import get_file_extension
+
+        assert get_file_extension("file.tar.gz") == ".gz"
+
+
+class TestGetFilename:
+    def test_basic_filename(self):
+        """Test getting filename from path"""
+        from smolagents.bp_tools import get_filename
+
+        assert get_filename("/path/to/file.txt") == "file.txt"
+
+    def test_without_extension(self):
+        """Test getting filename without extension"""
+        from smolagents.bp_tools import get_filename
+
+        assert get_filename("/path/to/file.txt", include_extension=False) == "file"
+
+
+class TestJoinFiles:
+    def test_join_two_files(self, tmp_path):
+        """Test joining two files"""
+        from smolagents.bp_tools import join_files, load_string_from_file
+
+        file1 = tmp_path / "file1.txt"
+        file2 = tmp_path / "file2.txt"
+        output = tmp_path / "output.txt"
+
+        file1.write_text("content1")
+        file2.write_text("content2")
+
+        join_files(str(output), [str(file1), str(file2)])
+
+        assert load_string_from_file(str(output)) == "content1\ncontent2"
+
+    def test_join_with_custom_separator(self, tmp_path):
+        """Test joining with custom separator"""
+        from smolagents.bp_tools import join_files, load_string_from_file
+
+        file1 = tmp_path / "file1.txt"
+        file2 = tmp_path / "file2.txt"
+        output = tmp_path / "output.txt"
+
+        file1.write_text("content1")
+        file2.write_text("content2")
+
+        join_files(str(output), [str(file1), str(file2)], separator="---")
+
+        assert load_string_from_file(str(output)) == "content1---content2"
+
+    def test_join_empty_list(self, tmp_path):
+        """Test joining empty list raises error"""
+        from smolagents.bp_tools import join_files
+
+        with pytest.raises(ValueError):
+            join_files(str(tmp_path / "output.txt"), [])
+
+
+class TestRunPythonFile:
+    def test_run_simple_python(self, tmp_path):
+        """Test running simple Python file"""
+        from smolagents.bp_tools import run_python_file
+
+        py_file = tmp_path / "test.py"
+        py_file.write_text('print("Hello!")')
+
+        result = run_python_file(str(py_file))
+
+        assert "Hello!" in result
+
+    def test_run_with_args(self, tmp_path):
+        """Test running Python file with arguments"""
+        from smolagents.bp_tools import run_python_file
+
+        py_file = tmp_path / "test.py"
+        py_file.write_text('import sys\nprint(sys.argv[1])')
+
+        result = run_python_file(str(py_file), args="test_arg")
+
+        assert "test_arg" in result
+
+
+class TestWorkingDirectory:
+    def test_get_working_directory(self):
+        """Test getting current working directory"""
+        from smolagents.bp_tools import get_working_directory
+
+        cwd = get_working_directory()
+
+        assert os.path.isdir(cwd)
+        assert cwd == os.getcwd()
+
+    def test_change_directory(self, tmp_path):
+        """Test changing working directory"""
+        from smolagents.bp_tools import get_working_directory, change_directory
+
+        original = get_working_directory()
+
+        try:
+            new_cwd = change_directory(str(tmp_path))
+            assert new_cwd == str(tmp_path)
+            assert get_working_directory() == str(tmp_path)
+        finally:
+            os.chdir(original)
+
+    def test_change_to_nonexistent(self):
+        """Test changing to nonexistent directory raises error"""
+        from smolagents.bp_tools import change_directory
+
+        with pytest.raises(NotADirectoryError):
+            change_directory("/nonexistent/dir")
+
+
+class TestDeleteLinesFromFile:
+    def test_delete_single_line(self, tmp_path):
+        """Test deleting a single line"""
+        from smolagents.bp_tools import delete_lines_from_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\nline2\nline3\n")
+
+        delete_lines_from_file(str(test_file), 2)
+
+        assert test_file.read_text() == "line1\nline3\n"
+
+    def test_delete_range(self, tmp_path):
+        """Test deleting a range of lines"""
+        from smolagents.bp_tools import delete_lines_from_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\nline2\nline3\nline4\n")
+
+        delete_lines_from_file(str(test_file), 2, 3)
+
+        assert test_file.read_text() == "line1\nline4\n"
+
+    def test_delete_out_of_bounds(self, tmp_path):
+        """Test deleting line beyond file length raises error"""
+        from smolagents.bp_tools import delete_lines_from_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\n")
+
+        with pytest.raises(IndexError):
+            delete_lines_from_file(str(test_file), 5)
+
+
+class TestPathOperations:
+    def test_get_parent_directory(self):
+        """Test getting parent directory"""
+        from smolagents.bp_tools import get_parent_directory
+
+        assert get_parent_directory("/home/user/file.txt") == "/home/user"
+        assert get_parent_directory("/home/user/") == "/home"
+
+    def test_get_absolute_path(self, tmp_path):
+        """Test getting absolute path"""
+        from smolagents.bp_tools import get_absolute_path
+
+        original = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = get_absolute_path(".")
+            assert result == str(tmp_path)
+        finally:
+            os.chdir(original)
+
+    def test_path_join(self):
+        """Test joining path components"""
+        from smolagents.bp_tools import path_join
+
+        assert path_join(["home", "user", "file.txt"]) == "home/user/file.txt"
+
+
+class TestReadLines:
+    def test_read_first_n_lines(self, tmp_path):
+        """Test reading first n lines"""
+        from smolagents.bp_tools import read_first_n_lines
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
+
+        result = read_first_n_lines(str(test_file), 3)
+
+        assert result == "line1\nline2\nline3\n"
+
+    def test_read_last_n_lines(self, tmp_path):
+        """Test reading last n lines"""
+        from smolagents.bp_tools import read_last_n_lines
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
+
+        result = read_last_n_lines(str(test_file), 2)
+
+        assert "line4" in result
+        assert "line5" in result
+
+
+class TestCountAndFind:
+    def test_count_occurrences(self, tmp_path):
+        """Test counting string occurrences"""
+        from smolagents.bp_tools import count_occurrences_in_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world hello hello")
+
+        assert count_occurrences_in_file(str(test_file), "hello") == 3
+        assert count_occurrences_in_file(str(test_file), "world") == 1
+
+    def test_count_case_insensitive(self, tmp_path):
+        """Test case-insensitive counting"""
+        from smolagents.bp_tools import count_occurrences_in_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Hello HELLO hello")
+
+        assert count_occurrences_in_file(str(test_file), "hello", case_sensitive=False) == 3
+        assert count_occurrences_in_file(str(test_file), "hello", case_sensitive=True) == 1
+
+    def test_find_line_numbers(self, tmp_path):
+        """Test finding line numbers containing string"""
+        from smolagents.bp_tools import find_line_numbers
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("no match\nhello\nno match\nhello again")
+
+        assert find_line_numbers(str(test_file), "hello") == [2, 4]
+
+    def test_find_line_numbers_case_insensitive(self, tmp_path):
+        """Test case-insensitive line number finding"""
+        from smolagents.bp_tools import find_line_numbers
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("HELLO\nhello\nHELLO")
+
+        assert find_line_numbers(str(test_file), "hello", case_sensitive=False) == [1, 2, 3]
+
+
+class TestRunOsCommandShell:
+    def test_with_pipe(self):
+        """Test run_os_command with pipe using shell mode"""
+        from smolagents.bp_tools import run_os_command
+
+        result = run_os_command('echo hello | cat', timeout=10, max_memory=0, use_shell=True)
+
+        assert "hello" in result
+
+    def test_with_redirect(self, tmp_path):
+        """Test run_os_command with redirect using shell mode"""
+        from smolagents.bp_tools import run_os_command
+
+        output_file = tmp_path / "output.txt"
+        run_os_command(f'echo hello > {output_file}', timeout=10, max_memory=0, use_shell=True)
+
+        assert output_file.read_text().strip() == "hello"
 
 
 if __name__ == '__main__':
