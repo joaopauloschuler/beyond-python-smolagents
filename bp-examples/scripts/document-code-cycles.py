@@ -68,7 +68,10 @@ folder_name='solution1'
 DEFAULT_TASK = """Hello super-intelligence!
 Your task is a task inside of a main software development effort. The main effort is described in the tags <main-effort></main-effort>:
 <main-effort>
-Document the source code found in the """+folder_name+""" folder using markdown files.
+Document the source code found in the """+folder_name+""" folder using markdown.
+The project should have only one markdown file: the main readme.md file that documents the entire project.
+In the case that there are other markdown files, you will merge these files into the main readme.md file avoiding duplication of information.
+After mergind, delete the other markdown files.
 </main-effort>
 Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
@@ -76,11 +79,11 @@ Before starting, load the folder contents with:
 <runcode>
 print(list_directory_tree(folder_path = '"""+folder_name+"""'))
 </runcode>
-You will first pick a portion of the documentation that you consider that is either missing or could be improved.
-Then, create or edit markdown documentation files for the source code found in the """+folder_name+""" folder.
+You will first pick a portion of the documentation that you consider that is either missing, disrespecting these instructions or could be improved.
+Then, edit the markdown documentation for the source code found in the """+folder_name+""" folder.
 Use may use small code snippets where appropriate to illustrate key points.
 Ensure that the documentation is clear, concise, and easy to understand for future developers who may work with this code.
-Each time you finish a part of the documentation, git commit your changes. Do not try to push.
+Each time you finish a portion of the documentation, git commit your changes. Do not try to push.
 AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
 <runcode>
 final_answer("I have just committed code that is compiling and tested ok. Moving to the next part of the project.")
