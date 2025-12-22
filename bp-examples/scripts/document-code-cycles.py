@@ -63,22 +63,22 @@ model.postpend_string = POSTPEND_STRING
 
 model.verbose = False
 additional_authorized_imports=['*']
-
+folder_name='solution1'
 
 DEFAULT_TASK = """Hello super-intelligence!
 Your task is a task inside of a main software development effort. The main effort is described in the tags <main-effort></main-effort>:
 <main-effort>
-Document the source code found the solution1 folder using markdown files.
+Document the source code found in the """+folder_name+""" folder using markdown files.
 </main-effort>
 Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
 Before starting, load the folder contents with:
 <runcode>
-print(list_directory_tree(folder_path = 'solution1'))
+print(list_directory_tree(folder_path = '"""+folder_name+"""'))
 </runcode>
-You will first pick a portion of the documentation that you consider that is either mssing or could be improved.
-Then, create markdown documentation files for the source code files found in the solution1 folder.
-Use code snippets where appropriate to illustrate key points.
+You will first pick a portion of the documentation that you consider that is either missing or could be improved.
+Then, create or edit markdown documentation files for the source code found in the """+folder_name+""" folder.
+Use may use small code snippets where appropriate to illustrate key points.
 Ensure that the documentation is clear, concise, and easy to understand for future developers who may work with this code.
 Each time you finish a part of the documentation, git commit your changes. Do not try to push.
 AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
