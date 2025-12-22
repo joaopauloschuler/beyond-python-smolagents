@@ -324,7 +324,7 @@ def print_source_code_lines(filename: str, start_line: int, end_line: int) -> No
 @tool
 def get_file_lines(filename: str) -> int:
   """ 
-  This tool returns the number of lines in a text file.
+  get_file_lines returns the number of lines in a text file.
 
   Args:
     filename: str The path to the text file.
@@ -2189,3 +2189,129 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
 
     counts['_total'] = total_lines
     return counts
+
+@tool
+def read_first_n_lines(filename: str, n: int) -> str:
+    """
+    Reads the first n lines of a file. Useful for previewing large files
+    without loading everything into memory.
+
+    Args:
+        filename: str Path to the file
+        n: int Number of lines to read
+
+    Returns:
+        str: The first n lines of the file
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    cnt_lines = get_file_lines(filename)
+
+    if n < 1:
+        raise ValueError("n must be >= 1")
+
+    if  n > cnt_lines:
+        n = cnt_lines
+
+    lines = []
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            for i, line in enumerate(f):
+                if i >= n:
+                    break
+                lines.append(line)
+    except UnicodeDecodeError:
+        with open(filename, 'r', encoding='latin-1') as f:
+            for i, line in enumerate(f):
+                if i >= n:
+                    break
+                lines.append(line)
+
+    return ''.join(lines)
+
+@tool
+def read_last_n_lines(filename: str, n: int) -> str:
+    """
+    Reads the last n lines of a file. Useful for reading log files or
+    checking the end of large files.
+
+    Args:
+        filename: str Path to the file
+        n: int Number of lines to read from the end
+
+    Returns:
+        str: The last n lines of the file
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+    cnt_lines = get_file_lines(filename)
+
+    if n < 1:
+        raise ValueError("n must be >= 1")
+
+    if  n > cnt_lines:
+        n = cnt_lines
+
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except UnicodeDecodeError:
+        with open(filename, 'r', encoding='latin-1') as f:
+            lines = f.readlines()
+
+    return ''.join(lines[-n:])
+
+@tool
+def delete_lines_from_file(filename: str, start_line: int, end_line: int = None) -> str:
+    """
+    Deletes specific lines from a file.
+
+    Args:
+        filename: str Path to the file
+        start_line: int The first line to delete (1-based index)
+        end_line: int The last line to delete (1-based, inclusive).
+                  If None, only deletes the start_line.
+
+    Returns:
+        str: The updated file content
+
+    Example:
+        # Delete line 5
+        delete_lines_from_file('code.py', 5)
+
+        # Delete lines 10-15 (inclusive)
+        delete_lines_from_file('code.py', 10, 15)
+    """
+    if not os.path.isfile(filename):
+        raise FileNotFoundError(f"File '{filename}' not found")
+
+    cnt_lines = get_file_lines(filename)
+
+    if start_line < 1:
+        raise ValueError("start_line must be >= 1")
+
+    if end_line is None:
+        end_line = start_line
+
+    if end_line > cnt_lines:
+        end_line = cnt_lines
+
+    if end_line < start_line:
+        raise ValueError("end_line must be >= start_line")
+
+    with open(filename, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    total_lines = len(lines)
+    if start_line > total_lines:
+        raise IndexError(f"start_line {start_line} is beyond file length ({total_lines} lines)")
+
+    # Remove the specified lines (convert to 0-based index)
+    del lines[start_line - 1:end_line]
+
+    content = ''.join(lines)
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+    return content
