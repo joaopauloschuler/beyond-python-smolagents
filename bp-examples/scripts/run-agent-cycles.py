@@ -67,6 +67,7 @@ additional_authorized_imports=['*']
 computing_language = "free pascal (fpc)"
 what_to_code = "task manager"
 fileext='.pas'
+folder_name='solution1'
 
 has_pascal_message = """ When compiling pascal code, use this example:
 run_os_command('fpc solution1.pas -obin/task_manager -O1 -Mobjfpc')
@@ -176,7 +177,7 @@ Your task is a task inside of a main software development effort. The main effor
 </main-effort>
 Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
-Inside the solution1 folder, code a task manager in plain pascal.
+Inside the """+folder_name+""" folder, code a task manager in plain pascal.
 If the folder is empty, start from scratch please. Otherwise, add new features.
 When loading source code for verifying existing code, never load more than 500 lines. When saving, never save more than 500 lines. Try to save only what is changing. This is done to save the context size of AI when working on this project.
 
@@ -191,7 +192,7 @@ Only commit code that is compiling and tested ok.
 NEVER EVER COMMIT CODE THAT IS NOT COMPILING.
 NEVER EVER COMMIT BINARY FILES.
 NEVER CHANGE THE WORKING DIRECTORY. CHANGING THE WORKING DIRECTORY MAY CAUSE UNEXPECTED BEHAVIOR.
-ALL FILES MUST BE CREATED INSIDE OF THE solution1 FOLDER.
+ALL FILES MUST BE CREATED INSIDE OF THE """+folder_name+""" FOLDER.
 AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
 <runcode>
 final_answer("I have just committed code that is compiling and tested ok. Moving to the next part of the project.")
@@ -201,7 +202,7 @@ Please create md files that explain the project as you progress.
 
 Before starting, load the folder contents with:
 <runcode>
-print(list_directory_tree(folder_path = 'solution1', add_function_signatures = True))
+print(list_directory_tree(folder_path = '"""+folder_name+"""', add_function_signatures = True))
 </runcode>
 </your-task>
 May the force be with you. I do trust your judgement."""
