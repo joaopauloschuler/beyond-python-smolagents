@@ -1,8 +1,9 @@
 # Get mandatory KEY_VALUE from user
-KEY_VALUE = input("Enter your API key (mandatory): ").strip()
+import getpass
+KEY_VALUE = getpass.getpass("Enter your API key (mandatory): ").strip()
 while not KEY_VALUE:
     print("API key is required!")
-    KEY_VALUE = input("Enter your API key (mandatory): ").strip()
+    KEY_VALUE = getpass.getpass("Enter your API key (mandatory): ").strip()
 
 # Get optional parameters with defaults
 api_endpoint_input = input("Enter API endpoint (press Enter for default: https://api.poe.com/v1): ").strip()
