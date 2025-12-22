@@ -21,7 +21,8 @@ DEFAULT_THINKER_TOOLS = [
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
   list_directory_tree, search_in_files, get_file_info, list_directory,
   extract_function_signatures, compare_files, count_lines_of_code,
-  mkdir, delete_file, delete_directory, compare_folders]
+  mkdir, delete_file, delete_directory, compare_folders,
+  read_first_n_lines, read_last_n_lines, delete_lines_from_file]
 
 #TODO: include force_directories into the DEFAULT_THINKER_TOOLS (it now fails adding)
 
