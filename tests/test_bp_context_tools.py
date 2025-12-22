@@ -18,12 +18,15 @@ from smolagents.bp_tools import (
     count_lines_of_code,
     delete_directory,
     delete_file,
+    delete_lines_from_file,
     extract_function_signatures,
     get_file_info,
     list_directory,
     list_directory_tree,
     mkdir,
     read_file_range,
+    read_first_n_lines,
+    read_last_n_lines,
     search_in_files,
 )
 
@@ -876,6 +879,187 @@ class TestCountLinesOfCode:
         result = count_lines_of_code("/nonexistent/path")
 
         assert 'error' in result
+
+
+class TestReadFirstNLines:
+    def test_basic_read_first_lines(self, tmp_path):
+        """Test reading the first n lines of a file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n")
+
+        result = read_first_n_lines(str(file_path), 3)
+
+        assert result == "line 1\nline 2\nline 3\n"
+
+    def test_n_exceeds_file_length(self, tmp_path):
+        """Test reading when n exceeds the number of lines in file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        result = read_first_n_lines(str(file_path), 10)
+
+        assert result == "line 1\nline 2\n"
+
+    def test_read_single_line(self, tmp_path):
+        """Test reading exactly one line"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = read_first_n_lines(str(file_path), 1)
+
+        assert result == "line 1\n"
+
+    def test_nonexistent_file(self):
+        """Test reading from nonexistent file"""
+        with pytest.raises(FileNotFoundError):
+            read_first_n_lines("/nonexistent/file.txt", 5)
+
+    def test_n_less_than_one(self, tmp_path):
+        """Test that n < 1 raises ValueError"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        with pytest.raises(ValueError):
+            read_first_n_lines(str(file_path), 0)
+
+        with pytest.raises(ValueError):
+            read_first_n_lines(str(file_path), -1)
+
+
+class TestReadLastNLines:
+    def test_basic_read_last_lines(self, tmp_path):
+        """Test reading the last n lines of a file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n")
+
+        result = read_last_n_lines(str(file_path), 3)
+
+        assert result == "line 3\nline 4\nline 5\n"
+
+    def test_n_exceeds_file_length(self, tmp_path):
+        """Test reading when n exceeds the number of lines in file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        result = read_last_n_lines(str(file_path), 10)
+
+        assert result == "line 1\nline 2\n"
+
+    def test_read_single_line(self, tmp_path):
+        """Test reading exactly one line from the end"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = read_last_n_lines(str(file_path), 1)
+
+        assert result == "line 3\n"
+
+    def test_nonexistent_file(self):
+        """Test reading from nonexistent file"""
+        with pytest.raises(FileNotFoundError):
+            read_last_n_lines("/nonexistent/file.txt", 5)
+
+    def test_n_less_than_one(self, tmp_path):
+        """Test that n < 1 raises ValueError"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        with pytest.raises(ValueError):
+            read_last_n_lines(str(file_path), 0)
+
+        with pytest.raises(ValueError):
+            read_last_n_lines(str(file_path), -1)
+
+
+class TestDeleteLinesFromFile:
+    def test_delete_single_line(self, tmp_path):
+        """Test deleting a single line from a file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\nline 4\n")
+
+        result = delete_lines_from_file(str(file_path), 2)
+
+        assert result == "line 1\nline 3\nline 4\n"
+        assert file_path.read_text() == "line 1\nline 3\nline 4\n"
+
+    def test_delete_line_range(self, tmp_path):
+        """Test deleting a range of lines from a file"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n")
+
+        result = delete_lines_from_file(str(file_path), 2, 4)
+
+        assert result == "line 1\nline 5\n"
+        assert file_path.read_text() == "line 1\nline 5\n"
+
+    def test_delete_first_line(self, tmp_path):
+        """Test deleting the first line"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = delete_lines_from_file(str(file_path), 1)
+
+        assert result == "line 2\nline 3\n"
+
+    def test_delete_last_line(self, tmp_path):
+        """Test deleting the last line"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = delete_lines_from_file(str(file_path), 3)
+
+        assert result == "line 1\nline 2\n"
+
+    def test_delete_all_lines(self, tmp_path):
+        """Test deleting all lines"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = delete_lines_from_file(str(file_path), 1, 3)
+
+        assert result == ""
+        assert file_path.read_text() == ""
+
+    def test_nonexistent_file(self):
+        """Test deleting from nonexistent file"""
+        with pytest.raises(FileNotFoundError):
+            delete_lines_from_file("/nonexistent/file.txt", 1)
+
+    def test_start_line_less_than_one(self, tmp_path):
+        """Test that start_line < 1 raises ValueError"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        with pytest.raises(ValueError):
+            delete_lines_from_file(str(file_path), 0)
+
+        with pytest.raises(ValueError):
+            delete_lines_from_file(str(file_path), -1)
+
+    def test_end_line_less_than_start_line(self, tmp_path):
+        """Test that end_line < start_line raises ValueError"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        with pytest.raises(ValueError):
+            delete_lines_from_file(str(file_path), 3, 1)
+
+    def test_start_line_beyond_file_length(self, tmp_path):
+        """Test that start_line beyond file length raises ValueError"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\n")
+
+        with pytest.raises(ValueError):
+            delete_lines_from_file(str(file_path), 10)
+
+    def test_end_line_exceeds_file_length(self, tmp_path):
+        """Test that end_line exceeding file length is capped"""
+        file_path = tmp_path / "test.txt"
+        file_path.write_text("line 1\nline 2\nline 3\n")
+
+        result = delete_lines_from_file(str(file_path), 2, 10)
+
+        assert result == "line 1\n"
 
 
 if __name__ == '__main__':
