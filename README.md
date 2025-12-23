@@ -28,17 +28,17 @@ limitations under the License.
 ## Google colab ready to run examples 
 
 ### Writing task examples
-* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
-* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
-* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/writing/vitamin-C.ipynb)
+* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
+* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
+* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C.ipynb)
 
 ### Coding task examples
   [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
-* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
-* [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/php/php-single-file-01.ipynb)
-* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/java/java-single-file-01.ipynb)
-* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
-* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.22-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
+* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
+* [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/php/php-single-file-01.ipynb)
+* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
+* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
+* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ## Feature list
 * 👥 Collaborate across multiple agents to solve complex problems.
@@ -51,9 +51,9 @@ limitations under the License.
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
 
-1. **Clone the Repository:** Clone the `v1.22-bp` branch of the Beyond Python Smolagents repository.
+1. **Clone the Repository:** Clone the `v1.23-bp` branch of the Beyond Python Smolagents repository.
     ```bash
-    !git clone -b v1.22-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
+    !git clone -b v1.23-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
     ```
 
 2.  **Install Beyond Python Smolagents:** Install the cloned project, including the LiteLLM dependencies.
