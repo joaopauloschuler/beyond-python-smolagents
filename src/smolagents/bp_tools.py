@@ -2202,6 +2202,10 @@ def read_first_n_lines(filename: str, n: int) -> str:
 
     Returns:
         str: The first n lines of the file
+
+    Example:
+        # Print first 50 lines
+        print(read_first_n_lines('code.py', 50))
     """
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
@@ -2242,6 +2246,10 @@ def read_last_n_lines(filename: str, n: int) -> str:
 
     Returns:
         str: The last n lines of the file
+    
+    Example:
+        # Print last 50 lines
+        print(read_last_n_lines('code.py', 50))
     """
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
