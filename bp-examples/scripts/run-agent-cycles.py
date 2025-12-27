@@ -179,7 +179,7 @@ Your task is is enclosed in the tags <your-task></your-task>:
 <your-task>
 Inside the """+folder_name+""" folder, code a task manager in plain pascal.
 The source code must be modular, easy to understand and easy to maintain. Documenting the source code is important.
-If the folder is empty, start from scratch please. Otherwise, add new features.
+If the folder is empty, start from scratch please. Otherwise, add new features or update existing documentation.
 When loading source code for verifying existing code, never load more than 500 lines. When saving, never save more than 500 lines. Try to save only what is changing. This is done to save the context size of AI when working on this project.
 
 Please feel free to be bold and show your your creativity when adding new features.
@@ -188,13 +188,14 @@ At each point that you get the source code compiling and tested ok, please commi
 
 Before commiting code with "git commit", please run "git status" and check if what you are commiting is compatible with your expectations.
 
-Only commit code that is compiling and tested ok.
+Only commit code that compiles and tests ok. When committing code, be sure that the corresponding documentation is updated.
 
+REMEMBER:
 NEVER EVER COMMIT CODE THAT IS NOT COMPILING.
 NEVER EVER COMMIT BINARY FILES.
 NEVER CHANGE THE WORKING DIRECTORY. CHANGING THE WORKING DIRECTORY MAY CAUSE UNEXPECTED BEHAVIOR.
 ALL FILES MUST BE CREATED INSIDE OF THE """+folder_name+""" FOLDER.
-AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
+AFTER EACH PARTIAL COMMIT THAT IS DOCUMENTED, COMPILES AND TESTS OK, CALL THE FOLLOWING:
 <runcode>
 final_answer("I have just committed code that is compiling and tested ok. Moving to the next part of the project.")
 </runcode>
