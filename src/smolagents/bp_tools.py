@@ -1888,7 +1888,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
 
     if language.lower() in ["markdown", "md"]:
         # Extract markdown sections (lines starting with #)
-        md_sections = [line.strip() for line in content.split('\n') if line.strip().startswith('#')]
+        # Skip lines inside code blocks (fenced with ``` or ~~~)
+        md_sections = []
+        in_code_block = False
+        for line in content.split('\n'):
+            stripped = line.strip()
+            # Check for code block delimiters (``` or ~~~)
+            if stripped.startswith('```') or stripped.startswith('~~~'):
+                in_code_block = not in_code_block
+                continue
+            # Only extract headers when not inside a code block
+            if not in_code_block and stripped.startswith('#'):
+                md_sections.append(stripped)
         if not md_sections:
             return f"No sections found in '{filename}'"
         return "\n".join(md_sections)

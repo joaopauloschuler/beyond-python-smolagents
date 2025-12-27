@@ -274,6 +274,38 @@ class TestListDirectoryTree:
         assert "script.py" in result
         assert "def my_function():" in result
 
+    def test_markdown_sections_skip_code_blocks(self, tmp_path):
+        """Test that markdown section extraction skips content inside code blocks"""
+        # Create a markdown file with headers inside code blocks
+        (tmp_path / "doc.md").write_text(
+            "# Title\n"
+            "Some intro text\n"
+            "```python\n"
+            "# This is a Python comment, not a header\n"
+            "def hello():\n"
+            "    pass\n"
+            "```\n"
+            "## Section 2\n"
+            "More text\n"
+            "~~~bash\n"
+            "# Bash comment\n"
+            "echo hello\n"
+            "~~~\n"
+            "### Section 3\n"
+        )
+
+        result = list_directory_tree(str(tmp_path), max_depth=1, show_files=True, add_function_signatures=True)
+
+        # Should show the file
+        assert "doc.md" in result
+        # Should show real markdown headers
+        assert "# Title" in result
+        assert "## Section 2" in result
+        assert "### Section 3" in result
+        # Should NOT show comments inside code blocks
+        assert "# This is a Python comment" not in result
+        assert "# Bash comment" not in result
+
 
 class TestSearchInFiles:
     def test_basic_search(self, tmp_path):
@@ -628,6 +660,53 @@ end MyFunction;
         result = extract_function_signatures(str(file_path), "python")
 
         assert "No function/class signatures found" in result
+
+    def test_markdown_sections_basic(self, tmp_path):
+        """Test extracting markdown section headers"""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("# Header 1\nSome text\n## Header 2\nMore text\n### Header 3\n")
+
+        result = extract_function_signatures(str(file_path), "markdown")
+
+        assert "# Header 1" in result
+        assert "## Header 2" in result
+        assert "### Header 3" in result
+        assert "Some text" not in result
+
+    def test_markdown_sections_skip_code_blocks(self, tmp_path):
+        """Test that markdown section extraction skips content inside code blocks"""
+        file_path = tmp_path / "test.md"
+        file_path.write_text(
+            "# Real Header\n"
+            "```python\n"
+            "# This is a comment in code block\n"
+            "def hello():\n"
+            "    pass\n"
+            "```\n"
+            "## Another Real Header\n"
+            "~~~bash\n"
+            "# Bash comment\n"
+            "~~~\n"
+            "### Third Header\n"
+        )
+
+        result = extract_function_signatures(str(file_path), "markdown")
+
+        assert "# Real Header" in result
+        assert "## Another Real Header" in result
+        assert "### Third Header" in result
+        # Comments inside code blocks should NOT be extracted
+        assert "# This is a comment in code block" not in result
+        assert "# Bash comment" not in result
+
+    def test_markdown_no_sections(self, tmp_path):
+        """Test markdown file with no section headers"""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("Just plain text\nNo headers here\n")
+
+        result = extract_function_signatures(str(file_path), "markdown")
+
+        assert "No sections found" in result
 
     def test_nonexistent_file(self):
         """Test nonexistent file"""
