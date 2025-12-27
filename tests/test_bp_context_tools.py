@@ -708,6 +708,25 @@ end MyFunction;
 
         assert "No sections found" in result
 
+    def test_markdown_mixed_delimiters(self, tmp_path):
+        """Test that mixed code block delimiters are handled correctly"""
+        file_path = tmp_path / "test.md"
+        # In proper markdown, ``` must be closed with ``` and ~~~ with ~~~
+        # So a ~~~ should NOT close a block opened with ```
+        file_path.write_text(
+            "# Header 1\n"
+            "```python\n"
+            "# comment in code\n"
+            "~~~\n"  # This should NOT close the block
+            "## Should be skipped (still in code block)\n"
+        )
+
+        result = extract_function_signatures(str(file_path), "markdown")
+
+        # Only the first header should be extracted since the code block is never properly closed
+        assert "# Header 1" in result
+        assert "## Should be skipped" not in result
+
     def test_nonexistent_file(self):
         """Test nonexistent file"""
         result = extract_function_signatures("/nonexistent/file.py", "python")
