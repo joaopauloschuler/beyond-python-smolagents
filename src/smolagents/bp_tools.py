@@ -1543,6 +1543,44 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
             '.lpr': 'pascal',
             '.dpr': 'pascal',
             '.inc': 'pascal',
+            '.md': 'markdown',
+            '.c': 'c',
+            '.cpp': 'cpp',
+            '.h': 'cpp',
+            '.cs': 'csharp',
+            '.rb': 'ruby',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.swift': 'swift',
+            '.kt': 'kotlin',
+            '.m': 'objective-c',
+            '.scala': 'scala',
+            '.sh': 'bash',
+            '.bash': 'bash',
+            '.zsh': 'bash',
+            '.r': 'r',
+            '.lua': 'lua',
+            '.dart': 'dart',
+            '.html': 'html',
+            '.css': 'css',
+            '.xml': 'xml',
+            '.json': 'json',
+            '.yml': 'yaml',
+            '.yaml': 'yaml',
+            '.pl': 'perl',
+            '.cob': 'cobol',
+            '.cbl': 'cobol',
+            '.sql': 'sql',
+            '.vb': 'vbnet',
+            '.vbnet': 'vbnet',
+            '.erl': 'erlang',
+            '.ex': 'elixir',
+            '.exs': 'elixir',
+            '.hs': 'haskell',
+            '.jl': 'julia',
+            '.groovy': 'groovy',
+            '.ps1': 'powershell',
+            '.psm1': 'powershell',
         }
         return language_map.get(ext, 'generic')
 
@@ -1592,15 +1630,17 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
             if add_function_signatures and os.path.isfile(item_path):
                 _, ext = os.path.splitext(item)
                 if ext.lower() in DEFAULT_SOURCE_CODE_EXTENSIONS:
-                    language = detect_language(item)
                     try:
+                        language = detect_language(item)
                         signatures = extract_function_signatures(item_path, language)
+                        
                         # Only display if signatures were found and don't contain error messages
                         # Check if the result contains actual signatures (not error or empty messages)
                         if (
                             signatures
                             and not signatures.startswith("Error:")
                             and not signatures.startswith("No function")
+                            and not signatures.startswith("No sections")
                         ):
                             # Indent the signatures to align with the tree structure
                             extension = "    " if is_last else "│   "
@@ -1846,7 +1886,14 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
 
     signatures = []
 
-    if language.lower() == "python":
+    if language.lower() in ["markdown", "md"]:
+        # Extract markdown sections (lines starting with #)
+        md_sections = [line.strip() for line in content.split('\n') if line.strip().startswith('#')]
+        if not md_sections:
+            return f"No sections found in '{filename}'"
+        return "\n".join(md_sections)
+
+    elif language.lower() == "python":
         # Match Python function and class definitions
         # Match def function_name(...): and class ClassName(...):
         pattern = r'^([ \t]*)(def|class)\s+(\w+)\s*(\([^)]*\))?\s*:'
