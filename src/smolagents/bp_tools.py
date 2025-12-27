@@ -1495,39 +1495,8 @@ def create_filename(topic:str, extension:str=".md") -> str:
     filename = slugify(topic, separator='_')
     return filename + extension
 
-@tool
-def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False) -> str:
-    """
-    Creates a tree-like view of a directory structure. This is useful for understanding
-    project structure without loading all file contents, saving context.
-    
-    Example output:
-    project/
-    ├── src/
-    │   ├── main.py (123 lines)
-    │   └── utils.py (45 lines)
-    └── tests/
-        └── test_main.py (67 lines)
-    
-    Total source code lines: 235
-    
-    Args:
-        folder_path: str The root folder path to visualize
-        max_depth: int Maximum depth to traverse (default 3)
-        show_files: bool Whether to show files or only directories (default True)
-        add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
-    
-    Returns:
-        str: A string representation of the directory tree
-    """
-    if not os.path.isdir(folder_path):
-        return f"Error: '{folder_path}' is not a valid directory"
-
-    lines = []
-    total_lines = 0
-
-    # Helper function to detect language from file extension
-    def detect_language(filename):
+# Function to detect language from file extension
+def detect_language(filename):
         """Detect programming language from file extension"""
         ext = os.path.splitext(filename)[1].lower()
         language_map = {
@@ -1583,6 +1552,37 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
             '.psm1': 'powershell',
         }
         return language_map.get(ext, 'generic')
+
+@tool
+def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False) -> str:
+    """
+    Creates a tree-like view of a directory structure. This is useful for understanding
+    project structure without loading all file contents, saving context.
+    
+    Example output:
+    project/
+    ├── src/
+    │   ├── main.py (123 lines)
+    │   └── utils.py (45 lines)
+    └── tests/
+        └── test_main.py (67 lines)
+    
+    Total source code lines: 235
+    
+    Args:
+        folder_path: str The root folder path to visualize
+        max_depth: int Maximum depth to traverse (default 3)
+        show_files: bool Whether to show files or only directories (default True)
+        add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
+    
+    Returns:
+        str: A string representation of the directory tree
+    """
+    if not os.path.isdir(folder_path):
+        return f"Error: '{folder_path}' is not a valid directory"
+
+    lines = []
+    total_lines = 0
 
     def add_tree_lines(current_path, prefix="", depth=0):
         nonlocal total_lines
