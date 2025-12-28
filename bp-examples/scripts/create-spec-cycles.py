@@ -69,6 +69,7 @@ Your task is a task inside of a main software development effort. The main effor
 <main-effort>
 Create a software specification '"""+project_name+"""' in the """+folder_name+""" folder using markdown.
 This specification should have only one markdown file: the main software-spec.md file that documents the entire project.
+In the case that there are other markdown files, you will merge these files into the main software-spec.md file avoiding duplication of information.
 The software specification must include:
 1. An overview of the software architecture.
 2. Detailed descriptions of each module/component.
