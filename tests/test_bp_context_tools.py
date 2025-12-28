@@ -885,6 +885,81 @@ end MyFunction;
         assert "# Header 1" in result
         assert "## Should be skipped" not in result
 
+    def test_order_preserved_java(self, tmp_path):
+        """Test that signatures are returned in source code order for Java"""
+        file_path = tmp_path / "test_order.java"
+        # Define method1 BEFORE the class declaration
+        file_path.write_text("""
+public void standaloneMethod1() {
+    // standalone method first
+}
+
+public class MyClass {
+    public void method2() {
+    }
+}
+
+public void standaloneMethod2() {
+    // another standalone after class
+}
+""")
+
+        result = extract_function_signatures(str(file_path), "java")
+        lines = result.strip().split('\n')
+        
+        # Get the indices of each signature in the result
+        method1_idx = next((i for i, line in enumerate(lines) if 'standaloneMethod1' in line), -1)
+        class_idx = next((i for i, line in enumerate(lines) if 'class MyClass' in line), -1)
+        method2_idx = next((i for i, line in enumerate(lines) if 'method2' in line), -1)
+        method3_idx = next((i for i, line in enumerate(lines) if 'standaloneMethod2' in line), -1)
+        
+        # All should be found
+        assert method1_idx >= 0, "standaloneMethod1 not found"
+        assert class_idx >= 0, "MyClass not found"
+        assert method2_idx >= 0, "method2 not found"
+        assert method3_idx >= 0, "standaloneMethod2 not found"
+        
+        # Order should be: method1 < class < method2 < method3
+        assert method1_idx < class_idx, f"standaloneMethod1 ({method1_idx}) should come before MyClass ({class_idx})"
+        assert class_idx < method2_idx, f"MyClass ({class_idx}) should come before method2 ({method2_idx})"
+        assert method2_idx < method3_idx, f"method2 ({method2_idx}) should come before standaloneMethod2 ({method3_idx})"
+
+    def test_order_preserved_php(self, tmp_path):
+        """Test that signatures are returned in source code order for PHP"""
+        file_path = tmp_path / "test_order.php"
+        file_path.write_text("""<?php
+function first_function($param) {
+    return $param;
+}
+
+class MyClass {
+    public function classMethod() {
+    }
+}
+
+function last_function($param) {
+    return $param;
+}
+?>""")
+
+        result = extract_function_signatures(str(file_path), "php")
+        lines = result.strip().split('\n')
+        
+        first_idx = next((i for i, line in enumerate(lines) if 'first_function' in line), -1)
+        class_idx = next((i for i, line in enumerate(lines) if 'class MyClass' in line), -1)
+        method_idx = next((i for i, line in enumerate(lines) if 'classMethod' in line), -1)
+        last_idx = next((i for i, line in enumerate(lines) if 'last_function' in line), -1)
+        
+        assert first_idx >= 0, "first_function not found"
+        assert class_idx >= 0, "MyClass not found"
+        assert method_idx >= 0, "classMethod not found"
+        assert last_idx >= 0, "last_function not found"
+        
+        # Order should match source code order
+        assert first_idx < class_idx, f"first_function ({first_idx}) should come before MyClass ({class_idx})"
+        assert class_idx < method_idx, f"MyClass ({class_idx}) should come before classMethod ({method_idx})"
+        assert method_idx < last_idx, f"classMethod ({method_idx}) should come before last_function ({last_idx})"
+
     def test_nonexistent_file(self):
         """Test nonexistent file"""
         result = extract_function_signatures("/nonexistent/file.py", "python")
