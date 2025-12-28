@@ -75,11 +75,6 @@ After merging, delete the other markdown files.
 </main-effort>
 Your task is enclosed in the tags <your-task></your-task>:
 <your-task>
-Before starting, load the folder contents with:
-<runcode>
-print(list_directory_tree(folder_path = '"""+folder_name+"""', add_function_signatures = True))
-</runcode>
-In large projects, list_directory_tree result is too big to fit in a single runcode call. In these cases, you will save the result into a temporary file and then read the result bit by bit.
 You will first pick a portion of the documentation that you consider that is either missing, disrespecting these instructions or could be improved.
 Then, edit the markdown documentation for the source code found in the """+folder_name+""" folder.
 You may use small code snippets where appropriate to illustrate key points.
@@ -108,4 +103,6 @@ run_agent_cycles(model=model,
     task_str=task_description,
     cycles_cnt=CYCLES_CNT,
     planning_interval=PLANNING_INTERVAL,
-    max_steps=MAX_STEPS_PER_CYCLE)
+    max_steps=MAX_STEPS_PER_CYCLE,
+    list_directory_tree_in_folder = folder_name, 
+    add_function_signatures=True)

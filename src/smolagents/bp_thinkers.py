@@ -1025,13 +1025,20 @@ def run_agent_cycles(
   step_callbacks = DEFAULT_THINKER_STEP_CALLBACKS,
   executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
   log_level = DEFAULT_THINKER_LOG_LEVEL,
-  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
+  list_directory_tree_in_folder = None, 
+  add_function_signatures = True
 ):
   # save the current folder for later restoration
   original_folder = os.getcwd()
   for i in range(cycles_cnt):
     try:        
       print("Running agent cycle:", i)
+      local_prompt = task_str
+      if list_directory_tree_in_folder is not None:
+          local_prompt += "\nThis is the result of list_directory_tree:\n<directory_tree>\n" + \
+            list_directory_tree(folder_path=list_directory_tree_in_folder, add_function_signatures=add_function_signatures) + \
+            "\n</directory_tree>\n"
       # restore the original folder
       os.chdir(original_folder)
       local_agent = get_default_thinker_agent(
@@ -1045,6 +1052,6 @@ def run_agent_cycles(
         log_level=log_level,
         planning_interval=planning_interval
       )
-      local_agent.run(task_str, reset=True)
+      local_agent.run(local_prompt, reset=True)
     except Exception as e:
       print(f"Exception: {e}", "at cycle", i)
