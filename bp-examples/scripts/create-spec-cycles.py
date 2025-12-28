@@ -17,10 +17,10 @@ if cycles_cnt_input:
     try:
         CYCLES_CNT = int(cycles_cnt_input)
     except ValueError:
-        print(f"Invalid number '{cycles_cnt_input}', using default: 1")
-        CYCLES_CNT = 1
+        print(f"Invalid number '{cycles_cnt_input}', using default: 10")
+        CYCLES_CNT = 10
 else:
-    CYCLES_CNT = 1
+    CYCLES_CNT = 10
 
 max_steps_input = input("Enter max steps per cycle (press Enter for default: 100): ").strip()
 if max_steps_input:
@@ -61,26 +61,48 @@ model.postpend_string = POSTPEND_STRING
 
 model.verbose = False
 additional_authorized_imports=['*']
-folder_name='solution1'
+folder_name='current'
+project_name='free pascal / object pascal based task manager'
 
 DEFAULT_TASK = """Hello super-intelligence!
 Your task is a task inside of a main software development effort. The main effort is described in the tags <main-effort></main-effort>:
 <main-effort>
-Document the source code found in the """+folder_name+""" folder using markdown.
-The project should have only one markdown file: the main readme.md file that documents the entire project.
-In the case that there are other markdown files, you will merge these files into the main readme.md file avoiding duplication of information.
-After merging, delete the other markdown files.
+Create a software specification '"""+project_name+"""' in the """+folder_name+""" folder using markdown.
+This specification should have only one markdown file: the main software-spec.md file that documents the entire project.
+The software specification must include:
+1. An overview of the software architecture.
+2. Detailed descriptions of each module/component.
+3. Data models and structures used.
+4. API endpoints and their usage. IF APPLICABLE.  
+5. User interface designs. IF APPLICABLE.
+6. Any third-party libraries or services integrated.
+7. Deployment and scaling strategies.
+8. Testing strategies and coverage.
+9. Class diagrams and relevant methods/properties.
+10. Source code organization and file structure.
+11. Coding task list. Tasks to be coded are shown with `[ ] Task description` and completed tasks with `[x] Task description`.
+
+It is very important that the architecture, the data models and the class diagrams are very detailed and precise.
 </main-effort>
+
+The short description of the software to be specified is:
+* The software to be specified ("""+project_name+""") contains reusable code that might be used with graphical user interfaces. Do not include any user input or user interfaces such as ReadLn.
+* The software must be modular, easy to understand and easy to maintain.
+
 Your task is enclosed in the tags <your-task></your-task>:
 <your-task>
-You will first pick a portion of the documentation that you consider that is either missing, disrespecting these instructions or could be improved.
-Then, edit the markdown documentation for the source code found in the """+folder_name+""" folder.
+If the current specification is missing, create it from scratch following the main effort instructions above.
+If the current specification exists, you will first:
+* pick a portion of the existing specification that you consider that is either missing, disrespecting these instructions or could be improved OR
+* add a new feature to the software specification following the main effort instructions above.
+Then, edit the markdown documentation.
 You may use small code snippets where appropriate to illustrate key points.
 Ensure that the documentation is clear, concise, and easy to understand for future developers who may work with this code.
 Each time you finish a portion of the documentation, git commit your changes. Do not try to push.
+Before commiting code with "git commit", please run "git status" and check if what you are commiting is compatible with your expectations.
 AFTER EACH PARTIAL COMMIT, CALL THE FOLLOWING:
 <runcode>
-final_answer("I have just committed code that is compiling and tested ok. Moving to the next part of the project.")
+final_answer("I have just committed. Moving to the next part of the project.")
 </runcode>
 </your-task>
 May the force be with you. I do trust your judgement."""
@@ -102,5 +124,5 @@ run_agent_cycles(model=model,
     cycles_cnt=CYCLES_CNT,
     planning_interval=PLANNING_INTERVAL,
     max_steps=MAX_STEPS_PER_CYCLE,
-    list_directory_tree_in_folder = folder_name, 
+    list_directory_tree_in_folder = '.', 
     add_function_signatures=True)

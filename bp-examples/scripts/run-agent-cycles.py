@@ -52,9 +52,7 @@ GLOBAL_EXECUTOR = 'exec'
 MAX_TOKENS = 64000
 
 import smolagents
-from smolagents.bp_tools import *
-from smolagents.bp_utils import *
-from smolagents.bp_thinkers import *
+from smolagents.bp_thinkers import run_agent_cycles
 from smolagents import OpenAIServerModel
 
 # Using OpenAI protocol
