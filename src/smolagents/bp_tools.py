@@ -1933,9 +1933,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             r'^([ \t]*)(\w+)\s*(\([^)]*\))\s*\{',
             r'^([ \t]*)(const|let|var)\s+(\w+)\s*=\s*(\([^)]*\))\s*=>'
         ]
+        matches_with_pos = []
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
-                signatures.append(match.group(0).split('{')[0].strip())
+                sig = match.group(0).split('{')[0].strip()
+                matches_with_pos.append((match.start(), sig))
+        # Sort by position in source code and deduplicate
+        matches_with_pos.sort(key=lambda x: x[0])
+        seen = set()
+        for _, sig in matches_with_pos:
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     elif language.lower() == "java":
         # Match Java class, interface, enum declarations and method declarations
@@ -1943,13 +1952,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             r'^([ \t]*)(public|private|protected)?\s*(abstract|final)?\s*(class|interface|enum)\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?',
             r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
         ]
-        seen = set()
+        matches_with_pos = []
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
                 sig = match.group(0).strip()
-                if sig not in seen:
-                    signatures.append(sig)
-                    seen.add(sig)
+                matches_with_pos.append((match.start(), sig))
+        # Sort by position in source code and deduplicate
+        matches_with_pos.sort(key=lambda x: x[0])
+        seen = set()
+        for _, sig in matches_with_pos:
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     elif language.lower() == "php":
         # Match PHP function and method declarations (including object-oriented features)
@@ -1959,13 +1973,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             r'^([ \t]*)(public|private|protected)\s+(static\s+)?function\s+(\w+)\s*(\([^)]*\))',
             r'^([ \t]*)function\s+(\w+)\s*(\([^)]*\))'
         ]
-        seen = set()
+        matches_with_pos = []
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
                 sig = match.group(0).strip()
-                if sig not in seen:
-                    signatures.append(sig)
-                    seen.add(sig)
+                matches_with_pos.append((match.start(), sig))
+        # Sort by position in source code and deduplicate
+        matches_with_pos.sort(key=lambda x: x[0])
+        seen = set()
+        for _, sig in matches_with_pos:
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     elif language.lower() in ["pascal", "objectpascal", "delphi"]:
         # Match Pascal/Object Pascal function, procedure, class, record, and interface declarations
@@ -1976,13 +1995,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             r'^([ \t]*)(type\s+)?(\w+)\s*=\s*(class|record|interface|object)(?:\s*\([^)]*\))?',
             r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;?'
         ]
-        seen = set()
+        matches_with_pos = []
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
                 sig = match.group(0).strip()
-                if sig not in seen:
-                    signatures.append(sig)
-                    seen.add(sig)
+                matches_with_pos.append((match.start(), sig))
+        # Sort by position in source code and deduplicate
+        matches_with_pos.sort(key=lambda x: x[0])
+        seen = set()
+        for _, sig in matches_with_pos:
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     elif language.lower() in ["c", "cpp", "c++", "cxx", "h", "hpp"]:
         # Match C/C++ struct, class (C++), and function declarations
@@ -1993,13 +2017,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
             r'^([ \t]*)class\s+(\w+)(?:\s*:\s*(public|private|protected)?\s*\w+)?\s*\{?',
             r'^([ \t]*)' + c_types + r'(?:\s*\*)*\s+(\w+)\s*(\([^)]*\))\s*[{;]?'
         ]
-        seen = set()
+        matches_with_pos = []
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
                 sig = match.group(0).strip()
-                if sig not in seen:
-                    signatures.append(sig)
-                    seen.add(sig)
+                matches_with_pos.append((match.start(), sig))
+        # Sort by position in source code and deduplicate
+        matches_with_pos.sort(key=lambda x: x[0])
+        seen = set()
+        for _, sig in matches_with_pos:
+            if sig not in seen:
+                signatures.append(sig)
+                seen.add(sig)
 
     else:
         # Generic fallback for unsupported languages using "function" and "procedure" keywords
