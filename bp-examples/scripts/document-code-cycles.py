@@ -73,11 +73,11 @@ The project should have only one markdown file: the main readme.md file that doc
 In the case that there are other markdown files, you will merge these files into the main readme.md file avoiding duplication of information.
 After mergind, delete the other markdown files.
 </main-effort>
-Your task is is enclosed in the tags <your-task></your-task>:
+Your task is enclosed in the tags <your-task></your-task>:
 <your-task>
 Before starting, load the folder contents with:
 <runcode>
-print(list_directory_tree(folder_path = '"""+folder_name+"""'))
+print(list_directory_tree(folder_path = '"""+folder_name+"""', add_function_signatures = True))
 </runcode>
 You will first pick a portion of the documentation that you consider that is either missing, disrespecting these instructions or could be improved.
 Then, edit the markdown documentation for the source code found in the """+folder_name+""" folder.
