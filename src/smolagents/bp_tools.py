@@ -1985,20 +1985,20 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
 
     elif language.lower() in ["c", "cpp", "c++", "cxx", "h", "hpp"]:
         # Match C/C++ struct, class (C++), and function declarations
+        # Use explicit list of common C/C++ return types for better precision
+        c_types = r'(?:void|int|char|short|long|float|double|unsigned|signed|bool|size_t|ssize_t|auto|const\s+\w+|\w+_t)'
         patterns = [
             r'^([ \t]*)(typedef\s+)?struct\s+(\w+)?\s*\{?',
             r'^([ \t]*)class\s+(\w+)(?:\s*:\s*(public|private|protected)?\s*\w+)?\s*\{?',
-            r'^([ \t]*)(\w+(?:\s*\*)?)\s+(\w+)\s*(\([^)]*\))\s*[{;]?'
+            r'^([ \t]*)' + c_types + r'(?:\s*\*)*\s+(\w+)\s*(\([^)]*\))\s*[{;]?'
         ]
         seen = set()
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE):
                 sig = match.group(0).strip()
-                # Filter out common false positives like if, for, while, switch statements
-                if sig and not re.match(r'^(if|for|while|switch|return|else)\s*\(', sig):
-                    if sig not in seen:
-                        signatures.append(sig)
-                        seen.add(sig)
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
 
     else:
         # Generic fallback for unsupported languages using "function" and "procedure" keywords
