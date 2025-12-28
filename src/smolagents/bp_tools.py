@@ -1938,10 +1938,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
                 signatures.append(match.group(0).split('{')[0].strip())
 
     elif language.lower() == "java":
-        # Match Java method declarations
-        pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
-        for match in re.finditer(pattern, content, re.MULTILINE):
-            signatures.append(match.group(0).strip())
+        # Match Java class, interface, enum declarations and method declarations
+        patterns = [
+            r'^([ \t]*)(public|private|protected)?\s*(abstract|final)?\s*(class|interface|enum)\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?',
+            r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
 
     elif language.lower() == "php":
         # Match PHP function and method declarations (including object-oriented features)
@@ -1960,16 +1968,34 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
                     seen.add(sig)
 
     elif language.lower() in ["pascal", "objectpascal", "delphi"]:
-        # Match Pascal/Object Pascal function, procedure, and class declarations
-        # Handles: function Name(...): Type; procedure Name(...); class TClassName
+        # Match Pascal/Object Pascal function, procedure, class, record, and interface declarations
+        # Handles: function Name(...): Type; procedure Name(...); TClassName = class; TRecord = record; IInterface = interface
         patterns = [
             r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
-            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*class(?:\s*\([^)]*\))?',
-            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;'
+            r'^([ \t]*)(class\s+)?(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
+            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*(class|record|interface|object)(?:\s*\([^)]*\))?',
+            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;?'
         ]
         seen = set()
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
+
+    elif language.lower() in ["c", "cpp", "c++", "cxx", "h", "hpp"]:
+        # Match C/C++ struct, class (C++), and function declarations
+        # Use explicit list of common C/C++ return types for better precision
+        c_types = r'(?:void|int|char|short|long|float|double|unsigned|signed|bool|size_t|ssize_t|auto|const\s+\w+|\w+_t)'
+        patterns = [
+            r'^([ \t]*)(typedef\s+)?struct\s+(\w+)?\s*\{?',
+            r'^([ \t]*)class\s+(\w+)(?:\s*:\s*(public|private|protected)?\s*\w+)?\s*\{?',
+            r'^([ \t]*)' + c_types + r'(?:\s*\*)*\s+(\w+)\s*(\([^)]*\))\s*[{;]?'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
                 sig = match.group(0).strip()
                 if sig not in seen:
                     signatures.append(sig)
