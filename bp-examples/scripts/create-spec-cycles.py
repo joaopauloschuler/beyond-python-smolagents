@@ -12,7 +12,7 @@ API_ENDPOINT = api_endpoint_input if api_endpoint_input else "https://api.poe.co
 model_id_input = input("Enter model ID (press Enter for default: claude-sonnet-4.5): ").strip()
 MODEL_ID = model_id_input if model_id_input else "claude-sonnet-4.5"
 
-cycles_cnt_input = input("Enter number of cycles (press Enter for default: 1): ").strip()
+cycles_cnt_input = input("Enter number of cycles (press Enter for default: 10): ").strip()
 if cycles_cnt_input:
     try:
         CYCLES_CNT = int(cycles_cnt_input)
