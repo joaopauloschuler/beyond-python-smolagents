@@ -614,6 +614,52 @@ end.
         assert "constructor Create" in result or "constructor create" in result
         assert "destructor Destroy" in result or "destructor destroy" in result
 
+    def test_pascal_class_declarations(self, tmp_path):
+        """Test extracting Pascal class, record, and interface declarations with inheritance"""
+        file_path = tmp_path / "test.pas"
+        file_path.write_text("""unit TaskManager;
+
+interface
+
+type
+  TWellbeingTaskManager = class
+  public
+    procedure DoTask;
+  end;
+
+  TTimeTrackingTaskManager = class(TWellbeingTaskManager)
+  public
+    procedure TrackTime;
+  end;
+
+  TPoint = record
+    X, Y: Integer;
+  end;
+
+  ITaskHandler = interface
+    procedure Handle;
+  end;
+
+  class function GetInstance: TTimeTrackingTaskManager;
+  class procedure Initialize;
+
+implementation
+
+end.
+""")
+
+        result = extract_function_signatures(str(file_path), "pascal")
+
+        # Check class declarations with and without inheritance
+        assert "TWellbeingTaskManager = class" in result
+        assert "TTimeTrackingTaskManager = class(TWellbeingTaskManager)" in result
+        # Check record and interface declarations
+        assert "TPoint = record" in result
+        assert "ITaskHandler = interface" in result
+        # Check class methods
+        assert "class function GetInstance" in result.lower() or "class function getinstance" in result.lower()
+        assert "class procedure Initialize" in result.lower() or "class procedure initialize" in result.lower()
+
     def test_java_class_declarations(self, tmp_path):
         """Test extracting Java class, interface, and enum declarations"""
         file_path = tmp_path / "test.java"

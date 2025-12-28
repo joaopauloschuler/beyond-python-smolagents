@@ -1968,12 +1968,13 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
                     seen.add(sig)
 
     elif language.lower() in ["pascal", "objectpascal", "delphi"]:
-        # Match Pascal/Object Pascal function, procedure, and class declarations
-        # Handles: function Name(...): Type; procedure Name(...); class TClassName
+        # Match Pascal/Object Pascal function, procedure, class, record, and interface declarations
+        # Handles: function Name(...): Type; procedure Name(...); TClassName = class; TRecord = record; IInterface = interface
         patterns = [
             r'^([ \t]*)(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
-            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*class(?:\s*\([^)]*\))?',
-            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;'
+            r'^([ \t]*)(class\s+)?(function|procedure)\s+(\w+)\s*(\([^)]*\))?(?:\s*:\s*\w+)?\s*;',
+            r'^([ \t]*)(type\s+)?(\w+)\s*=\s*(class|record|interface|object)(?:\s*\([^)]*\))?',
+            r'^([ \t]*)(constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*;?'
         ]
         seen = set()
         for pattern in patterns:
