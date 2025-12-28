@@ -614,6 +614,118 @@ end.
         assert "constructor Create" in result or "constructor create" in result
         assert "destructor Destroy" in result or "destructor destroy" in result
 
+    def test_java_class_declarations(self, tmp_path):
+        """Test extracting Java class, interface, and enum declarations"""
+        file_path = tmp_path / "test.java"
+        file_path.write_text("""package com.example;
+
+public class MyClass extends BaseClass implements Serializable {
+    private int value;
+    
+    public MyClass() {
+        this.value = 0;
+    }
+    
+    public void setValue(int value) {
+        this.value = value;
+    }
+    
+    private static String helper(String input) {
+        return input.trim();
+    }
+}
+
+public interface MyInterface {
+    void doSomething();
+}
+
+enum Status {
+    ACTIVE, INACTIVE
+}
+""")
+
+        result = extract_function_signatures(str(file_path), "java")
+
+        # Check class declarations
+        assert "public class MyClass" in result
+        assert "public interface MyInterface" in result
+        assert "enum Status" in result
+        # Check method declarations
+        assert "public MyClass()" in result
+        assert "public void setValue(int value)" in result
+        assert "private static String helper(String input)" in result
+
+    def test_c_struct_declarations(self, tmp_path):
+        """Test extracting C struct and function declarations"""
+        file_path = tmp_path / "test.c"
+        file_path.write_text("""#include <stdio.h>
+
+struct Point {
+    int x;
+    int y;
+};
+
+typedef struct {
+    char name[50];
+    int age;
+} Person;
+
+typedef struct Node {
+    int data;
+    struct Node* next;
+} Node;
+
+int add(int a, int b) {
+    return a + b;
+}
+
+void print_message(const char* msg) {
+    printf("%s\\n", msg);
+}
+""")
+
+        result = extract_function_signatures(str(file_path), "c")
+
+        # Check struct declarations
+        assert "struct Point" in result
+        assert "typedef struct {" in result
+        assert "typedef struct Node" in result
+        # Check function declarations
+        assert "int add(int a, int b)" in result
+        assert "void print_message(const char* msg)" in result
+
+    def test_cpp_class_declarations(self, tmp_path):
+        """Test extracting C++ class and struct declarations"""
+        file_path = tmp_path / "test.cpp"
+        file_path.write_text("""#include <iostream>
+
+class MyClass : public BaseClass {
+public:
+    MyClass();
+    void doSomething();
+private:
+    int value;
+};
+
+struct MyStruct {
+    int x;
+    int y;
+};
+
+int add(int a, int b) {
+    return a + b;
+}
+""")
+
+        result = extract_function_signatures(str(file_path), "cpp")
+
+        # Check class declaration
+        assert "class MyClass" in result
+        # Check struct declaration
+        assert "struct MyStruct" in result
+        # Check function declaration
+        assert "int add(int a, int b)" in result
+
     def test_generic_fallback_with_function_keyword(self, tmp_path):
         """Test generic fallback for unsupported languages using 'function' keyword"""
         file_path = tmp_path / "test.lua"

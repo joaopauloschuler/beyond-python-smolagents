@@ -1938,10 +1938,18 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
                 signatures.append(match.group(0).split('{')[0].strip())
 
     elif language.lower() == "java":
-        # Match Java method declarations
-        pattern = r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
-        for match in re.finditer(pattern, content, re.MULTILINE):
-            signatures.append(match.group(0).strip())
+        # Match Java class, interface, enum declarations and method declarations
+        patterns = [
+            r'^([ \t]*)(public|private|protected)?\s*(abstract|final)?\s*(class|interface|enum)\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{?',
+            r'^([ \t]*)(public|private|protected)?\s*(static)?\s*(\w+)\s+(\w+)\s*(\([^)]*\))'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                sig = match.group(0).strip()
+                if sig not in seen:
+                    signatures.append(sig)
+                    seen.add(sig)
 
     elif language.lower() == "php":
         # Match PHP function and method declarations (including object-oriented features)
@@ -1974,6 +1982,23 @@ def extract_function_signatures(filename: str, language: str = "python") -> str:
                 if sig not in seen:
                     signatures.append(sig)
                     seen.add(sig)
+
+    elif language.lower() in ["c", "cpp", "c++", "cxx", "h", "hpp"]:
+        # Match C/C++ struct, class (C++), and function declarations
+        patterns = [
+            r'^([ \t]*)(typedef\s+)?struct\s+(\w+)?\s*\{?',
+            r'^([ \t]*)class\s+(\w+)(?:\s*:\s*(public|private|protected)?\s*\w+)?\s*\{?',
+            r'^([ \t]*)(\w+(?:\s*\*)?)\s+(\w+)\s*(\([^)]*\))\s*[{;]?'
+        ]
+        seen = set()
+        for pattern in patterns:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                sig = match.group(0).strip()
+                # Filter out common false positives like if, for, while, switch statements
+                if sig and not re.match(r'^(if|for|while|switch|return|else)\s*\(', sig):
+                    if sig not in seen:
+                        signatures.append(sig)
+                        seen.add(sig)
 
     else:
         # Generic fallback for unsupported languages using "function" and "procedure" keywords
