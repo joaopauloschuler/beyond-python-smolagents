@@ -1027,7 +1027,8 @@ def run_agent_cycles(
   log_level = DEFAULT_THINKER_LOG_LEVEL,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
   list_directory_tree_in_folder = None, 
-  add_function_signatures = True
+  add_function_signatures = True,
+  print_task = True
 ):
   # save the current folder for later restoration
   original_folder = os.getcwd()
@@ -1057,6 +1058,8 @@ The contents of <directory_tree></directory_tree> is VERY important to you. From
         log_level=log_level,
         planning_interval=planning_interval
       )
+      if print_task:
+        print(local_prompt)
       local_agent.run(local_prompt, reset=True)
     except Exception as e:
       print(f"Exception: {e}", "at cycle", i)
