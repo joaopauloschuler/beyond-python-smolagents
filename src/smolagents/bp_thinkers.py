@@ -1038,7 +1038,12 @@ def run_agent_cycles(
       if list_directory_tree_in_folder is not None:
           local_prompt += "\nThis is the result of list_directory_tree:\n<directory_tree>\n" + \
             list_directory_tree(folder_path=list_directory_tree_in_folder, add_function_signatures=add_function_signatures) + \
-            "\n</directory_tree>\n"
+            "\n</directory_tree>\n" + \
+"""
+The contents of <directory_tree></directory_tree> is VERY important to you. From <directory_tree></directory_tree>, you can get a general view/current state of the project:
+* From the md files, if they exist, you can find the existing section titles and have a general idea of the md file contets.
+* For source code files, if they exist, you can find class and method names so you can also develop a general idea of their contents.
+"""
       # restore the original folder
       os.chdir(original_folder)
       local_agent = get_default_thinker_agent(
