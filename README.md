@@ -346,7 +346,6 @@ Beyond Python Smolagents is built around the concept of AI agents equipped with 
     *   **File system utilities**: `save_string_to_file`, `load_string_from_file`, `copy_file`, `get_file_size`, `is_file`, `mkdir`, `delete_file`, `delete_directory`.
     *   **Source code handling**: `source_code_to_string`, `string_to_source_code`, `extract_function_signatures`, `list_directory_tree`, `search_in_files`.
     *   **OS command execution**: `run_os_command` for running arbitrary shell commands.
-    *   **Language-specific tools**: Pascal (`compile_and_run_pascal_code`, `pascal_interface_to_string`) and PHP (`run_php_file`).
     *   **Sub-assistant tool classes**: `Summarize`, `SummarizeUrl`, `SummarizeLocalFile`, `Subassistant`, `CoderSubassistant`, `InternetSearchSubassistant`, `GetRelevantInfoFromFile`, `GetRelevantInfoFromUrl`.
 
 ### Creating the team
