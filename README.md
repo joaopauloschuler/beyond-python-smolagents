@@ -61,6 +61,11 @@ To get started with Beyond Python Smolagents, follow these steps:
     !pip install ./smolagents[litellm]
     ```
 
+    You can also install with OpenAI API support:
+    ```bash
+    !pip install ./smolagents[openai]
+    ```
+
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
 
 ## Basic usage (single agent)
@@ -302,6 +307,9 @@ The `bp_tools.py` files provides a suite of functions and classes that can be us
 *   `delete_file(filepath: string)`: Deletes a file from the filesystem. Returns `True` if successful. Raises appropriate exceptions if the file doesn't exist or is a directory.
 *   `delete_directory(directory_path: string, recursive: boolean = False)`: Deletes a directory. If `recursive=True`, deletes the directory and all its contents. Use with caution.
 *   `count_lines_of_code(folder_path: string, file_extensions: tuple = ('.py', '.js', '.java', '.cpp', '.c', '.php', '.rb'))`: Counts lines of code in a project, broken down by file type. Helps understand project size and composition without loading all files. Returns a dictionary with file extensions as keys and line counts as values.
+*   `read_first_n_lines(filename: string, n: integer)`: Reads the first `n` lines of a file. Useful for previewing large files without loading everything into memory. Returns the first `n` lines as a string.
+*   `read_last_n_lines(filename: string, n: integer)`: Reads the last `n` lines of a file. Useful for reading log files or checking the end of large files. Returns the last `n` lines as a string.
+*   `delete_lines_from_file(filename: string, start_line: integer, end_line: integer = None)`: Deletes specific lines from a file. If `end_line` is `None`, only deletes the `start_line`. Both `start_line` and `end_line` are 1-based indices (inclusive). Returns the updated file content as a string.
 
 ### Sub-assistant Tool Classes
 
@@ -334,6 +342,12 @@ Beyond Python Smolagents is built around the concept of AI agents equipped with 
 *   **Base Tools (`add_base_tools=True/False`)** (inherited from [smolagents](https://github.com/huggingface/smolagents)): A crucial parameter when initializing agents. It controls whether an agent automatically receives a default, standard set of tools provided by the Beyond Python Smolagents framework.
     *   Setting `add_base_tools=True` equips the agent with a common set of utilities right out of the box. This set typically includes tools for basic file operations (`save_string_to_file`, `load_string_from_file`), web interaction (`VisitWebpageTool`, `DuckDuckGoSearchTool`), and Python execution (`PythonInterpreterTool`), among others. These are added *in addition to* any tools explicitly provided in the `tools` list during initialization. This is useful for creating general-purpose agents.
     *   Setting `add_base_tools=False` means the agent will *only* have access to the tools explicitly passed to it via the `tools` parameter during initialization. This allows for creating highly minimal or very specifically-purposed agents with a restricted set of actions, which can be beneficial for security or task focus.
+*   **bp_tools.py**: The module containing Beyond Python Smolagents-specific tools that extend the base smolagents functionality. These tools enable agents to interact with the filesystem, compile and run code in multiple languages, and delegate tasks to specialized sub-assistants.
+    *   **File system utilities**: `save_string_to_file`, `load_string_from_file`, `copy_file`, `get_file_size`, `is_file`, `mkdir`, `delete_file`, `delete_directory`.
+    *   **Source code handling**: `source_code_to_string`, `string_to_source_code`, `extract_function_signatures`, `list_directory_tree`, `search_in_files`.
+    *   **OS command execution**: `run_os_command` for running arbitrary shell commands.
+    *   **Language-specific tools**: Pascal (`compile_and_run_pascal_code`, `pascal_interface_to_string`) and PHP (`run_php_file`).
+    *   **Sub-assistant tool classes**: `Summarize`, `SummarizeUrl`, `SummarizeLocalFile`, `Subassistant`, `CoderSubassistant`, `InternetSearchSubassistant`, `GetRelevantInfoFromFile`, `GetRelevantInfoFromUrl`.
 
 ### Creating the team
 Beyond Python Smolagents allows you to compose complex working groups by having agents delegate tasks to other specialized agents, referred to as sub-assistants. This modular approach helps manage complexity and leverage agents optimized for specific tasks (e.g., coding, internet search, summarization).
