@@ -2060,7 +2060,6 @@ class GoogleColabModel(Model):
 
     Note:
         - Only text-to-text input/output is supported
-        - Tool calling is not supported
         - Streaming is not supported
         - Token usage tracking is not available
     """
