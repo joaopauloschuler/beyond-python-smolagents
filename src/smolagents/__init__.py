@@ -18,6 +18,7 @@ __version__ = "1.23.0"
 
 from .agent_types import *  # noqa: I001
 from .agents import *  # Above noqa avoids a circular dependency due to cli.py
+from .compression import *
 from .default_tools import *
 from .gradio_ui import *
 from .local_python_executor import *
