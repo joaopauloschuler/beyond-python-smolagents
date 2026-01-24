@@ -1017,7 +1017,7 @@ def get_default_thinker_agent(
 def run_agent_cycles(
   model,
   task_str,
-  cycles_cnt:int,
+  cycles_cnt:int = 1,
   system_prompt = DEFAULT_THINKER_SYSTEM_PROMPT,
   tools = DEFAULT_THINKER_TOOLS,
   add_base_tools = True,
@@ -1030,36 +1030,43 @@ def run_agent_cycles(
   add_function_signatures = True,
   print_task = True
 ):
+  # Convert string to list if needed, maintaining backward compatibility
+  if isinstance(task_str, str):
+    task_list = [task_str] * cycles_cnt
+  else:
+    task_list = list(task_str)
+  
   # save the current folder for later restoration
   original_folder = os.getcwd()
   for i in range(cycles_cnt):
-    try:        
-      print("Running agent cycle:", i)
-      local_prompt = task_str
-      if list_directory_tree_in_folder is not None:
-          local_prompt += "\nThis is the result of list_directory_tree:\n<directory_tree>\n" + \
-            list_directory_tree(folder_path=list_directory_tree_in_folder, add_function_signatures=add_function_signatures) + \
-            "\n</directory_tree>\n" + \
+    print("Running agent cycle:", i)
+    for task_str in task_list:
+      try:
+        local_prompt = task_str
+        if list_directory_tree_in_folder is not None:
+            local_prompt += "\nThis is the result of list_directory_tree:\n<directory_tree>\n" + \
+              list_directory_tree(folder_path=list_directory_tree_in_folder, add_function_signatures=add_function_signatures) + \
+              "\n</directory_tree>\n" + \
 """
 The contents of <directory_tree></directory_tree> is VERY important to you. From <directory_tree></directory_tree>, you can get a general view/current state of the project:
 * From the md files, if they exist, you can find the existing section titles and have a general idea of the md file contets.
 * For source code files, if they exist, you can find class and method names so you can also develop a general idea of their contents.
 """
-      # restore the original folder
-      os.chdir(original_folder)
-      local_agent = get_default_thinker_agent(
-        model=model,
-        system_prompt=system_prompt,
-        tools=tools,
-        add_base_tools=add_base_tools,
-        max_steps=max_steps,
-        step_callbacks=step_callbacks,
-        executor_type=executor_type,
-        log_level=log_level,
-        planning_interval=planning_interval
-      )
-      if print_task:
-        print(local_prompt)
-      local_agent.run(local_prompt, reset=True)
-    except Exception as e:
-      print(f"Exception: {e}", "at cycle", i)
+        # restore the original folder
+        os.chdir(original_folder)
+        local_agent = get_default_thinker_agent(
+          model=model,
+          system_prompt=system_prompt,
+          tools=tools,
+          add_base_tools=add_base_tools,
+          max_steps=max_steps,
+          step_callbacks=step_callbacks,
+          executor_type=executor_type,
+          log_level=log_level,
+          planning_interval=planning_interval
+        )
+        if print_task:
+          print(local_prompt)
+        local_agent.run(local_prompt, reset=True)
+      except Exception as e:
+        print(f"Exception: {e}", "at cycle", i)
