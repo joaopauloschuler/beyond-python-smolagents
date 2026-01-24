@@ -2066,7 +2066,7 @@ class GoogleColabModel(Model):
 
     def __init__(
         self,
-        model_id: str = "google-colab-ai",
+        model_id: str = "google/gemini-2.5-pro",
         **kwargs,
     ):
         super().__init__(
