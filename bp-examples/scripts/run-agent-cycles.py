@@ -9,8 +9,8 @@ while not KEY_VALUE:
 api_endpoint_input = input("Enter API endpoint (press Enter for default: https://api.poe.com/v1): ").strip()
 API_ENDPOINT = api_endpoint_input if api_endpoint_input else "https://api.poe.com/v1"
 
-model_id_input = input("Enter model ID (press Enter for default: Claude-Haiku-4.5): ").strip()
-MODEL_ID = model_id_input if model_id_input else "Claude-Haiku-4.5"
+model_id_input = input("Enter model ID (press Enter for default: claude-sonnet-4.5): ").strip()
+MODEL_ID = model_id_input if model_id_input else "claude-sonnet-4.5"
 
 cycles_cnt_input = input("Enter number of cycles (press Enter for default: 1): ").strip()
 if cycles_cnt_input:
@@ -121,6 +121,7 @@ REMEMBER:
 * "```pascal" will not save a pascal file into disk. Use savetofile tags instead.
 * AVOID duplicate files.
 * AVOID duplicate code.
+* KEEP ONLY ONE READEME.md file that explains the project.
 * REMOVE duplicate files.
 * REMOVE duplicate code.
 * DO NOT declare variables within a begin/end block. ALWAYS declare variables in the declaration area.
