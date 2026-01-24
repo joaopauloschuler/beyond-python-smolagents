@@ -8,6 +8,7 @@ Beyond Python Smolagents is a fork of HuggingFace's smolagents (v1.23.0) that ex
 - `fast_solver`: Multi-agent parallel problem-solving that generates 3 independent solutions and synthesizes them
 - `evolutive_problem_solver`: Iterative evolutionary refinement through analysis, comparison, mixing, and improvement cycles
 - Extended tooling for file operations, source code analysis, and multi-language code execution
+- Context compression: Automatic LLM-based summarization of older memory steps to manage context window size
 
 ## Build & Development Commands
 
@@ -48,6 +49,8 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `local_python_executor.py` - Sandboxed Python code execution
 - `remote_executors.py` - Remote execution: E2B, Docker, Modal, Blaxel, Wasm
 - `default_tools.py` - Built-in tools: `FinalAnswerTool`, `DuckDuckGoSearchTool`, `VisitWebpageTool`
+- `memory.py` - Agent memory: `AgentMemory`, step types (`ActionStep`, `TaskStep`, `PlanningStep`)
+- `compression.py` - Context compression: `CompressionConfig`, `CompressedHistoryStep`, `ContextCompressor`
 - `prompts/` - YAML prompt templates for different agent types
 
 ### Beyond Python (BP) Extensions
@@ -74,6 +77,21 @@ Tools are functions decorated with `@tool` or classes inheriting from `Tool`. Ke
 4. Results fed back to agent for next step
 5. Agent calls `final_answer()` when complete
 
+### Context Compression
+Agents support automatic context compression to manage memory size during long-running tasks:
+```python
+from smolagents import CodeAgent, CompressionConfig
+
+config = CompressionConfig(
+    keep_recent_steps=5,       # Keep last N steps in full detail
+    step_count_threshold=10,   # Compress when step count exceeds this
+    compression_model=None,    # Optional: use cheaper model for compression
+)
+
+agent = CodeAgent(tools=[...], model=model, compression_config=config)
+```
+When enabled, older steps are automatically summarized via LLM while preserving recent steps and critical context (task, errors, final answers).
+
 ## Key Files for Common Tasks
 
 | Task | Files |
@@ -84,12 +102,14 @@ Tools are functions decorated with `@tool` or classes inheriting from `Tool`. Ke
 | Add LLM provider | `src/smolagents/models.py` |
 | Modify Python execution | `src/smolagents/local_python_executor.py` |
 | Add remote executor | `src/smolagents/remote_executors.py` |
+| Configure context compression | `src/smolagents/compression.py` |
 
 ## Testing
 
 Tests are in `./tests/`. Key test files:
 - `test_agents.py` - Agent behavior tests
 - `test_bp_context_tools.py` - Beyond Python tools tests
+- `test_compression.py` - Context compression tests
 - `test_local_python_executor.py` - Python execution tests
 - `test_models.py` - LLM integration tests
 - `test_tools.py` - Tool framework tests

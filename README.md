@@ -47,6 +47,7 @@ limitations under the License.
 * 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
 * 🛠️ Compile, test, and debug source code in various computing languages.
 * ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
+* 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
@@ -99,6 +100,76 @@ tools = [ run_os_command,
 coder_agent = CodeAgent( model=coder_model, tools = tools, add_base_tools=True)
 coder_agent.run("Please list the files in the current folder.")
 ```
+
+## Context Compression
+
+For long-running tasks with many steps, agent memory can grow large and exceed context window limits. Context compression automatically summarizes older memory steps via LLM while keeping recent steps in full detail.
+
+### Basic Usage
+
+```python
+from smolagents import CodeAgent, CompressionConfig, LiteLLMModel
+
+model = LiteLLMModel(model_id="gemini/gemini-2.5-flash", api_key=YOUR_KEY)
+
+# Configure compression
+config = CompressionConfig(
+    keep_recent_steps=5,       # Keep last 5 steps in full detail
+    step_count_threshold=10,   # Compress when step count exceeds 10
+)
+
+# Create agent with compression enabled
+agent = CodeAgent(
+    model=model,
+    tools=tools,
+    compression_config=config,
+)
+
+agent.run("Complex multi-step task...")
+```
+
+### Using a Cheaper Model for Compression
+
+To reduce costs, you can use a smaller/cheaper model for the compression summarization:
+
+```python
+main_model = LiteLLMModel(model_id="gemini/gemini-2.5-pro", api_key=YOUR_KEY)
+compression_model = LiteLLMModel(model_id="gemini/gemini-2.5-flash", api_key=YOUR_KEY)
+
+config = CompressionConfig(
+    keep_recent_steps=5,
+    step_count_threshold=8,
+    compression_model=compression_model,  # Use cheaper model for compression
+)
+
+agent = CodeAgent(
+    model=main_model,
+    tools=tools,
+    compression_config=config,
+)
+```
+
+### Configuration Options
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `enabled` | `True` | Enable/disable compression |
+| `keep_recent_steps` | `5` | Number of recent steps to keep in full detail |
+| `step_count_threshold` | `10` | Trigger compression when step count exceeds this |
+| `estimated_token_threshold` | `0` | Trigger based on estimated tokens (0 = disabled) |
+| `compression_model` | `None` | Optional separate model for compression |
+| `preserve_error_steps` | `True` | Always keep steps with errors |
+| `preserve_final_answer_steps` | `True` | Always keep final answer steps |
+
+### What Gets Preserved
+
+The compression system always preserves:
+- The original task (TaskStep)
+- Recent N steps (configured via `keep_recent_steps`)
+- Steps with errors (helps agent learn from mistakes)
+- Final answer steps
+
+Older action and planning steps are summarized into a single `CompressedHistoryStep` that captures key decisions, observations, and progress.
 
 ## The `fast_solver`
 The `fast_solver` function is a sophisticated multi-agent problem-solving approach that leverages the "wisdom of crowds" principle with AI models.
