@@ -228,18 +228,18 @@ def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
             desc = f"Step {step.step_number}:"
             if step.model_output:
                 # Truncate long outputs
-                output = str(step.model_output)[:500]
-                desc += f"\n  Agent thought: {output}"
+                output = str(step.model_output)
+                desc += f"\n  <model_output>{output}</model_output>"
             if step.observations:
-                obs = str(step.observations)[:300]
-                desc += f"\n  Observation: {obs}"
+                obs = str(step.observations)
+                desc += f"\n  <observations>{obs}</observations>"
             if step.code_action:
-                code = step.code_action[:200]
-                desc += f"\n  Code executed: {code}..."
+                code = step.code_action
+                desc += f"\n  <code_action>{code}</code_action>"
             step_descriptions.append(desc)
         elif isinstance(step, PlanningStep):
-            plan = step.plan[:400] if step.plan else "No plan"
-            step_descriptions.append(f"Planning step:\n  {plan}")
+            plan = step.plan if step.plan else "No plan"
+            step_descriptions.append(f"Planning step:\n  <plan>{plan}</plan>")
 
     steps_text = "\n\n".join(step_descriptions)
 
