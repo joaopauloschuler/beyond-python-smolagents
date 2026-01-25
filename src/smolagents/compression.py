@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from smolagents.memory import ActionStep, MemoryStep, PlanningStep, TaskStep, SystemPromptStep
 from smolagents.models import ChatMessage, MessageRole
-from smolagents.monitoring import Timing, TokenUsage
+from smolagents.monitoring import AgentLogger, LogLevel, Timing, TokenUsage
 
 
 if TYPE_CHECKING:
@@ -267,11 +267,13 @@ class ContextCompressor:
     Args:
         config: Compression configuration.
         main_model: The main model used by the agent (used for compression if no separate model specified).
+        agent_logger: Optional agent logger for rich logging output.
     """
 
-    def __init__(self, config: CompressionConfig, main_model: "Model"):
+    def __init__(self, config: CompressionConfig, main_model: "Model", agent_logger: AgentLogger | None = None):
         self.config = config
         self.main_model = main_model
+        self.agent_logger = agent_logger
         self._compression_count = 0
 
     @property
@@ -361,6 +363,15 @@ class ContextCompressor:
 
         steps_to_compress = [steps[i] for i in to_compress_indices]
 
+        # Calculate original character count for logging
+        original_chars = sum(
+            len(str(step.model_output or "")) + len(str(step.observations or ""))
+            if isinstance(step, ActionStep)
+            else len(str(step.plan or "")) if isinstance(step, PlanningStep)
+            else 0
+            for step in steps_to_compress
+        )
+
         # Generate summary using LLM
         compression_prompt = create_compression_prompt(steps_to_compress)
 
@@ -420,10 +431,22 @@ class ContextCompressor:
             new_steps.append(steps[i])
 
         self._compression_count += 1
-        logger.info(
-            f"Compressed {len(steps_to_compress)} steps into summary "
-            f"(kept {len(new_steps)} steps total, compression #{self._compression_count})"
-        )
+        summary_chars = len(summary) if summary else 0
+
+        # Log using agent logger if available
+        if self.agent_logger:
+            compression_ratio = (1 - summary_chars / original_chars) * 100 if original_chars > 0 else 0
+            self.agent_logger.log_markdown(
+                content=f"Compressed {len(steps_to_compress)} steps from {original_chars:,} chars to {summary_chars:,} chars "
+                f"({compression_ratio:.1f}% reduction). Kept {len(new_steps)} steps total. (compression #{self._compression_count})",
+                title="Context Compression",
+                level=LogLevel.INFO,
+            )
+        else:
+            logger.info(
+                f"Compressed {len(steps_to_compress)} steps into summary "
+                f"(kept {len(new_steps)} steps total, compression #{self._compression_count})"
+            )
 
         return new_steps
 

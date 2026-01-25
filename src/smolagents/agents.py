@@ -457,7 +457,7 @@ class MultiStepAgent(ABC):
         self.compressor: ContextCompressor | None = None
 
         if compression_config is not None and compression_config.enabled:
-            self.compressor = ContextCompressor(compression_config, self.model)
+            self.compressor = ContextCompressor(compression_config, self.model, self.logger)
             callback = create_compression_callback(self.compressor)
             self.step_callbacks.register(ActionStep, callback)
 
