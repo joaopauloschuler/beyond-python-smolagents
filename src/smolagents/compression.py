@@ -393,6 +393,19 @@ class ContextCompressor:
             logger.warning(f"Compression failed, keeping original steps: {e}")
             return steps
 
+        # Safety check: skip compression if summary is larger than original
+        summary_chars = len(summary) if summary else 0
+        if summary_chars >= original_chars:
+            if self.agent_logger:
+                self.agent_logger.log_markdown(
+                    content=f"Compression skipped: summary ({summary_chars:,} chars) is larger than original ({original_chars:,} chars)",
+                    title="Context Compression Skipped",
+                    level=LogLevel.INFO,
+                )
+            else:
+                logger.info(f"Compression skipped: summary ({summary_chars} chars) >= original ({original_chars} chars)")
+            return steps
+
         # Build compressed step
         compressed_step_numbers = []
         for step in steps_to_compress:
@@ -431,7 +444,6 @@ class ContextCompressor:
             new_steps.append(steps[i])
 
         self._compression_count += 1
-        summary_chars = len(summary) if summary else 0
 
         # Log using agent logger if available
         if self.agent_logger:

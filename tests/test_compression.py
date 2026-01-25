@@ -395,10 +395,15 @@ class TestCreateCompressionCallback:
         compressor = ContextCompressor(config, mock_model)
         callback = create_compression_callback(compressor)
 
-        # Create mock agent with memory
+        # Create mock agent with memory (include content so original_chars > summary_chars)
         mock_agent = MagicMock()
         mock_agent.memory.steps = [
-            ActionStep(step_number=i, timing=Timing(start_time=0, end_time=1))
+            ActionStep(
+                step_number=i,
+                timing=Timing(start_time=0, end_time=1),
+                model_output=f"This is a long model output for step {i} with enough content to be larger than the summary.",
+                observations=f"Observation for step {i} with additional content.",
+            )
             for i in range(10)
         ]
 
