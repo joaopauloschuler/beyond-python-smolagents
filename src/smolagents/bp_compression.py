@@ -242,6 +242,7 @@ def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
 2. Important observations and results
 3. Any errors or issues encountered
 4. Progress toward the goal
+5. KEEP the latest todo list or plan if present.
 
 Be concise but preserve critical context needed for continued problem-solving.
 
@@ -283,6 +284,7 @@ Preserve the most important information:
 2. Critical errors or failures encountered
 3. Overall progress toward the goal
 4. Any information that would be needed for continued problem-solving
+5. KEEP the latest todo list or plan if present.
 
 Eliminate redundancy and consolidate overlapping information.
 

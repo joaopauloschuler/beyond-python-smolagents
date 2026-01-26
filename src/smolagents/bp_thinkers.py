@@ -3,6 +3,7 @@ from .default_tools import DuckDuckGoSearchTool
 from .bp_tools import *
 from .bp_utils import *
 from .agents import *
+from .bp_compression import CompressionConfig
 import shutil
 
 DEFAULT_THINKER_STEP_CALLBACKS = []
@@ -236,7 +237,8 @@ def evolutive_problem_solver(p_coder_model,
   mixer_model = None,
   secondary_improvement_model = None,
   only_bigger_solution = False,
-  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
+  compression_config: CompressionConfig | None = None
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -247,8 +249,9 @@ def evolutive_problem_solver(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type, 
-      planning_interval=planning_interval
+      executor_type=executor_type,
+      planning_interval=planning_interval,
+      compression_config=compression_config
       )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
@@ -491,7 +494,8 @@ def fast_solver(p_coder_model,
   p_coder_model2 = None,
   p_coder_model3 = None,
   p_coder_model_final = None,
-  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
+  compression_config: CompressionConfig | None = None
   ):
   def get_local_agent(p_local_model=None):
     if p_local_model is None:
@@ -503,8 +507,9 @@ def fast_solver(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type, 
-      planning_interval=planning_interval
+      executor_type=executor_type,
+      planning_interval=planning_interval,
+      compression_config=compression_config
       )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
@@ -612,6 +617,7 @@ def evolutive_problem_solver_folder(p_coder_model,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
   load_full_source = False,
   add_function_signatures = False,
+  compression_config: CompressionConfig | None = None
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -622,8 +628,9 @@ def evolutive_problem_solver_folder(p_coder_model,
       add_base_tools=add_base_tools,
       max_steps=agent_steps,
       step_callbacks=step_callbacks,
-      executor_type=executor_type, 
-      planning_interval=planning_interval
+      executor_type=executor_type,
+      planning_interval=planning_interval,
+      compression_config=compression_config
       )
     coder_agent.set_system_prompt(system_prompt)
     coder_agent.logger.log_level = log_level
@@ -998,7 +1005,8 @@ def get_default_thinker_agent(
   step_callbacks = DEFAULT_THINKER_STEP_CALLBACKS,
   executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
   log_level = DEFAULT_THINKER_LOG_LEVEL,
-  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL
+  planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
+  compression_config: CompressionConfig | None = None
 ):
   coder_agent = CodeAgent(
       tools=tools,
@@ -1008,7 +1016,8 @@ def get_default_thinker_agent(
       max_steps=max_steps,
       step_callbacks=step_callbacks,
       executor_type=executor_type,
-      planning_interval=planning_interval
+      planning_interval=planning_interval,
+      compression_config=compression_config
       )
   coder_agent.set_system_prompt(system_prompt)
   coder_agent.logger.log_level = log_level
@@ -1028,7 +1037,8 @@ def run_agent_cycles(
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
   list_directory_tree_in_folder = None, 
   add_function_signatures = True,
-  print_task = True
+  print_task = True,
+  compression_config: CompressionConfig | None = None
 ):
   # Convert string to list if needed, maintaining backward compatibility
   if isinstance(task_str, str):
@@ -1063,7 +1073,8 @@ The contents of <directory_tree></directory_tree> is VERY important to you. From
           step_callbacks=step_callbacks,
           executor_type=executor_type,
           log_level=log_level,
-          planning_interval=planning_interval
+          planning_interval=planning_interval,
+          compression_config=compression_config
         )
         if print_task:
           print(local_prompt)
