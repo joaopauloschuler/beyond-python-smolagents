@@ -63,7 +63,7 @@ class CompressionConfig:
     estimated_token_threshold: int = 0
     compression_model: "Model | None" = None
     max_summary_tokens: int = 50000
-    preserve_error_steps: bool = True
+    preserve_error_steps: bool = False
     preserve_final_answer_steps: bool = True
     max_compressed_steps: int = 0
 
