@@ -18,6 +18,7 @@ class CompressionConfig:
     compression_model: Model | None = None  # Cheaper model for compression
     preserve_error_steps: bool = True
     preserve_final_answer_steps: bool = True
+    max_compressed_steps: int = 0       # Merge compressed summaries (0=disabled)
 
 @dataclass
 class CompressedHistoryStep(MemoryStep):

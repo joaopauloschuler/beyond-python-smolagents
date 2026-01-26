@@ -160,6 +160,7 @@ agent = CodeAgent(
 | `compression_model` | `None` | Optional separate model for compression |
 | `preserve_error_steps` | `True` | Always keep steps with errors |
 | `preserve_final_answer_steps` | `True` | Always keep final answer steps |
+| `max_compressed_steps` | `0` | Merge compressed summaries when count exceeds this (0 = disabled) |
 
 ### What Gets Preserved
 

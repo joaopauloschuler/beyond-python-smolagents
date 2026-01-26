@@ -84,7 +84,8 @@ from smolagents import CodeAgent, CompressionConfig
 
 config = CompressionConfig(
     keep_recent_steps=5,       # Keep last N steps in full detail
-    max_uncompressed_steps=10,   # Compress when step count exceeds this
+    max_uncompressed_steps=10, # Compress when step count exceeds this
+    max_compressed_steps=0,    # Merge compressed summaries when count exceeds this (0=disabled)
     compression_model=None,    # Optional: use cheaper model for compression
 )
 
