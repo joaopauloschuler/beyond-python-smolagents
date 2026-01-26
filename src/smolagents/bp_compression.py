@@ -30,6 +30,7 @@ __all__ = [
     "estimate_tokens",
     "estimate_step_tokens",
     "create_compression_callback",
+    "create_merge_prompt",
 ]
 
 
@@ -52,6 +53,11 @@ class CompressionConfig:
         max_summary_tokens: Maximum tokens for the generated summary.
         preserve_error_steps: Whether to always preserve steps with errors.
         preserve_final_answer_steps: Whether to always preserve final_answer steps.
+        max_compressed_steps: Merge compressed steps when their count exceeds this (0 = disabled).
+            When multiple CompressedHistoryStep instances accumulate over successive compression
+            cycles, this threshold triggers merging them into a single consolidated summary.
+            Note: each merge is a lossy operation (summary of summaries), so information fidelity
+            decreases with each merge cycle.
     """
 
     enabled: bool = True
@@ -62,6 +68,7 @@ class CompressionConfig:
     max_summary_tokens: int = 500
     preserve_error_steps: bool = True
     preserve_final_answer_steps: bool = True
+    max_compressed_steps: int = 0
 
 
 @dataclass
@@ -242,6 +249,47 @@ EXECUTION HISTORY:
 {steps_text}
 
 SUMMARY:"""
+
+
+def create_merge_prompt(compressed_steps: list[CompressedHistoryStep]) -> str:
+    """Create the prompt for merging multiple compressed history summaries.
+
+    Unlike the initial compression prompt which works on raw action steps,
+    this prompt consolidates existing summaries into a single unified summary.
+    Each merge cycle is lossy (summary of summaries), so the prompt emphasizes
+    preserving the most critical information.
+
+    Args:
+        compressed_steps: List of CompressedHistoryStep instances to merge.
+
+    Returns:
+        The prompt string for the merge LLM call.
+    """
+    summaries = []
+    for i, step in enumerate(compressed_steps, 1):
+        summaries.append(
+            f"Summary {i} (covering {step.original_step_count} steps, "
+            f"step numbers: {step.compressed_step_numbers}):\n{step.summary}"
+        )
+
+    summaries_text = "\n\n".join(summaries)
+    total_steps = sum(step.original_step_count for step in compressed_steps)
+
+    return f"""Merge the following {len(compressed_steps)} summaries of previous agent work into a single consolidated summary.
+These summaries cover {total_steps} total steps of agent execution.
+
+Preserve the most important information:
+1. Key decisions, outcomes, and final results
+2. Critical errors or failures encountered
+3. Overall progress toward the goal
+4. Any information that would be needed for continued problem-solving
+
+Eliminate redundancy and consolidate overlapping information.
+
+SUMMARIES TO MERGE:
+{summaries_text}
+
+CONSOLIDATED SUMMARY:"""
 
 
 class ContextCompressor:
@@ -449,6 +497,136 @@ class ContextCompressor:
 
         return new_steps
 
+    def should_merge_compressed(self, steps: list[MemoryStep]) -> bool:
+        """Check if compressed steps should be merged.
+
+        When multiple CompressedHistoryStep instances accumulate over successive
+        compression cycles, this checks whether their count exceeds the configured
+        threshold for merging.
+
+        Args:
+            steps: Current list of memory steps.
+
+        Returns:
+            True if compressed steps should be merged, False otherwise.
+        """
+        if not self.config.enabled or self.config.max_compressed_steps <= 0:
+            return False
+
+        compressed_count = sum(1 for step in steps if isinstance(step, CompressedHistoryStep))
+        return compressed_count > self.config.max_compressed_steps
+
+    def merge_compressed(self, steps: list[MemoryStep]) -> list[MemoryStep]:
+        """Merge multiple CompressedHistoryStep instances into one.
+
+        Collects all compressed history steps, generates a consolidated summary
+        via LLM, and replaces them with a single merged CompressedHistoryStep.
+
+        Note: This is a lossy operation (summary of summaries). Information
+        fidelity decreases with each merge cycle.
+
+        Args:
+            steps: Current list of memory steps.
+
+        Returns:
+            New list with compressed history steps merged into one.
+        """
+        start_time = time.time()
+
+        compressed_steps = [step for step in steps if isinstance(step, CompressedHistoryStep)]
+
+        if len(compressed_steps) <= 1:
+            return steps
+
+        # Build merge prompt and call LLM
+        merge_prompt = create_merge_prompt(compressed_steps)
+
+        try:
+            merge_message = self.compression_model.generate(
+                [
+                    ChatMessage(
+                        role=MessageRole.USER,
+                        content=[{"type": "text", "text": merge_prompt}],
+                    )
+                ]
+            )
+            merged_summary = merge_message.content
+            if isinstance(merged_summary, list):
+                merged_summary = " ".join(
+                    item.get("text", "") for item in merged_summary if isinstance(item, dict)
+                )
+
+            merge_token_usage = merge_message.token_usage
+        except Exception as e:
+            logger.warning(f"Compressed step merge failed, keeping original steps: {e}")
+            return steps
+
+        # Safety check: skip merge if consolidated summary is larger than combined originals
+        original_chars = sum(len(step.summary) for step in compressed_steps)
+        merged_chars = len(merged_summary) if merged_summary else 0
+        if merged_chars >= original_chars:
+            if self.agent_logger:
+                self.agent_logger.log_markdown(
+                    content=f"Merge skipped: consolidated summary ({merged_chars:,} chars) "
+                    f"is larger than combined originals ({original_chars:,} chars)",
+                    title="Compressed Step Merge Skipped",
+                    level=LogLevel.INFO,
+                )
+            else:
+                logger.info(
+                    f"Merge skipped: consolidated summary ({merged_chars} chars) "
+                    f">= combined originals ({original_chars} chars)"
+                )
+            return steps
+
+        # Accumulate metadata from all compressed steps
+        all_step_numbers = []
+        total_original_count = 0
+        for step in compressed_steps:
+            all_step_numbers.extend(step.compressed_step_numbers)
+            total_original_count += step.original_step_count
+
+        merged_step = CompressedHistoryStep(
+            summary=merged_summary,
+            compressed_step_numbers=sorted(set(all_step_numbers)),
+            original_step_count=total_original_count,
+            timing=Timing(start_time=start_time, end_time=time.time()),
+            compression_token_usage=merge_token_usage,
+        )
+
+        # Rebuild steps: replace all CompressedHistoryStep instances with the merged one
+        # Insert merged step at the position of the first compressed step
+        compressed_set = set(id(step) for step in compressed_steps)
+        new_steps = []
+        merged_inserted = False
+
+        for step in steps:
+            if isinstance(step, CompressedHistoryStep) and id(step) in compressed_set:
+                if not merged_inserted:
+                    new_steps.append(merged_step)
+                    merged_inserted = True
+                # Skip subsequent compressed steps (replaced by merged)
+            else:
+                new_steps.append(step)
+
+        # Log
+        if self.agent_logger:
+            compression_ratio = (1 - merged_chars / original_chars) * 100 if original_chars > 0 else 0
+            self.agent_logger.log_markdown(
+                content=f"Merged {len(compressed_steps)} compressed steps "
+                f"({total_original_count} original steps) from {original_chars:,} chars "
+                f"to {merged_chars:,} chars ({compression_ratio:.1f}% reduction).",
+                title="Compressed Step Merge",
+                level=LogLevel.INFO,
+            )
+        else:
+            logger.info(
+                f"Merged {len(compressed_steps)} compressed steps "
+                f"({total_original_count} original steps) into single summary"
+            )
+
+        return new_steps
+
 
 def create_compression_callback(compressor: ContextCompressor) -> Callable:
     """Create a step callback that triggers compression after each step.
@@ -465,12 +643,15 @@ def create_compression_callback(compressor: ContextCompressor) -> Callable:
     """
 
     def compression_callback(step: MemoryStep, agent: "MultiStepAgent") -> None:
-        """Callback that triggers compression if needed."""
+        """Callback that triggers compression and merging if needed."""
         # Only trigger on ActionStep (after meaningful work)
         if not isinstance(step, ActionStep):
             return
 
         if compressor.should_compress(agent.memory.steps):
             agent.memory.steps = compressor.compress(agent.memory.steps)
+
+        if compressor.should_merge_compressed(agent.memory.steps):
+            agent.memory.steps = compressor.merge_compressed(agent.memory.steps)
 
     return compression_callback
