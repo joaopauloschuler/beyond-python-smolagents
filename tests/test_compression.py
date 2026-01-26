@@ -33,7 +33,7 @@ class TestCompressionConfig:
         config = CompressionConfig()
         assert config.enabled is True
         assert config.keep_recent_steps == 5
-        assert config.step_count_threshold == 10
+        assert config.max_uncompressed_steps == 10
         assert config.estimated_token_threshold == 0
         assert config.compression_model is None
         assert config.max_summary_tokens == 500
@@ -45,13 +45,13 @@ class TestCompressionConfig:
         config = CompressionConfig(
             enabled=False,
             keep_recent_steps=3,
-            step_count_threshold=5,
+            max_uncompressed_steps=5,
             estimated_token_threshold=8000,
             preserve_error_steps=False,
         )
         assert config.enabled is False
         assert config.keep_recent_steps == 3
-        assert config.step_count_threshold == 5
+        assert config.max_uncompressed_steps == 5
         assert config.estimated_token_threshold == 8000
         assert config.preserve_error_steps is False
 
@@ -343,28 +343,28 @@ class TestContextCompressor:
         assert compressor.should_compress(steps) is False
 
     def test_should_compress_false_below_threshold(self):
-        config = CompressionConfig(step_count_threshold=10, keep_recent_steps=5)
+        config = CompressionConfig(max_uncompressed_steps=10, keep_recent_steps=5)
         compressor = ContextCompressor(config, MagicMock())
         # Only 5 compressible steps, need more than keep_recent_steps
         steps = [ActionStep(step_number=i, timing=Timing(start_time=0, end_time=1)) for i in range(5)]
         assert compressor.should_compress(steps) is False
 
     def test_should_compress_true_above_threshold(self):
-        config = CompressionConfig(step_count_threshold=5, keep_recent_steps=3)
+        config = CompressionConfig(max_uncompressed_steps=5, keep_recent_steps=3)
         compressor = ContextCompressor(config, MagicMock())
         # 10 compressible steps, threshold is 5
         steps = [ActionStep(step_number=i, timing=Timing(start_time=0, end_time=1)) for i in range(10)]
         assert compressor.should_compress(steps) is True
 
     def test_compress_returns_original_when_not_needed(self):
-        config = CompressionConfig(step_count_threshold=20, keep_recent_steps=5)
+        config = CompressionConfig(max_uncompressed_steps=20, keep_recent_steps=5)
         compressor = ContextCompressor(config, MagicMock())
         steps = [ActionStep(step_number=i, timing=Timing(start_time=0, end_time=1)) for i in range(5)]
         result = compressor.compress(steps)
         assert result == steps
 
     def test_compress_creates_compressed_step(self):
-        config = CompressionConfig(step_count_threshold=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -395,7 +395,7 @@ class TestContextCompressor:
         mock_model.generate.assert_called_once()
 
     def test_compress_preserves_task_step(self):
-        config = CompressionConfig(step_count_threshold=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -417,7 +417,7 @@ class TestContextCompressor:
         assert result[0].task == "Original task"
 
     def test_compress_handles_model_failure_gracefully(self):
-        config = CompressionConfig(step_count_threshold=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         mock_model = MagicMock()
         mock_model.generate.side_effect = Exception("Model error")
         compressor = ContextCompressor(config, mock_model)
@@ -589,7 +589,7 @@ class TestContextCompressor:
 
 class TestCreateCompressionCallback:
     def test_callback_triggers_compression(self):
-        config = CompressionConfig(step_count_threshold=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -619,7 +619,7 @@ class TestCreateCompressionCallback:
         assert len(mock_agent.memory.steps) < 10
 
     def test_callback_ignores_non_action_steps(self):
-        config = CompressionConfig(step_count_threshold=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         compressor = ContextCompressor(config, MagicMock())
         callback = create_compression_callback(compressor)
 
@@ -644,7 +644,7 @@ class TestCreateCompressionCallback:
 
     def test_callback_triggers_merge(self):
         config = CompressionConfig(
-            step_count_threshold=3,
+            max_uncompressed_steps=3,
             keep_recent_steps=2,
             max_compressed_steps=1,
         )

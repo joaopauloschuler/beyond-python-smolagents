@@ -47,7 +47,7 @@ class CompressionConfig:
     Args:
         enabled: Whether compression is enabled.
         keep_recent_steps: Number of recent steps to keep in full detail.
-        step_count_threshold: Trigger compression when compressible step count exceeds this.
+        max_uncompressed_steps: Trigger compression when compressible step count exceeds this.
         estimated_token_threshold: Trigger compression when estimated tokens exceed this (0 = disabled).
         compression_model: Optional separate model for compression (None = use main model).
         max_summary_tokens: Maximum tokens for the generated summary.
@@ -62,7 +62,7 @@ class CompressionConfig:
 
     enabled: bool = True
     keep_recent_steps: int = 5
-    step_count_threshold: int = 10
+    max_uncompressed_steps: int = 10
     estimated_token_threshold: int = 0
     compression_model: "Model | None" = None
     max_summary_tokens: int = 500
@@ -339,7 +339,7 @@ class ContextCompressor:
             return False
 
         # Check step count threshold
-        if compressible_count > self.config.step_count_threshold:
+        if compressible_count > self.config.max_uncompressed_steps:
             return True
 
         # Check token threshold if enabled

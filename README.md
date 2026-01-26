@@ -115,7 +115,7 @@ model = LiteLLMModel(model_id="gemini/gemini-2.5-flash", api_key=YOUR_KEY)
 # Configure compression
 config = CompressionConfig(
     keep_recent_steps=5,       # Keep last 5 steps in full detail
-    step_count_threshold=10,   # Compress when step count exceeds 10
+    max_uncompressed_steps=10,   # Compress when step count exceeds 10
 )
 
 # Create agent with compression enabled
@@ -138,7 +138,7 @@ compression_model = LiteLLMModel(model_id="gemini/gemini-2.5-flash", api_key=YOU
 
 config = CompressionConfig(
     keep_recent_steps=5,
-    step_count_threshold=8,
+    max_uncompressed_steps=8,
     compression_model=compression_model,  # Use cheaper model for compression
 )
 
@@ -155,7 +155,7 @@ agent = CodeAgent(
 |-----------|---------|-------------|
 | `enabled` | `True` | Enable/disable compression |
 | `keep_recent_steps` | `5` | Number of recent steps to keep in full detail |
-| `step_count_threshold` | `10` | Trigger compression when step count exceeds this |
+| `max_uncompressed_steps` | `10` | Trigger compression when step count exceeds this |
 | `estimated_token_threshold` | `0` | Trigger based on estimated tokens (0 = disabled) |
 | `compression_model` | `None` | Optional separate model for compression |
 | `preserve_error_steps` | `True` | Always keep steps with errors |

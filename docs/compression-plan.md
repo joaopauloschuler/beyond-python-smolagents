@@ -13,7 +13,7 @@ New module containing all compression logic:
 class CompressionConfig:
     enabled: bool = True
     keep_recent_steps: int = 5          # Recent steps to keep in full
-    step_count_threshold: int = 10      # Compress when exceeds this
+    max_uncompressed_steps: int = 10      # Compress when exceeds this
     estimated_token_threshold: int = 0  # Token-based trigger (0=disabled)
     compression_model: Model | None = None  # Cheaper model for compression
     preserve_error_steps: bool = True
@@ -73,7 +73,7 @@ from smolagents import CodeAgent, CompressionConfig, LiteLLMModel
 
 config = CompressionConfig(
     keep_recent_steps=5,
-    step_count_threshold=8,
+    max_uncompressed_steps=8,
     compression_model=LiteLLMModel(model_id="gpt-4o-mini"),  # Cheap model
 )
 
