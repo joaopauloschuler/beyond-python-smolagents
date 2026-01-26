@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from smolagents.compression import (
+from smolagents.bp_compression import (
     CompressionConfig,
     CompressedHistoryStep,
     ContextCompressor,

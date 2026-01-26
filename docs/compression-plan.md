@@ -5,7 +5,7 @@ Add a hybrid rolling summarization system to smolagents that compresses older me
 
 ## Files to Create/Modify
 
-### 1. CREATE: `src/smolagents/compression.py`
+### 1. CREATE: `src/smolagents/bp_compression.py`
 New module containing all compression logic:
 
 ```python
@@ -47,7 +47,7 @@ Integration via existing callback system (lines 425-443) - no changes to core ag
 ### 3. MODIFY: `src/smolagents/__init__.py`
 Add exports:
 ```python
-from .compression import CompressionConfig, CompressedHistoryStep, ContextCompressor
+from .bp_compression import CompressionConfig, CompressedHistoryStep, ContextCompressor
 ```
 
 ### 4. CREATE: `tests/test_compression.py`
@@ -60,7 +60,7 @@ Tests for:
 
 ## Implementation Sequence
 
-1. Create `compression.py` with all classes and functions
+1. Create `bp_compression.py` with all classes and functions
 2. Modify `MultiStepAgent.__init__` to accept `compression_config`
 3. Add `_setup_compression()` method to register callback
 4. Update `__init__.py` exports
@@ -85,7 +85,7 @@ agent = CodeAgent(
 ```
 
 ## Design Decisions
-- **New file vs existing**: New `compression.py` keeps related logic together, follows pattern of `monitoring.py`
+- **New file vs existing**: New `bp_compression.py` keeps related logic together, follows pattern of `monitoring.py`
 - **Callback-based**: Uses existing callback system for clean integration without modifying agent loop
 - **Token estimation**: Character heuristic (4 chars/token) since no proactive token counting exists
 - **Graceful fallback**: If compression LLM call fails, keep original steps and log warning

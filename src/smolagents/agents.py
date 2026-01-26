@@ -83,7 +83,7 @@ from .monitoring import (
     LogLevel,
     Monitor,
 )
-from .compression import CompressionConfig, ContextCompressor, create_compression_callback
+from .bp_compression import CompressionConfig, ContextCompressor, create_compression_callback
 from .remote_executors import BlaxelExecutor, DockerExecutor, E2BExecutor, ModalExecutor, WasmExecutor
 from .tools import BaseTool, Tool, validate_tool_arguments
 from .utils import (
@@ -299,7 +299,7 @@ class MultiStepAgent(ABC):
             - Take the final answer, the agent's memory, and the agent itself as arguments.
             - Return a boolean indicating whether the final answer is valid.
         return_full_result (`bool`, default `False`): Whether to return the full [`RunResult`] object or just the final answer output from the agent run.
-        compression_config ([`~compression.CompressionConfig`], *optional*): Configuration for context compression.
+        compression_config ([`~bp_compression.CompressionConfig`], *optional*): Configuration for context compression.
             When provided, older memory steps will be compressed via LLM summarization to manage context window size.
     """
 

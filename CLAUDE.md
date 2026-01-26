@@ -50,7 +50,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `remote_executors.py` - Remote execution: E2B, Docker, Modal, Blaxel, Wasm
 - `default_tools.py` - Built-in tools: `FinalAnswerTool`, `DuckDuckGoSearchTool`, `VisitWebpageTool`
 - `memory.py` - Agent memory: `AgentMemory`, step types (`ActionStep`, `TaskStep`, `PlanningStep`)
-- `compression.py` - Context compression: `CompressionConfig`, `CompressedHistoryStep`, `ContextCompressor`
+- `bp_compression.py` - Context compression: `CompressionConfig`, `CompressedHistoryStep`, `ContextCompressor`
 - `prompts/` - YAML prompt templates for different agent types
 
 ### Beyond Python (BP) Extensions
@@ -102,7 +102,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Add LLM provider | `src/smolagents/models.py` |
 | Modify Python execution | `src/smolagents/local_python_executor.py` |
 | Add remote executor | `src/smolagents/remote_executors.py` |
-| Configure context compression | `src/smolagents/compression.py` |
+| Configure context compression | `src/smolagents/bp_compression.py` |
 
 ## Testing
 
