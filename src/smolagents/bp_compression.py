@@ -380,6 +380,12 @@ class ContextCompressor:
             elif should_preserve_step(step, self.config):
                 preserved_indices.add(i)
 
+        # Always preserve the most recent PlanningStep
+        for i in range(len(steps) - 1, -1, -1):
+            if isinstance(steps[i], PlanningStep):
+                preserved_indices.add(i)
+                break
+
         # Get indices of compressible steps
         compressible_indices = [i for i in range(len(steps)) if i not in preserved_indices]
 
