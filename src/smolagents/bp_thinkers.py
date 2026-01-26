@@ -1037,7 +1037,7 @@ def run_agent_cycles(
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
   list_directory_tree_in_folder = None, 
   add_function_signatures = True,
-  print_task = True,
+  print_task = False,
   compression_config: CompressionConfig | None = None
 ):
   # Convert string to list if needed, maintaining backward compatibility
