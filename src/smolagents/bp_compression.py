@@ -14,7 +14,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Any, Callable
 
 from smolagents.memory import ActionStep, MemoryStep, PlanningStep, TaskStep, SystemPromptStep
-from smolagents.models import ChatMessage, MessageRole
+from smolagents.models import CHARS_PER_TOKEN, ChatMessage, MessageRole
 from smolagents.monitoring import AgentLogger, LogLevel, Timing, TokenUsage
 
 
@@ -35,9 +35,6 @@ __all__ = [
 
 
 logger = getLogger(__name__)
-
-# Token estimation heuristic: ~4 characters per token (conservative estimate for English text)
-CHARS_PER_TOKEN = 4
 
 
 @dataclass
@@ -65,7 +62,7 @@ class CompressionConfig:
     max_uncompressed_steps: int = 10
     estimated_token_threshold: int = 0
     compression_model: "Model | None" = None
-    max_summary_tokens: int = 500
+    max_summary_tokens: int = 50000
     preserve_error_steps: bool = True
     preserve_final_answer_steps: bool = True
     max_compressed_steps: int = 0

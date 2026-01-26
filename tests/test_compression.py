@@ -36,7 +36,7 @@ class TestCompressionConfig:
         assert config.max_uncompressed_steps == 10
         assert config.estimated_token_threshold == 0
         assert config.compression_model is None
-        assert config.max_summary_tokens == 500
+        assert config.max_summary_tokens == 50000
         assert config.preserve_error_steps is True
         assert config.preserve_final_answer_steps is True
         assert config.max_compressed_steps == 0

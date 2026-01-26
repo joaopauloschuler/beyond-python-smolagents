@@ -32,6 +32,8 @@ from .utils import RateLimiter, Retrying, _is_package_available, encode_image_ba
 if TYPE_CHECKING:
     from transformers import StoppingCriteriaList
 
+# Token estimation heuristic: ~4 characters per token (conservative estimate for English text)
+CHARS_PER_TOKEN = 4
 
 logger = logging.getLogger(__name__)
 
@@ -2061,7 +2063,7 @@ class GoogleColabModel(Model):
     Note:
         - Only text-to-text input/output is supported
         - Streaming is not supported
-        - Token usage tracking is not available
+        - Token usage is estimated using character-based heuristic (CHARS_PER_TOKEN)
     """
 
     def __init__(
@@ -2149,15 +2151,20 @@ class GoogleColabModel(Model):
         if stop_sequences:
             response_text = remove_content_after_stop_sequences(response_text, stop_sequences)
 
+        # Estimate token usage since Google Colab AI doesn't provide it
+        input_tokens = len(prompt) // CHARS_PER_TOKEN
+        output_tokens = len(response_text) // CHARS_PER_TOKEN
+
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content=response_text,
             raw={"prompt": prompt, "response": response_text},
-            token_usage=None,  # Google Colab AI doesn't provide token usage info
+            token_usage=TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens),
         )
 
 
 __all__ = [
+    "CHARS_PER_TOKEN",
     "REMOVE_PARAMETER",
     "MessageRole",
     "tool_role_conversions",
