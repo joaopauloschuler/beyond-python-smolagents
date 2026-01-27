@@ -14,7 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 # Beyond Python Smolagents
-**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities with 2 main functions that you can easily call:
+**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
+
+* 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
+* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
+* 🔄 **Infinite runtime:** The thinkers allow agents to **run ad infinitum**.
+* 🔄 Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
+* 🛠️ Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
+* 👥 Collaborate across multiple agents to solve complex problems.
+* 🔍 Tools that help agents to research and write technical documentation.
+* 📚 Generate and update documentation including READMEs for existing codebases.
+
+## The Thinkers
+There are 2 main functions that you can easily call:
 * [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
 
   [![Watch the video](docs/img/writing-process.jpg?raw=true)](https://youtu.be/oQ2GdrtWR94)
@@ -39,15 +51,6 @@ limitations under the License.
 * [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
 * [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
-
-## Feature list
-* 👥 Collaborate across multiple agents to solve complex problems.
-* 🔍 Research and write technical documentation.
-* 📚 Generate and update documentation including READMEs for existing codebases.
-* 🔄 Code in multiple languages beyond Python (Pascal, PHP, and more).
-* 🛠️ Compile, test, and debug source code in various computing languages.
-* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
-* 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
