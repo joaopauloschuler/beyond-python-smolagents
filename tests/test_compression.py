@@ -37,9 +37,9 @@ class TestCompressionConfig:
         assert config.estimated_token_threshold == 0
         assert config.compression_model is None
         assert config.max_summary_tokens == 50000
-        assert config.preserve_error_steps is True
+        assert config.preserve_error_steps is False
         assert config.preserve_final_answer_steps is True
-        assert config.max_compressed_steps == 0
+        assert config.max_compressed_steps == 32
 
     def test_custom_values(self):
         config = CompressionConfig(
@@ -58,6 +58,14 @@ class TestCompressionConfig:
     def test_max_compressed_steps_custom(self):
         config = CompressionConfig(max_compressed_steps=3)
         assert config.max_compressed_steps == 3
+
+    def test_keep_compressed_steps_default(self):
+        config = CompressionConfig()
+        assert config.keep_compressed_steps == 22
+
+    def test_keep_compressed_steps_custom(self):
+        config = CompressionConfig(keep_compressed_steps=2)
+        assert config.keep_compressed_steps == 2
 
 
 class TestCompressedHistoryStep:
@@ -459,7 +467,7 @@ class TestContextCompressor:
         assert compressor.should_merge_compressed(steps) is False
 
     def test_should_merge_compressed_true_above_threshold(self):
-        config = CompressionConfig(max_compressed_steps=2)
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
         compressor = ContextCompressor(config, MagicMock())
         steps = [
             CompressedHistoryStep(summary=f"Summary {i}", compressed_step_numbers=[i], original_step_count=1)
@@ -478,7 +486,7 @@ class TestContextCompressor:
         assert result == steps
 
     def test_merge_compressed_creates_merged_step(self):
-        config = CompressionConfig(max_compressed_steps=2)
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -524,7 +532,7 @@ class TestContextCompressor:
         mock_model.generate.assert_called_once()
 
     def test_merge_compressed_handles_model_failure(self):
-        config = CompressionConfig(max_compressed_steps=2)
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
         mock_model = MagicMock()
         mock_model.generate.side_effect = Exception("Model error")
         compressor = ContextCompressor(config, mock_model)
@@ -538,7 +546,7 @@ class TestContextCompressor:
         assert result == steps
 
     def test_merge_compressed_skips_when_merged_is_larger(self):
-        config = CompressionConfig(max_compressed_steps=1)
+        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0)
         mock_model = MagicMock()
         # Return a summary that's longer than the combined originals
         mock_model.generate.return_value = ChatMessage(
@@ -556,8 +564,137 @@ class TestContextCompressor:
         result = compressor.merge_compressed(steps)
         assert result == steps  # Should keep originals
 
+    def test_should_merge_compressed_false_when_not_enough_mergeable(self):
+        """With keep_compressed_steps=2 and 3 compressed steps, only 1 is mergeable (need 2)."""
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=2)
+        compressor = ContextCompressor(config, MagicMock())
+        steps = [
+            CompressedHistoryStep(summary=f"Summary {i}", compressed_step_numbers=[i], original_step_count=1)
+            for i in range(3)
+        ]
+        assert compressor.should_merge_compressed(steps) is False
+
+    def test_should_merge_compressed_true_with_enough_mergeable(self):
+        """With keep_compressed_steps=1 and 4 compressed steps, 3 are mergeable (>= 2)."""
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=1)
+        compressor = ContextCompressor(config, MagicMock())
+        steps = [
+            CompressedHistoryStep(summary=f"Summary {i}", compressed_step_numbers=[i], original_step_count=1)
+            for i in range(4)
+        ]
+        assert compressor.should_merge_compressed(steps) is True
+
+    def test_merge_compressed_keeps_recent_compressed_steps(self):
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=1)
+        mock_model = MagicMock()
+        mock_model.generate.return_value = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="Consolidated summary.",
+            token_usage=TokenUsage(input_tokens=200, output_tokens=30),
+        )
+        compressor = ContextCompressor(config, mock_model)
+
+        steps = [
+            TaskStep(task="Do the task"),
+            CompressedHistoryStep(
+                summary="Agent searched for information and found useful data about the topic.",
+                compressed_step_numbers=[1, 2, 3],
+                original_step_count=3,
+            ),
+            CompressedHistoryStep(
+                summary="Agent analyzed the data and drew conclusions about the results.",
+                compressed_step_numbers=[4, 5, 6],
+                original_step_count=3,
+            ),
+            CompressedHistoryStep(
+                summary="Agent refined the analysis and prepared the final output.",
+                compressed_step_numbers=[7, 8],
+                original_step_count=2,
+            ),
+            ActionStep(step_number=9, timing=Timing(start_time=0, end_time=1)),
+        ]
+
+        result = compressor.merge_compressed(steps)
+
+        # Should have: TaskStep + 1 merged + 1 kept compressed + ActionStep
+        assert len(result) == 4
+        assert isinstance(result[0], TaskStep)
+        assert isinstance(result[1], CompressedHistoryStep)  # merged
+        assert isinstance(result[2], CompressedHistoryStep)  # kept (most recent)
+        assert isinstance(result[3], ActionStep)
+
+        # The merged step should only cover the first 2 compressed steps
+        merged = result[1]
+        assert merged.summary == "Consolidated summary."
+        assert merged.original_step_count == 6  # 3 + 3
+        assert merged.compressed_step_numbers == [1, 2, 3, 4, 5, 6]
+
+        # The kept step should be the most recent one (unchanged)
+        kept = result[2]
+        assert kept.summary == "Agent refined the analysis and prepared the final output."
+        assert kept.compressed_step_numbers == [7, 8]
+
+    def test_merge_compressed_keep_zero_merges_all(self):
+        """With keep_compressed_steps=0 (default), all compressed steps are merged."""
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
+        mock_model = MagicMock()
+        mock_model.generate.return_value = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="Consolidated summary.",
+            token_usage=TokenUsage(input_tokens=200, output_tokens=30),
+        )
+        compressor = ContextCompressor(config, mock_model)
+
+        steps = [
+            CompressedHistoryStep(
+                summary="Agent searched for information and found useful data about the topic.",
+                compressed_step_numbers=[1, 2, 3],
+                original_step_count=3,
+            ),
+            CompressedHistoryStep(
+                summary="Agent analyzed the data and drew conclusions about the results.",
+                compressed_step_numbers=[4, 5, 6],
+                original_step_count=3,
+            ),
+            CompressedHistoryStep(
+                summary="Agent refined the analysis and prepared the final output.",
+                compressed_step_numbers=[7, 8],
+                original_step_count=2,
+            ),
+        ]
+
+        result = compressor.merge_compressed(steps)
+
+        # All should be merged into one
+        assert len(result) == 1
+        assert isinstance(result[0], CompressedHistoryStep)
+        assert result[0].original_step_count == 8  # 3 + 3 + 2
+
+    def test_merge_compressed_keep_too_many_returns_original(self):
+        """If keep_compressed_steps >= len-1, only 1 left to merge, so return original."""
+        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=5)
+        mock_model = MagicMock()
+        compressor = ContextCompressor(config, mock_model)
+
+        steps = [
+            CompressedHistoryStep(
+                summary="This is a long enough first summary that should be more than enough.",
+                compressed_step_numbers=[1, 2],
+                original_step_count=2,
+            ),
+            CompressedHistoryStep(
+                summary="This is a long enough second summary that should be more than enough.",
+                compressed_step_numbers=[3, 4],
+                original_step_count=2,
+            ),
+        ]
+
+        result = compressor.merge_compressed(steps)
+        assert result == steps  # Nothing merged
+        mock_model.generate.assert_not_called()
+
     def test_merge_compressed_accumulates_overlapping_step_numbers(self):
-        config = CompressionConfig(max_compressed_steps=1)
+        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -647,6 +784,7 @@ class TestCreateCompressionCallback:
             max_uncompressed_steps=3,
             keep_recent_steps=2,
             max_compressed_steps=1,
+            keep_compressed_steps=0,
         )
         mock_model = MagicMock()
         # First call: compress, second call: merge

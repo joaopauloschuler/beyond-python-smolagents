@@ -159,7 +159,8 @@ agent = CodeAgent(
 | `enabled` | `True` | Enable/disable compression |
 | `keep_recent_steps` | `5` | Number of recent steps to keep in full detail |
 | `max_uncompressed_steps` | `10` | Trigger compression when step count exceeds this |
-| `max_compressed_steps` | `0` | Merge compressed summaries when count exceeds this (0 = disabled) |
+| `max_compressed_steps` | `32` | Merge compressed summaries when count exceeds this (0 = disabled) |
+| `keep_compressed_steps` | `22` | Number of recent compressed summaries to keep during merge |
 | `estimated_token_threshold` | `0` | Trigger based on estimated tokens (0 = disabled) |
 | `compression_model` | `None` | Optional separate model for compression |
 | `preserve_error_steps` | `False` | Always keep steps with errors |
@@ -174,7 +175,7 @@ The compression system always preserves:
 - Steps with errors (helps agent learn from mistakes)
 - Final answer steps
 
-Older action and planning steps are summarized into a single `CompressedHistoryStep` that captures key decisions, observations, and progress.
+Older action and planning steps are summarized into a `CompressedHistoryStep` that captures key decisions, observations, and progress. When compressed summaries accumulate beyond `max_compressed_steps`, the older ones are merged while `keep_compressed_steps` most recent summaries are preserved at full fidelity.
 
 ## The `fast_solver`
 The `fast_solver` function is a sophisticated multi-agent problem-solving approach that leverages the "wisdom of crowds" principle with AI models.

@@ -55,6 +55,11 @@ class CompressionConfig:
             cycles, this threshold triggers merging them into a single consolidated summary.
             Note: each merge is a lossy operation (summary of summaries), so information fidelity
             decreases with each merge cycle.
+        keep_compressed_steps: Number of most recent compressed steps to keep in full detail
+            during a merge operation (default 0 = merge all). Analogous to keep_recent_steps
+            but for the merge phase. When set, the N most recent CompressedHistoryStep instances
+            are preserved and only the older ones are merged together. This helps retain higher
+            fidelity in recent compressed summaries.
     """
 
     enabled: bool = True
@@ -65,7 +70,8 @@ class CompressionConfig:
     max_summary_tokens: int = 50000
     preserve_error_steps: bool = False
     preserve_final_answer_steps: bool = True
-    max_compressed_steps: int = 0
+    max_compressed_steps: int = 32
+    keep_compressed_steps: int = 22
 
 
 @dataclass
@@ -508,7 +514,8 @@ class ContextCompressor:
 
         When multiple CompressedHistoryStep instances accumulate over successive
         compression cycles, this checks whether their count exceeds the configured
-        threshold for merging.
+        threshold for merging. Also ensures there are enough mergeable steps
+        (after excluding those preserved by keep_compressed_steps).
 
         Args:
             steps: Current list of memory steps.
@@ -520,13 +527,21 @@ class ContextCompressor:
             return False
 
         compressed_count = sum(1 for step in steps if isinstance(step, CompressedHistoryStep))
-        return compressed_count > self.config.max_compressed_steps
+
+        if compressed_count <= self.config.max_compressed_steps:
+            return False
+
+        # Need at least 2 mergeable steps (after excluding kept ones)
+        mergeable_count = compressed_count - self.config.keep_compressed_steps
+        return mergeable_count >= 2
 
     def merge_compressed(self, steps: list[MemoryStep]) -> list[MemoryStep]:
         """Merge multiple CompressedHistoryStep instances into one.
 
         Collects all compressed history steps, generates a consolidated summary
         via LLM, and replaces them with a single merged CompressedHistoryStep.
+        If keep_compressed_steps is set, the most recent N compressed steps are
+        preserved and only older ones are merged.
 
         Note: This is a lossy operation (summary of summaries). Information
         fidelity decreases with each merge cycle.
@@ -535,7 +550,8 @@ class ContextCompressor:
             steps: Current list of memory steps.
 
         Returns:
-            New list with compressed history steps merged into one.
+            New list with older compressed history steps merged into one,
+            preserving the most recent keep_compressed_steps instances.
         """
         start_time = time.time()
 
@@ -544,8 +560,22 @@ class ContextCompressor:
         if len(compressed_steps) <= 1:
             return steps
 
+        # Determine which compressed steps to keep vs merge
+        keep_count = self.config.keep_compressed_steps
+        if keep_count > 0:
+            # Keep at most len-1 to ensure at least 1 remains for potential merge
+            keep_count = min(keep_count, len(compressed_steps) - 1)
+            steps_to_keep = set(id(s) for s in compressed_steps[-keep_count:])
+            steps_to_merge = [s for s in compressed_steps if id(s) not in steps_to_keep]
+        else:
+            steps_to_keep = set()
+            steps_to_merge = compressed_steps
+
+        if len(steps_to_merge) <= 1:
+            return steps  # Not enough to merge
+
         # Build merge prompt and call LLM
-        merge_prompt = create_merge_prompt(compressed_steps)
+        merge_prompt = create_merge_prompt(steps_to_merge)
 
         try:
             merge_message = self.compression_model.generate(
@@ -568,7 +598,7 @@ class ContextCompressor:
             return steps
 
         # Safety check: skip merge if consolidated summary is larger than combined originals
-        original_chars = sum(len(step.summary) for step in compressed_steps)
+        original_chars = sum(len(step.summary) for step in steps_to_merge)
         merged_chars = len(merged_summary) if merged_summary else 0
         if merged_chars >= original_chars:
             if self.agent_logger:
@@ -585,10 +615,10 @@ class ContextCompressor:
                 )
             return steps
 
-        # Accumulate metadata from all compressed steps
+        # Accumulate metadata from merged compressed steps
         all_step_numbers = []
         total_original_count = 0
-        for step in compressed_steps:
+        for step in steps_to_merge:
             all_step_numbers.extend(step.compressed_step_numbers)
             total_original_count += step.original_step_count
 
@@ -600,35 +630,38 @@ class ContextCompressor:
             compression_token_usage=merge_token_usage,
         )
 
-        # Rebuild steps: replace all CompressedHistoryStep instances with the merged one
-        # Insert merged step at the position of the first compressed step
-        compressed_set = set(id(step) for step in compressed_steps)
+        # Rebuild steps: replace merged CompressedHistoryStep instances with the single
+        # merged one, while preserving kept compressed steps in their original positions
+        merge_set = set(id(step) for step in steps_to_merge)
         new_steps = []
         merged_inserted = False
 
         for step in steps:
-            if isinstance(step, CompressedHistoryStep) and id(step) in compressed_set:
+            if isinstance(step, CompressedHistoryStep) and id(step) in merge_set:
                 if not merged_inserted:
                     new_steps.append(merged_step)
                     merged_inserted = True
-                # Skip subsequent compressed steps (replaced by merged)
+                # Skip subsequent merged compressed steps (replaced by merged)
             else:
                 new_steps.append(step)
 
         # Log
+        kept_count = len(compressed_steps) - len(steps_to_merge)
         if self.agent_logger:
             compression_ratio = (1 - merged_chars / original_chars) * 100 if original_chars > 0 else 0
+            kept_msg = f" Kept {kept_count} recent compressed steps." if kept_count > 0 else ""
             self.agent_logger.log_markdown(
-                content=f"Merged {len(compressed_steps)} compressed steps "
+                content=f"Merged {len(steps_to_merge)} compressed steps "
                 f"({total_original_count} original steps) from {original_chars:,} chars "
-                f"to {merged_chars:,} chars ({compression_ratio:.1f}% reduction).",
+                f"to {merged_chars:,} chars ({compression_ratio:.1f}% reduction).{kept_msg}",
                 title="Compressed Step Merge",
                 level=LogLevel.INFO,
             )
         else:
+            kept_msg = f", kept {kept_count} recent" if kept_count > 0 else ""
             logger.info(
-                f"Merged {len(compressed_steps)} compressed steps "
-                f"({total_original_count} original steps) into single summary"
+                f"Merged {len(steps_to_merge)} compressed steps "
+                f"({total_original_count} original steps) into single summary{kept_msg}"
             )
 
         return new_steps

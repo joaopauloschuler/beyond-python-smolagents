@@ -85,13 +85,14 @@ from smolagents import CodeAgent, CompressionConfig
 config = CompressionConfig(
     keep_recent_steps=5,       # Keep last N steps in full detail
     max_uncompressed_steps=10, # Compress when step count exceeds this
-    max_compressed_steps=0,    # Merge compressed summaries when count exceeds this (0=disabled)
+    max_compressed_steps=32,   # Merge compressed summaries when count exceeds this (0=disabled)
+    keep_compressed_steps=22,  # Keep last N compressed summaries during merge
     compression_model=None,    # Optional: use cheaper model for compression
 )
 
 agent = CodeAgent(tools=[...], model=model, compression_config=config)
 ```
-When enabled, older steps are automatically summarized via LLM while preserving recent steps and critical context (task, errors, final answers).
+When enabled, older steps are automatically summarized via LLM while preserving recent steps and critical context (task, errors, final answers). When compressed summaries accumulate beyond `max_compressed_steps`, the older ones are merged while `keep_compressed_steps` most recent summaries are preserved at full fidelity.
 
 ## Key Files for Common Tasks
 
