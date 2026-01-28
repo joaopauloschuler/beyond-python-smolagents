@@ -7,10 +7,18 @@ from .bp_compression import CompressionConfig
 import shutil
 
 DEFAULT_THINKER_STEP_CALLBACKS = []
-DEFAULT_THINKER_MAX_STEPS = 50
+DEFAULT_THINKER_MAX_STEPS = 200
 DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
-DEFAULT_THINKER_PLANNING_INTERVAL = None
+DEFAULT_THINKER_PLANNING_INTERVAL = 22
 DEFAULT_THINKER_LOG_LEVEL = LogLevel.ERROR
+
+DEFAULT_THINKER_COMPRESSION = CompressionConfig(
+    keep_recent_steps=DEFAULT_THINKER_PLANNING_INTERVAL,      
+    max_uncompressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL+10,
+    keep_compressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL*2,
+    max_compressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL*3,
+    preserve_error_steps=False
+)
 
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
@@ -238,7 +246,7 @@ def evolutive_problem_solver(p_coder_model,
   secondary_improvement_model = None,
   only_bigger_solution = False,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
-  compression_config: CompressionConfig | None = None
+  compression_config: CompressionConfig = DEFAULT_THINKER_COMPRESSION
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -495,7 +503,7 @@ def fast_solver(p_coder_model,
   p_coder_model3 = None,
   p_coder_model_final = None,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
-  compression_config: CompressionConfig | None = None
+  compression_config: CompressionConfig = DEFAULT_THINKER_COMPRESSION
   ):
   def get_local_agent(p_local_model=None):
     if p_local_model is None:
@@ -617,7 +625,7 @@ def evolutive_problem_solver_folder(p_coder_model,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
   load_full_source = False,
   add_function_signatures = False,
-  compression_config: CompressionConfig | None = None
+  compression_config: CompressionConfig = DEFAULT_THINKER_COMPRESSION
   ):
   def get_local_agent(p_local_model = None):
     if p_local_model is None: p_local_model = p_coder_model
@@ -1006,7 +1014,7 @@ def get_default_thinker_agent(
   executor_type = DEFAULT_THINKER_EXECUTOR_TYPE,
   log_level = DEFAULT_THINKER_LOG_LEVEL,
   planning_interval = DEFAULT_THINKER_PLANNING_INTERVAL,
-  compression_config: CompressionConfig | None = None
+  compression_config: CompressionConfig = DEFAULT_THINKER_COMPRESSION
 ):
   coder_agent = CodeAgent(
       tools=tools,
@@ -1038,7 +1046,7 @@ def run_agent_cycles(
   list_directory_tree_in_folder = None, 
   add_function_signatures = True,
   print_task = False,
-  compression_config: CompressionConfig | None = None
+  compression_config: CompressionConfig = DEFAULT_THINKER_COMPRESSION
 ):
   # Convert string to list if needed, maintaining backward compatibility
   if isinstance(task_str, str):
