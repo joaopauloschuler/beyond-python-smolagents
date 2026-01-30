@@ -53,45 +53,86 @@ AGENT_INSTRUCTION_FILES = [
 ]
 
 
+# Required env vars per model class (beyond BPSA_MODEL_ID which is always required)
+MODEL_REQUIRED_VARS = {
+    "OpenAIServerModel": ["BPSA_KEY_VALUE", "BPSA_API_ENDPOINT"],
+    "AzureOpenAIServerModel": ["BPSA_KEY_VALUE", "BPSA_API_ENDPOINT"],
+    "LiteLLMModel": ["BPSA_KEY_VALUE"],
+    "LiteLLMRouterModel": ["BPSA_KEY_VALUE"],
+    "InferenceClientModel": ["BPSA_KEY_VALUE"],
+    "TransformersModel": [],
+    "AmazonBedrockModel": [],
+    "VLLMModel": [],
+    "MLXModel": [],
+    "GoogleColabModel": [],
+}
+
+
 def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
     sys.exit(1)
 
 
-def fail_missing_env():
-    console.print("[bold red]Error:[/] Required environment variables are not set.\n", highlight=False)
-    console.print("Please set the following environment variables:\n")
-    console.print("  [bold]BPSA_MODEL_ID[/]        (required) Model identifier, e.g. Gemini-2.5-Flash")
-    console.print("  [bold]BPSA_SERVER_MODEL[/]     Model class (default: OpenAIServerModel)")
-    console.print("  [bold]BPSA_API_ENDPOINT[/]     API endpoint URL")
-    console.print("  [bold]BPSA_KEY_VALUE[/]        API key for authentication")
-    console.print("  [bold]BPSA_POSTPEND_STRING[/]  String set on model.postpend_string (default: '')")
-    console.print("  [bold]BPSA_GLOBAL_EXECUTOR[/]  Executor type (default: exec)")
-    console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
-    console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
-    console.print("\nExample:")
-    console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
-    console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
-    console.print("  export BPSA_API_ENDPOINT=https://api.poe.com/v1")
-    console.print("  export BPSA_KEY_VALUE=your_api_key")
-    console.print("\nOr create a .env file in your working directory with these variables.")
-    sys.exit(1)
+def get_env(name: str, default: str | None = None) -> str | None:
+    return os.environ.get(name, default)
 
 
-def get_env(name: str, required: bool = False, default: str | None = None) -> str | None:
-    value = os.environ.get(name, default)
-    if required and not value:
-        fail_missing_env()
-    return value
+def try_load_dotenv():
+    env_path = os.path.join(os.getcwd(), ".env")
+    if os.path.isfile(env_path):
+        load_dotenv(env_path)
+        console.print(f"[green]Loaded .env from:[/] {env_path}")
+    else:
+        console.print("[dim]No .env file found in current directory.[/]")
+
+
+def check_required_env():
+    """Check all required env vars and report missing ones."""
+    model_id = get_env("BPSA_MODEL_ID")
+    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+
+    missing = []
+    if not model_id:
+        missing.append("BPSA_MODEL_ID")
+
+    if server_model not in MODEL_CLASS_MAP:
+        supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+        fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
+
+    canonical_name = MODEL_CLASS_MAP[server_model]
+    for var in MODEL_REQUIRED_VARS.get(canonical_name, []):
+        if not get_env(var):
+            missing.append(var)
+
+    if missing:
+        console.print(f"[bold red]Error:[/] Missing required environment variables for {server_model}:\n")
+        for var in missing:
+            console.print(f"  [bold red]- {var}[/] is not set")
+        console.print("\n[bold]All available BPSA variables:[/]\n")
+        console.print("  [bold]BPSA_MODEL_ID[/]        (required) Model identifier, e.g. Gemini-2.5-Flash")
+        console.print("  [bold]BPSA_SERVER_MODEL[/]     Model class (default: OpenAIServerModel)")
+        console.print("  [bold]BPSA_API_ENDPOINT[/]     API endpoint URL")
+        console.print("  [bold]BPSA_KEY_VALUE[/]        API key for authentication")
+        console.print("  [bold]BPSA_POSTPEND_STRING[/]  String set on model.postpend_string (default: '')")
+        console.print("  [bold]BPSA_GLOBAL_EXECUTOR[/]  Executor type (default: exec)")
+        console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
+        console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
+        console.print("\nExample:")
+        console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
+        console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
+        console.print("  export BPSA_API_ENDPOINT=https://api.poe.com/v1")
+        console.print("  export BPSA_KEY_VALUE=your_api_key")
+        console.print("\nOr create a .env file in your working directory with these variables.")
+        sys.exit(1)
 
 
 def build_model():
-    server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
-    model_id = get_env("BPSA_MODEL_ID", required=True)
+    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+    model_id = get_env("BPSA_MODEL_ID")
     api_key = get_env("BPSA_KEY_VALUE")
     api_endpoint = get_env("BPSA_API_ENDPOINT")
-    postpend_string = get_env("BPSA_POSTPEND_STRING", default="")
-    max_tokens = int(get_env("BPSA_MAX_TOKENS", default="64000"))
+    postpend_string = get_env("BPSA_POSTPEND_STRING", "")
+    max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
 
     if server_model not in MODEL_CLASS_MAP:
         supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
@@ -258,7 +299,8 @@ def prepend_instructions(task: str, instructions: str | None) -> str:
 
 
 def run_one_shot(task: str):
-    load_dotenv()
+    try_load_dotenv()
+    check_required_env()
     model = build_model()
     agent = build_agent(model)
     console.print("[dim]Loading agent instructions...[/]")
@@ -268,7 +310,8 @@ def run_one_shot(task: str):
 
 
 def run_repl():
-    load_dotenv()
+    try_load_dotenv()
+    check_required_env()
 
     model = build_model()
     agent = build_agent(model)
