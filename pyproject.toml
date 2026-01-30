@@ -68,6 +68,10 @@ modal = [
 openai = [
   "openai>=1.58.1"
 ]
+cli = [
+  "prompt_toolkit>=3.0.0",
+  "smolagents[litellm]",
+]
 telemetry = [
   "arize-phoenix",
   "opentelemetry-sdk",
@@ -140,4 +144,5 @@ lines-after-imports = 2
 
 [project.scripts]
 smolagent = "smolagents.cli:main"
+bpsa = "smolagents.bp_cli:main"
 webagent = "smolagents.vision_web_browser:main"
