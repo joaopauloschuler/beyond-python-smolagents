@@ -19,11 +19,13 @@ Environment variables:
 
 import os
 import sys
+import threading
 import time
 
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 
 
@@ -66,6 +68,41 @@ MODEL_REQUIRED_VARS = {
     "MLXModel": [],
     "GoogleColabModel": [],
 }
+
+
+class Spinner:
+    """A simple threaded spinner that doesn't conflict with agent output."""
+    FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def __init__(self, message: str = "Thinking..."):
+        self.message = message
+        self._stop_event = threading.Event()
+        self._thread = None
+
+    def _run(self):
+        i = 0
+        while not self._stop_event.is_set():
+            frame = self.FRAMES[i % len(self.FRAMES)]
+            print(f"\r{frame} {self.message}", end="", flush=True)
+            i += 1
+            self._stop_event.wait(0.1)
+        # Clear the spinner line
+        print("\r" + " " * (len(self.message) + 4) + "\r", end="", flush=True)
+
+    def start(self):
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join()
+            self._thread = None
+
+
+# Global spinner instance, stopped by step callback
+_spinner = Spinner("Agent is thinking...")
 
 
 def fail(msg: str):
@@ -189,7 +226,7 @@ def build_agent(model):
         max_steps=DEFAULT_THINKER_MAX_STEPS,
         executor_type=executor_type,
         compression_config=DEFAULT_THINKER_COMPRESSION,
-        planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL
+        planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL,
     )
     return agent
 
@@ -217,6 +254,35 @@ def count_tools(agent) -> int:
     return len(agent.tools)
 
 
+def format_tokens(n: int) -> str:
+    """Format token count with color based on magnitude."""
+    if n < 10_000:
+        return f"[green]{n:,}[/]"
+    elif n < 50_000:
+        return f"[yellow]{n:,}[/]"
+    else:
+        return f"[red]{n:,}[/]"
+
+
+def get_agent_token_usage(agent):
+    """Get current total token usage from the agent's monitor."""
+    try:
+        usage = agent.monitor.get_total_token_counts()
+        return usage.input_tokens, usage.output_tokens
+    except Exception:
+        return 0, 0
+
+
+def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_tokens: int):
+    """Print a one-line summary after each turn."""
+    total = input_tokens + output_tokens
+    console.print(
+        f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
+        f"In: {format_tokens(input_tokens)} | Out: {format_tokens(output_tokens)} | "
+        f"Total: {format_tokens(total)}[/]"
+    )
+
+
 def print_banner(model_id: str, server_model: str, tool_count: int):
     console.print(
         Panel.fit(
@@ -236,7 +302,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
             border_style="red",
         )
     )
-    console.print("[dim]Type /help for commands, /exit to quit.[/]\n")
+    console.print("[dim]Type /help for commands, /verbose to toggle verbosity, /exit to quit.[/]\n")
 
 
 def print_help():
@@ -286,9 +352,22 @@ def save_answer(last_answer, args: str):
 
 
 def print_stats(session_stats: dict):
-    console.print("[bold]Session statistics:[/]")
-    console.print(f"  Turns:        {session_stats['turns']}")
-    console.print(f"  Total time:   {session_stats['total_time']:.1f}s")
+    console.print(Rule("[bold]Session Statistics", style="blue"))
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", style="cyan")
+    table.add_row("Turns", str(session_stats["turns"]))
+    table.add_row("Total time", f"{session_stats['total_time']:.1f}s")
+    table.add_row("Total input tokens", f"{session_stats['total_input_tokens']:,}")
+    table.add_row("Total output tokens", f"{session_stats['total_output_tokens']:,}")
+    total_tokens = session_stats["total_input_tokens"] + session_stats["total_output_tokens"]
+    table.add_row("Total tokens", f"{total_tokens:,}")
+    if session_stats["turns"] > 0:
+        avg_time = session_stats["total_time"] / session_stats["turns"]
+        avg_tokens = total_tokens // session_stats["turns"]
+        table.add_row("Avg time/turn", f"{avg_time:.1f}s")
+        table.add_row("Avg tokens/turn", f"{avg_tokens:,}")
+    console.print(table)
     console.print()
 
 
@@ -305,7 +384,9 @@ def run_one_shot(task: str):
     agent = build_agent(model)
     console.print("[dim]Loading agent instructions...[/]")
     instructions = load_agent_instructions()
+    _spinner.start()
     result = agent.run(prepend_instructions(task, instructions))
+    _spinner.stop()
     console.print(result)
 
 
@@ -355,7 +436,12 @@ def run_repl():
                 return ""
 
     last_answer = None
-    session_stats = {"turns": 0, "total_time": 0.0}
+    session_stats = {
+        "turns": 0,
+        "total_time": 0.0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+    }
     first_turn = True
 
     while True:
@@ -375,13 +461,21 @@ def run_repl():
             cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
 
             if cmd == "/exit":
+                if session_stats["turns"] > 0:
+                    console.print()
+                    print_stats(session_stats)
                 console.print("[dim]Goodbye![/]")
                 break
             elif cmd == "/help":
                 print_help()
             elif cmd == "/reset":
                 agent = build_agent(model)
-                session_stats = {"turns": 0, "total_time": 0.0}
+                session_stats = {
+                    "turns": 0,
+                    "total_time": 0.0,
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                }
                 last_answer = None
                 first_turn = True
                 console.print("[green]Agent reset. Conversation history cleared.[/]")
@@ -398,6 +492,13 @@ def run_repl():
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
             continue
 
+        # Visual separator before agent run
+        turn_num = session_stats["turns"] + 1
+        console.print(Rule(style="cyan"))
+
+        # Capture token counts before this turn
+        input_before, output_before = get_agent_token_usage(agent)
+
         # Run agent
         try:
             from smolagents.monitoring import LogLevel
@@ -409,15 +510,33 @@ def run_repl():
                 agent.logger.level = LogLevel.ERROR
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
+            _spinner.start()
             result = agent.run(task_text, reset=False)
+            _spinner.stop()
             elapsed = time.time() - start_time
+
+            # Calculate token usage for this turn
+            input_after, output_after = get_agent_token_usage(agent)
+            turn_input = input_after - input_before
+            turn_output = output_after - output_before
+
             session_stats["turns"] += 1
             session_stats["total_time"] += elapsed
+            session_stats["total_input_tokens"] += turn_input
+            session_stats["total_output_tokens"] += turn_output
             last_answer = result
+
             console.print(f"\n{result}\n")
+
+            # Per-turn summary line
+            print_turn_summary(turn_num, elapsed, turn_input, turn_output)
+            console.print()
+
         except KeyboardInterrupt:
+            _spinner.stop()
             console.print("\n[yellow]Interrupted.[/]")
         except Exception as e:
+            _spinner.stop()
             console.print(f"\n[bold red]Error:[/] {e}\n")
 
 
