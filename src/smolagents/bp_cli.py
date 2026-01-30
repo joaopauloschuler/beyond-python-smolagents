@@ -46,15 +46,42 @@ MODEL_CLASS_MAP = {
 }
 
 
+AGENT_INSTRUCTION_FILES = [
+    "CLAUDE.md",
+    "AGENTS.md",
+    ".github/copilot-instructions.md",
+]
+
+
 def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
+    sys.exit(1)
+
+
+def fail_missing_env():
+    console.print("[bold red]Error:[/] Required environment variables are not set.\n", highlight=False)
+    console.print("Please set the following environment variables:\n")
+    console.print("  [bold]BPSA_MODEL_ID[/]        (required) Model identifier, e.g. Gemini-2.5-Flash")
+    console.print("  [bold]BPSA_SERVER_MODEL[/]     Model class (default: OpenAIServerModel)")
+    console.print("  [bold]BPSA_API_ENDPOINT[/]     API endpoint URL")
+    console.print("  [bold]BPSA_KEY_VALUE[/]        API key for authentication")
+    console.print("  [bold]BPSA_POSTPEND_STRING[/]  String set on model.postpend_string (default: '')")
+    console.print("  [bold]BPSA_GLOBAL_EXECUTOR[/]  Executor type (default: exec)")
+    console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
+    console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
+    console.print("\nExample:")
+    console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
+    console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
+    console.print("  export BPSA_API_ENDPOINT=https://api.poe.com/v1")
+    console.print("  export BPSA_KEY_VALUE=your_api_key")
+    console.print("\nOr create a .env file in your working directory with these variables.")
     sys.exit(1)
 
 
 def get_env(name: str, required: bool = False, default: str | None = None) -> str | None:
     value = os.environ.get(name, default)
     if required and not value:
-        fail(f"{name} is not set. Export it with: export {name}=<value>")
+        fail_missing_env()
     return value
 
 
@@ -106,7 +133,10 @@ def build_model():
 
 def build_agent(model):
     from smolagents import CodeAgent
-    from smolagents.bp_thinkers import DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_TOOLS
+    from smolagents.bp_thinkers import (
+        DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
+        DEFAULT_THINKER_PLANNING_INTERVAL, DEFAULT_THINKER_TOOLS,
+    )
 
     executor_type = get_env("BPSA_GLOBAL_EXECUTOR", default="exec")
 
@@ -115,11 +145,31 @@ def build_agent(model):
         model=model,
         additional_authorized_imports=["*"],
         add_base_tools=True,
-        max_steps=200,
+        max_steps=DEFAULT_THINKER_MAX_STEPS,
         executor_type=executor_type,
         compression_config=DEFAULT_THINKER_COMPRESSION,
+        planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL
     )
     return agent
+
+
+def load_agent_instructions() -> str | None:
+    """Load agent instructions from common instruction files (CLAUDE.md, AGENTS.md, etc.)."""
+    instructions = []
+    for filename in AGENT_INSTRUCTION_FILES:
+        filepath = os.path.join(os.getcwd(), filename)
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    content = f.read().strip()
+                if content:
+                    instructions.append(f"# Instructions from {filename}\n\n{content}")
+                    console.print(f"  [green]Loaded:[/] {filename}")
+            except OSError:
+                pass
+    if instructions:
+        return "\n\n---\n\n".join(instructions)
+    return None
 
 
 def count_tools(agent) -> int:
@@ -133,6 +183,16 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
             f"Tools: [green]{tool_count}[/] loaded",
             border_style="blue",
+        )
+    )
+    console.print(
+        Panel.fit(
+            "[bold red]EXTREME SECURITY RISK[/]\n"
+            "This agent has extensive access and control over the environment in which it runs,\n"
+            "including file system access, running arbitrary OS commands, and executing code.\n"
+            "Only run inside a securely isolated environment (VM or container).\n"
+            "[bold]USE AT YOUR OWN RISK.[/]",
+            border_style="red",
         )
     )
     console.print("[dim]Type /help for commands, /exit to quit.[/]\n")
@@ -191,11 +251,19 @@ def print_stats(session_stats: dict):
     console.print()
 
 
+def prepend_instructions(task: str, instructions: str | None) -> str:
+    if instructions:
+        return f"{instructions}\n\n---\n\n# Task\n\n{task}"
+    return task
+
+
 def run_one_shot(task: str):
     load_dotenv()
     model = build_model()
     agent = build_agent(model)
-    result = agent.run(task)
+    console.print("[dim]Loading agent instructions...[/]")
+    instructions = load_agent_instructions()
+    result = agent.run(prepend_instructions(task, instructions))
     console.print(result)
 
 
@@ -210,6 +278,12 @@ def run_repl():
     verbose = get_env("BPSA_VERBOSE", default="0") == "1"
 
     print_banner(model_id, server_model, tool_count)
+
+    console.print("[dim]Loading agent instructions...[/]")
+    instructions = load_agent_instructions()
+    if not instructions:
+        console.print("  [dim]No instruction files found.[/]")
+    console.print()
 
     # Try to use prompt_toolkit, fall back to basic input
     try:
@@ -239,6 +313,7 @@ def run_repl():
 
     last_answer = None
     session_stats = {"turns": 0, "total_time": 0.0}
+    first_turn = True
 
     while True:
         user_input = get_input()
@@ -265,6 +340,7 @@ def run_repl():
                 agent = build_agent(model)
                 session_stats = {"turns": 0, "total_time": 0.0}
                 last_answer = None
+                first_turn = True
                 console.print("[green]Agent reset. Conversation history cleared.[/]")
             elif cmd == "/tools":
                 print_tools(agent)
@@ -288,7 +364,9 @@ def run_repl():
                 agent.logger.level = LogLevel.INFO
             else:
                 agent.logger.level = LogLevel.ERROR
-            result = agent.run(text)
+            task_text = prepend_instructions(text, instructions) if first_turn else text
+            first_turn = False
+            result = agent.run(task_text, reset=False)
             elapsed = time.time() - start_time
             session_stats["turns"] += 1
             session_stats["total_time"] += elapsed
