@@ -178,6 +178,7 @@ system_prompt: |-
   will run in his device.
   If you try to run <runcode> or <savetofile> at your end, you will fail. But, when you respond 
   with the <runcode> and <savetofile> tags (text), these tags will be run/saved in the user's device. 
+  When coding, try to make the smallest possible code to achieve the goal keeping good code quality.
 
 planning:
   initial_plan : |-
@@ -214,6 +215,9 @@ planning:
     [ ] Gather information about this ...
     [ ] Gather information about that ...
     [ ] At your discretion, call the planner assistant tool to update the plan based on the gathered information.
+    
+    Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
+
 
   update_plan_pre_messages: |-
     Create a simple and doable plan towards solving a task.
@@ -255,6 +259,7 @@ planning:
     ...
     [ ] Step n
 
+    Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
     In the case that the task says to not code, just recommend a plan without coding.
 
 managed_agent:

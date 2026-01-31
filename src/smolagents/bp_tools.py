@@ -2543,6 +2543,7 @@ class PlanningTool(Tool):
             ## Instructions
             Write a step-by-step plan to solve the task.
             Mark completed steps with [X] and pending steps with [ ].
+            Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
             Be concise and actionable. End with <end_plan>.
         """)
 

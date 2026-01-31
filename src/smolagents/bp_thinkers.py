@@ -13,7 +13,7 @@ DEFAULT_THINKER_PLANNING_INTERVAL = None
 DEFAULT_THINKER_LOG_LEVEL = LogLevel.ERROR
 
 DEFAULT_THINKER_COMPRESSION = CompressionConfig(
-    keep_recent_steps=40,      
+    keep_recent_steps=40,
     max_uncompressed_steps=40+10,
     keep_compressed_steps=40*2,
     max_compressed_steps=40*3,
