@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.markdown import Markdown
 from rich.table import Table
 
 
@@ -455,7 +456,7 @@ def run_one_shot(task: str):
     _spinner.start()
     result = agent.run(prepend_instructions(task, instructions))
     _spinner.stop()
-    console.print(result)
+    console.print(Markdown(str(result)))
 
 
 def run_repl():
@@ -597,7 +598,9 @@ def run_repl():
             session_stats["total_output_tokens"] += turn_output
             last_answer = result
 
-            console.print(f"\n{result}\n")
+            console.print()
+            console.print(Markdown(str(result)))
+            console.print()
 
             # Per-turn summary line
             print_turn_summary(turn_num, elapsed, turn_input, turn_output)
