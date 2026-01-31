@@ -122,6 +122,12 @@ class AgentGenerationError(AgentError):
     pass
 
 
+class AgentExecutionRejected(AgentError):
+    """Exception raised when the user rejects execution of a tag (runcode, savetofile, appendtofile)"""
+
+    pass
+
+
 def make_json_serializable(obj: Any) -> Any:
     """Recursive function to make objects JSON serializable"""
     if obj is None:

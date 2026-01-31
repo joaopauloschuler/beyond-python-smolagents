@@ -37,6 +37,10 @@ console = Console()
 
 # Mutable state for verbose mode, accessible by the step callback
 _verbose = True
+# Mutable state for auto-approve mode
+_auto_approve = False
+
+TRUNCATE_PREVIEW_LINES = 5
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -278,7 +282,7 @@ def build_model():
     return model
 
 
-def build_agent(model):
+def build_agent(model, approval_callback=None):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -297,6 +301,7 @@ def build_agent(model):
         compression_config=DEFAULT_THINKER_COMPRESSION,
         planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL,
         step_callbacks=[_compact_step_callback],
+        approval_callback=approval_callback,
     )
     return agent
 
@@ -375,6 +380,7 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
         if compressed_count > 0:
             line += f" | Compressed: {compressed_count} (from {compressed_original} steps)"
         line += f" | Memory: {total_steps} steps"
+    line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)
 
@@ -404,7 +410,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 SLASH_COMMANDS = [
     "/help", "/exit", "/reset", "/tools", "/verbose",
     "/save", "/stats", "/file", "/steps", "/run", "/cd", "/pwd",
-    "/load-instructions",
+    "/load-instructions", "/auto-approve",
 ]
 
 
@@ -425,6 +431,7 @@ def print_help():
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
+    table.add_row("/auto-approve [on|off]", "Toggle or set auto-approve for tag execution")
     console.print(table)
     console.print()
 
@@ -442,6 +449,49 @@ def print_tools(agent):
         table.add_row(name, first_line)
     console.print(table)
     console.print()
+
+
+def interactive_approval_callback(tag_type: str, content: str) -> bool:
+    """Interactive approval callback for tag execution. Returns True if approved."""
+    global _auto_approve
+    if _auto_approve:
+        console.print(f"[dim]Auto-approved: {tag_type}[/]")
+        return True
+
+    # Stop spinner while prompting
+    _spinner.stop()
+
+    # Show tag type header
+    tag_label = tag_type.upper()
+    console.print(f"\n[bold yellow]{'═' * 50}[/]")
+    console.print(f"[bold yellow]  Approval required: {tag_label}[/]")
+    console.print(f"[bold yellow]{'═' * 50}[/]")
+
+    # Show truncated preview
+    lines = content.split('\n')
+    preview = '\n'.join(lines[:TRUNCATE_PREVIEW_LINES])
+    console.print(preview)
+    truncated = len(lines) > TRUNCATE_PREVIEW_LINES
+    if truncated:
+        console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, enter 'f' to see full content)[/]")
+    console.print(f"[bold yellow]{'─' * 50}[/]")
+
+    # Prompt loop
+    while True:
+        try:
+            prompt_text = "Approve? (y)es / (n)o / (f)ull: " if truncated else "Approve? (y)es / (n)o: "
+            response = input(prompt_text).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        if response == 'f' and truncated:
+            console.print(content)
+            continue
+        if response in ('y', 'yes'):
+            _spinner.start()
+            return True
+        if response in ('n', 'no'):
+            return False
+        console.print("[yellow]Please enter y, n" + (", or f" if truncated else "") + "[/]")
 
 
 def save_answer(last_answer, args: str):
@@ -578,27 +628,39 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True):
+    global _auto_approve
+    _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model)
+    agent = build_agent(model, approval_callback=interactive_approval_callback)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
         instructions = load_agent_instructions()
     _spinner.start()
-    result = agent.run(prepend_instructions(task, instructions))
-    _spinner.stop()
-    console.print(Markdown(str(result)))
+    try:
+        result = agent.run(prepend_instructions(task, instructions))
+        _spinner.stop()
+        console.print(Markdown(str(result)))
+    except Exception as e:
+        _spinner.stop()
+        from smolagents.utils import AgentExecutionRejected
+        if isinstance(e, AgentExecutionRejected):
+            console.print("\n[yellow]Execution rejected by user.[/]")
+        else:
+            raise
 
 
-def run_repl(skip_instructions: bool = False):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
+    global _auto_approve
+    _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model)
+    agent = build_agent(model, approval_callback=interactive_approval_callback)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -751,6 +813,19 @@ def run_repl(skip_instructions: bool = False):
                 else:
                     console.print("[yellow]No instruction files found.[/]")
                 continue
+            elif cmd == "/auto-approve":
+                arg = cmd_args.strip().lower()
+                if arg == "on":
+                    _auto_approve = True
+                elif arg == "off":
+                    _auto_approve = False
+                elif arg == "":
+                    _auto_approve = not _auto_approve
+                else:
+                    console.print("[yellow]Usage: /auto-approve [on|off][/]")
+                    continue
+                console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
+                continue
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
                 continue
@@ -802,7 +877,11 @@ def run_repl(skip_instructions: bool = False):
             console.print("\n[yellow]Interrupted.[/]")
         except Exception as e:
             _spinner.stop()
-            console.print(f"\n[bold red]Error:[/] {e}\n")
+            from smolagents.utils import AgentExecutionRejected
+            if isinstance(e, AgentExecutionRejected):
+                console.print("\n[yellow]Execution rejected by user.[/]")
+            else:
+                console.print(f"\n[bold red]Error:[/] {e}\n")
 
 
 def main():
@@ -816,6 +895,10 @@ def main():
         "--load-instructions", action="store_true",
         help="Load agent instruction files (CLAUDE.md, AGENTS.md, etc.) at startup",
     )
+    parser.add_argument(
+        "--auto-approve", choices=["on", "off"], default="off",
+        help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: off",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
@@ -823,20 +906,21 @@ def main():
 
     args = parser.parse_args()
     skip_instructions = not args.load_instructions
+    auto_approve = args.auto_approve == "on"
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve)
     else:
-        run_repl(skip_instructions=skip_instructions)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve)
 
 
 if __name__ == "__main__":

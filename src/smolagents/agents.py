@@ -89,6 +89,7 @@ from .tools import BaseTool, Tool, validate_tool_arguments
 from .utils import (
     AgentError,
     AgentExecutionError,
+    AgentExecutionRejected,
     AgentGenerationError,
     AgentMaxStepsError,
     AgentParsingError,
@@ -951,6 +952,9 @@ You have been provided with these additional arguments, that you can access dire
     def save_files_from_text(self, txt):
         files = self.parse_tags('savetofile', txt)
         for file in files:
+              approval_content = f"filename={file['filename']}\n{file['content']}"
+              if not self._request_approval("savetofile", approval_content):
+                  raise AgentExecutionRejected("User rejected savetofile: " + file['filename'], self.logger)
               force_directories(file['filename'])
               with open(file['filename'], 'w') as f:
                 f.write(self.replace_include_files(file['content']))
@@ -961,6 +965,9 @@ You have been provided with these additional arguments, that you can access dire
     def append_files_from_text(self, txt):
         files = self.parse_tags('appendtofile', txt)
         for file in files:
+              approval_content = f"filename={file['filename']}\n{file['content']}"
+              if not self._request_approval("appendtofile", approval_content):
+                  raise AgentExecutionRejected("User rejected appendtofile: " + file['filename'], self.logger)
               with open(file['filename'], 'a') as f:
                 f.write(self.replace_include_files(file['content']))
                 msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['filename']))+" bytes."
@@ -1659,8 +1666,10 @@ class CodeAgent(MultiStepAgent):
         stream_outputs: bool = False,
         use_structured_outputs_internally: bool = False,
         code_block_tags: str | tuple[str, str] | None = None,
+        approval_callback: Callable[[str, str], bool] | None = None,
         **kwargs,
     ):
+        self.approval_callback = approval_callback
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
@@ -1705,6 +1714,12 @@ class CodeAgent(MultiStepAgent):
         self.executor_type = executor_type
         self.executor_kwargs: dict[str, Any] = executor_kwargs or {}
         self.python_executor = executor or self.create_python_executor()
+
+    def _request_approval(self, tag_type: str, content: str) -> bool:
+        """Request user approval before executing a tag. Returns True if approved."""
+        if self.approval_callback is None:
+            return True
+        return self.approval_callback(tag_type, content)
 
     def __enter__(self):
         return self
@@ -1997,6 +2012,8 @@ You can combine the above to be able to run very large portions of python code i
         memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
+        if not self._request_approval("runcode", code_action):
+            raise AgentExecutionRejected("User rejected runcode execution.", self.logger)
         self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
         code_action = self.replace_include_tags(code_action, saved_files)
         code_action = self.replace_append_tags(code_action, appended_files)
