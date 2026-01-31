@@ -556,20 +556,22 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str):
+def run_one_shot(task: str, skip_instructions: bool = False):
     try_load_dotenv()
     check_required_env()
     model = build_model()
     agent = build_agent(model)
-    console.print("[dim]Loading agent instructions...[/]")
-    instructions = load_agent_instructions()
+    instructions = None
+    if not skip_instructions:
+        console.print("[dim]Loading agent instructions...[/]")
+        instructions = load_agent_instructions()
     _spinner.start()
     result = agent.run(prepend_instructions(task, instructions))
     _spinner.stop()
     console.print(Markdown(str(result)))
 
 
-def run_repl():
+def run_repl(skip_instructions: bool = False):
     try_load_dotenv()
     check_required_env()
 
@@ -584,10 +586,14 @@ def run_repl():
 
     print_banner(model_id, server_model, tool_count)
 
-    console.print("[dim]Loading agent instructions...[/]")
-    instructions = load_agent_instructions()
-    if not instructions:
-        console.print("  [dim]No instruction files found.[/]")
+    instructions = None
+    if not skip_instructions:
+        console.print("[dim]Loading agent instructions...[/]")
+        instructions = load_agent_instructions()
+        if not instructions:
+            console.print("  [dim]No instruction files found.[/]")
+    else:
+        console.print("[dim]Skipping agent instruction files.[/]")
     console.print()
 
     # Try to use prompt_toolkit, fall back to basic input
@@ -595,14 +601,29 @@ def run_repl():
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import WordCompleter
         from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.key_binding import KeyBindings
 
         history_file = os.path.expanduser("~/.bpsa_history")
         completer = WordCompleter(SLASH_COMMANDS, sentence=True)
-        session = PromptSession(history=FileHistory(history_file), completer=completer)
+
+        # Key bindings: Enter submits, Alt+Enter and Shift+Enter insert newline
+        bindings = KeyBindings()
+
+        @bindings.add("escape", "enter")  # Alt+Enter
+        def handle_alt_enter(event):
+            event.current_buffer.insert_text("\n")
+
+
+        session = PromptSession(
+            history=FileHistory(history_file),
+            completer=completer,
+            key_bindings=bindings,
+        )
 
         def get_input():
             try:
                 console.print(Rule(style="dim"))
+                console.print("[dim]Enter to submit, Alt+Enter for newline[/]")
                 return session.prompt("> ")
             except EOFError:
                 return None
@@ -760,26 +781,31 @@ def main():
         prog="bpsa",
         description="Beyond Python SmolAgents - Interactive AI agent CLI",
     )
+    parser.add_argument(
+        "--no-instructions", action="store_true",
+        help="Do not load agent instruction files (CLAUDE.md, AGENTS.md, etc.)",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
     run_parser.add_argument("task", type=str, help="The task to execute")
 
     args = parser.parse_args()
+    skip_instructions = args.no_instructions
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task)
+            run_one_shot(task, skip_instructions=skip_instructions)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task)
+        run_one_shot(args.task, skip_instructions=skip_instructions)
     else:
-        run_repl()
+        run_repl(skip_instructions=skip_instructions)
 
 
 if __name__ == "__main__":

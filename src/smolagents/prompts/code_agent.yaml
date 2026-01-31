@@ -194,6 +194,9 @@ planning:
     ```
     {{task}}
     ```
+    In the case that the user is just saying "hello" or asking something simple that does not require a plan,
+    just recommend a reply instead of a plan. Only write the plan if the task requires multiple steps to be solved.
+
   update_plan_pre_messages: |-
     You are a world expert at analyzing a situation, and plan accordingly towards solving a task.
     You have been given the following task:
