@@ -21,7 +21,6 @@ import os
 import re
 import subprocess
 import sys
-import threading
 import time
 
 from dotenv import load_dotenv
@@ -79,37 +78,55 @@ MODEL_REQUIRED_VARS = {
     "GoogleColabModel": [],
 }
 
-
 class Spinner:
-    """A simple threaded spinner that doesn't conflict with agent output."""
-    FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-    def __init__(self, message: str = "Thinking..."):
+    """Improved spinner using Rich library for better UX and reliability."""
+    
+    def __init__(self, message: str = "Thinking...", style: str = "dots", color: str = "cyan"):
+        """Initialize spinner with Rich components.
+        
+        Args:
+            message: The message to display next to the spinner
+            style: Rich spinner style (dots, line, pipe, etc.)
+            color: Color for the message text
+        """
+        from rich.spinner import Spinner as RichSpinner
+        from rich.live import Live
+        
         self.message = message
-        self._stop_event = threading.Event()
-        self._thread = None
-
-    def _run(self):
-        i = 0
-        while not self._stop_event.is_set():
-            frame = self.FRAMES[i % len(self.FRAMES)]
-            print(f"\r{frame} {self.message}", end="", flush=True)
-            i += 1
-            self._stop_event.wait(0.1)
-        # Clear the spinner line
-        print("\r" + " " * (len(self.message) + 4) + "\r", end="", flush=True)
-
+        self.style = style
+        self.color = color
+        self.spinner = RichSpinner(style, text=f"[{color}]{message}[/{color}]\n")
+        self.live = None
+    
     def start(self):
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
+        """Start the spinner animation."""
+        if not self.live:
+            from rich.live import Live
+            self.live = Live(
+                self.spinner,
+                console=console,
+                refresh_per_second=10,
+                transient=True  # Spinner disappears when stopped
+            )
+            self.live.start()
+    
     def stop(self):
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join()
-            self._thread = None
-
+        """Stop the spinner animation cleanly."""
+        if self.live:
+            self.live.stop()
+            console.print()  # Add line feed after spinner stops
+            self.live = None
+    
+    def update(self, message: str):
+        """Update the spinner message while it's running.
+        
+        Args:
+            message: New message to display
+        """
+        self.message = message
+        self.spinner.text = f"[{self.color}]{message}[/{self.color}]"
+        if self.live:
+            self.live.update(self.spinner)
 
 # Global spinner instance
 _spinner = Spinner("Agent is thinking...")
