@@ -408,9 +408,9 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 
 
 SLASH_COMMANDS = [
-    "/help", "/exit", "/reset", "/tools", "/verbose",
-    "/save", "/stats", "/file", "/steps", "/run", "/cd", "/pwd",
-    "/load-instructions", "/auto-approve",
+    "/auto-approve", "/cd", "/exit", "/file", "/help",
+    "/load-instructions", "/pwd", "/reset", "/run", "/save",
+    "/stats", "/steps", "/tools", "/verbose",
 ]
 
 
@@ -418,20 +418,20 @@ def print_help():
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
     table.add_column("Command", style="bold cyan")
     table.add_column("Description")
-    table.add_row("/help", "Show this help message")
+    table.add_row("/auto-approve [on|off]", "Toggle or set auto-approve for tag execution")
+    table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/exit", "Exit the REPL")
+    table.add_row("/file <path>", "Load a file's content as the prompt")
+    table.add_row("/help", "Show this help message")
+    table.add_row("/load-instructions", "Load agent instruction files into next prompt")
+    table.add_row("/pwd", "Show current working directory")
     table.add_row("/reset", "Clear conversation history and reset the agent")
-    table.add_row("/tools", "List all loaded tools")
-    table.add_row("/verbose", "Toggle verbose output")
+    table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/stats", "Show session statistics")
-    table.add_row("/file <path>", "Load a file's content as the prompt")
     table.add_row("/steps <N>", "Change max_steps for the agent")
-    table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
-    table.add_row("/cd <dir>", "Change working directory")
-    table.add_row("/pwd", "Show current working directory")
-    table.add_row("/load-instructions", "Load agent instruction files into next prompt")
-    table.add_row("/auto-approve [on|off]", "Toggle or set auto-approve for tag execution")
+    table.add_row("/tools", "List all loaded tools")
+    table.add_row("/verbose", "Toggle verbose output")
     console.print(table)
     console.print()
 
