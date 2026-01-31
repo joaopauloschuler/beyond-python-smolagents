@@ -14,10 +14,11 @@ Environment variables:
     BPSA_POSTPEND_STRING - String to append to model outputs (default: '')
     BPSA_GLOBAL_EXECUTOR - Executor type (default: exec)
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
-    BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
+    BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
 """
 
 import os
+import re
 import sys
 import threading
 import time
@@ -31,6 +32,9 @@ from rich.table import Table
 
 VERSION = "1.23-bp"
 console = Console()
+
+# Mutable state for verbose mode, accessible by the step callback
+_verbose = True
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -101,8 +105,71 @@ class Spinner:
             self._thread = None
 
 
-# Global spinner instance, stopped by step callback
+# Global spinner instance
 _spinner = Spinner("Agent is thinking...")
+
+
+def _extract_thoughts(model_output: str) -> str:
+    """Extract content from <thoughts> tags in model output."""
+    if not model_output:
+        return ""
+    match = re.search(r"<thoughts>(.*?)</thoughts>", model_output, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _compact_step_callback(step):
+    """Step callback that prints a compact one-liner when verbose is off."""
+    if _verbose:
+        return
+
+    _spinner.stop()
+
+    step_num = getattr(step, "step_number", "?")
+    duration = ""
+    if hasattr(step, "timing") and step.timing and step.timing.duration is not None:
+        duration = f"{step.timing.duration:.1f}s"
+
+    tokens = ""
+    if hasattr(step, "token_usage") and step.token_usage:
+        total = step.token_usage.input_tokens + step.token_usage.output_tokens
+        tokens = f"{total:,} tok"
+
+    # Extract thoughts for a brief summary
+    thoughts = ""
+    model_output = getattr(step, "model_output", None)
+    if isinstance(model_output, str):
+        thoughts = _extract_thoughts(model_output)
+    if len(thoughts) > 80:
+        thoughts = thoughts[:77] + "..."
+
+    is_final = getattr(step, "is_final_answer", False)
+    has_error = getattr(step, "error", None) is not None
+
+    # Build the status icon
+    if has_error:
+        icon = "[red]✗[/]"
+    elif is_final:
+        icon = "[green]★[/]"
+    else:
+        icon = "[green]✓[/]"
+
+    # Build the line
+    parts = [f"{icon} [bold]Step {step_num}[/]"]
+    if duration:
+        parts.append(f"[dim]{duration}[/]")
+    if tokens:
+        parts.append(f"[dim]{tokens}[/]")
+    if is_final:
+        parts.append("[bold green]Final answer[/]")
+    elif has_error:
+        error_msg = str(step.error)[:60]
+        parts.append(f"[red]{error_msg}[/]")
+    elif thoughts:
+        parts.append(f"[dim italic]{thoughts}[/]")
+
+    console.print(" | ".join(parts))
 
 
 def fail(msg: str):
@@ -227,6 +294,7 @@ def build_agent(model):
         executor_type=executor_type,
         compression_config=DEFAULT_THINKER_COMPRESSION,
         planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL,
+        step_callbacks=[_compact_step_callback],
     )
     return agent
 
@@ -399,7 +467,9 @@ def run_repl():
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
-    verbose = get_env("BPSA_VERBOSE", default="0") == "1"
+    global _verbose
+    verbose = get_env("BPSA_VERBOSE", default="1") == "1"
+    _verbose = verbose
 
     print_banner(model_id, server_model, tool_count)
 
@@ -483,7 +553,8 @@ def run_repl():
                 print_tools(agent)
             elif cmd == "/verbose":
                 verbose = not verbose
-                console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off'}[/]")
+                _verbose = verbose
+                console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
             elif cmd == "/save":
                 save_answer(last_answer, cmd_args)
             elif cmd == "/stats":
@@ -508,9 +579,9 @@ def run_repl():
                 agent.logger.level = LogLevel.INFO
             else:
                 agent.logger.level = LogLevel.ERROR
+            _spinner.start()
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
-            _spinner.start()
             result = agent.run(task_text, reset=False)
             _spinner.stop()
             elapsed = time.time() - start_time
