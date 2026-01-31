@@ -54,6 +54,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `prompts/` - YAML prompt templates for different agent types
 
 ### Beyond Python (BP) Extensions
+- `bp_cli.py` - Interactive CLI (`bpsa`): REPL and one-shot modes with CodeAgent, slash commands, token tracking
 - `bp_tools.py` - Extended tool library: file I/O, source code analysis, OS commands, multi-language support (24+ languages including Pascal, PHP, C++, Java, Go, Rust)
 - `bp_thinkers.py` - `Thinker` agent with multi-step reasoning (thoughts/plans/code sections)
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
@@ -105,6 +106,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Modify Python execution | `src/smolagents/local_python_executor.py` |
 | Add remote executor | `src/smolagents/remote_executors.py` |
 | Configure context compression | `src/smolagents/bp_compression.py` |
+| Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
 
 ## Testing
 

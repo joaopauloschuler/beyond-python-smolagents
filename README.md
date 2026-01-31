@@ -72,6 +72,36 @@ To get started with Beyond Python Smolagents, follow these steps:
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
 
+## CLI (`bpsa`)
+
+Beyond Python Smolagents includes an interactive CLI called `bpsa`. It provides a multi-turn REPL powered by `CodeAgent` with all `DEFAULT_THINKER_TOOLS` and context compression enabled.
+
+### Environment Variables
+
+Configure `bpsa` via environment variables or a `.env` file in your working directory:
+
+Supported model classes: `OpenAIServerModel`, `LiteLLMModel`, `LiteLLMRouterModel`, `InferenceClientModel`, `TransformersModel`, `AzureOpenAIServerModel`, `AmazonBedrockModel`, `VLLMModel`, `MLXModel`, `GoogleColabModel`.
+
+Example `.env` file:
+```
+BPSA_SERVER_MODEL=OpenAIServerModel
+BPSA_API_ENDPOINT=https://api.poe.com/v1
+BPSA_KEY_VALUE=your_api_key
+BPSA_MODEL_ID=Gemini-2.5-Flash
+BPSA_MAX_TOKENS=64000
+```
+
+### Usage
+
+```bash
+bpsa                              # Interactive REPL (default)
+bpsa run "task description"       # One-shot mode
+echo "task" | bpsa                # Piped input
+bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
+```
+
+The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
+
 ## Basic usage (single agent)
 Create a single agent with various tools for working with different programming languages:
 ```

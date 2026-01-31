@@ -384,6 +384,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 SLASH_COMMANDS = [
     "/help", "/exit", "/reset", "/tools", "/verbose",
     "/save", "/stats", "/file", "/steps", "/run", "/cd", "/pwd",
+    "/load-instructions",
 ]
 
 
@@ -403,6 +404,7 @@ def print_help():
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/pwd", "Show current working directory")
+    table.add_row("/load-instructions", "Load agent instruction files into next prompt")
     console.print(table)
     console.print()
 
@@ -720,6 +722,15 @@ def run_repl(skip_instructions: bool = False):
             elif cmd == "/pwd":
                 console.print(f"[cyan]{os.getcwd()}[/]")
                 continue
+            elif cmd == "/load-instructions":
+                console.print("[dim]Loading agent instructions...[/]")
+                instructions = load_agent_instructions()
+                if instructions:
+                    first_turn = True
+                    console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
+                else:
+                    console.print("[yellow]No instruction files found.[/]")
+                continue
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
                 continue
@@ -782,8 +793,8 @@ def main():
         description="Beyond Python SmolAgents - Interactive AI agent CLI",
     )
     parser.add_argument(
-        "--no-instructions", action="store_true",
-        help="Do not load agent instruction files (CLAUDE.md, AGENTS.md, etc.)",
+        "--load-instructions", action="store_true",
+        help="Load agent instruction files (CLAUDE.md, AGENTS.md, etc.) at startup",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -791,7 +802,7 @@ def main():
     run_parser.add_argument("task", type=str, help="The task to execute")
 
     args = parser.parse_args()
-    skip_instructions = args.no_instructions
+    skip_instructions = not args.load_instructions
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

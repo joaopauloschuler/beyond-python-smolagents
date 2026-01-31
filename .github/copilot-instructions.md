@@ -6,7 +6,7 @@ Highlights
 
 - Big picture: this repo is an extended fork of HuggingFace's `smolagents`. Core logic lives under `src/smolagents/` (agents, tools, thinkers) and higher-level examples/tests live in `examples/` and `tests/`.
 
-- Read first (fast path): `src/smolagents/agents.py` (agent lifecycle, tools, memory), `src/smolagents/bp_thinkers.py` (multi-agent solvers: `evolutive_problem_solver` / `fast_solver`), `src/smolagents/bp_tools.py` (repo-specific tools and file/OS helpers), `src/smolagents/cli.py` (how models and tools are wired at runtime).
+- Read first (fast path): `src/smolagents/agents.py` (agent lifecycle, tools, memory), `src/smolagents/bp_thinkers.py` (multi-agent solvers: `evolutive_problem_solver` / `fast_solver`), `src/smolagents/bp_tools.py` (repo-specific tools and file/OS helpers), `src/smolagents/bp_cli.py` (interactive CLI `bpsa`: REPL, one-shot mode, slash commands, token tracking), `src/smolagents/cli.py` (original smolagents CLI).
 
 Essential repo conventions (do not change without checking usage)
 
@@ -18,7 +18,8 @@ Essential repo conventions (do not change without checking usage)
 Developer workflows & examples
 
 - Install for dev and tests: pip install -e .[test] (Python >= 3.10). Tests are run with pytest from the repo root (see `pyproject.toml` optional deps).
-- Run the CLI example locally: python -m smolagents.cli "<prompt>" --model-type LiteLLMModel --model-id <id> --api-key <key>. `cli.py` shows how models (LiteLLMModel, TransformersModel, InferenceClientModel, OpenAIServerModel) and tools are resolved.
+- Run the BP CLI (`bpsa`): configure via `BPSA_MODEL_ID`, `BPSA_SERVER_MODEL`, `BPSA_API_ENDPOINT`, `BPSA_KEY_VALUE` env vars (or a `.env` file), then run `bpsa` for interactive REPL or `bpsa run "task"` for one-shot. See `bp_cli.py` for implementation.
+- Run the original CLI: python -m smolagents.cli "<prompt>" --model-type LiteLLMModel --model-id <id> --api-key <key>. `cli.py` shows how models (LiteLLMModel, TransformersModel, InferenceClientModel, OpenAIServerModel) and tools are resolved.
 - Small example: create a CodeAgent with explicit tools (see `bp_thinkers.get_local_agent`) and call agent.run(prompt). Use `source_code_to_string()` to ingest files for documentation tasks.
 
 Integration points and tests to check when changing behavior
