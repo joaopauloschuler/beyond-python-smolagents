@@ -451,6 +451,30 @@ def print_tools(agent):
     console.print()
 
 
+
+def _getch():
+    """Read a single keypress without requiring Enter. Cross-platform."""
+    try:
+        # Try Windows first
+        import msvcrt
+        key = msvcrt.getch()
+        # msvcrt returns bytes, decode to string
+        return key.decode('utf-8', errors='ignore').lower()
+    except ImportError:
+        # Unix/Linux/Mac
+        import sys
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            key = sys.stdin.read(1)
+            return key.lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -473,25 +497,28 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     console.print(preview)
     truncated = len(lines) > TRUNCATE_PREVIEW_LINES
     if truncated:
-        console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, enter 'f' to see full content)[/]")
+        console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, press 'f' to see full content)[/]")
     console.print(f"[bold yellow]{'─' * 50}[/]")
 
-    # Prompt loop
+    # Prompt loop with single-key input
     while True:
         try:
             prompt_text = "Approve? (y)es / (n)o / (f)ull: " if truncated else "Approve? (y)es / (n)o: "
-            response = input(prompt_text).strip().lower()
+            console.print(prompt_text, end='', style="bold cyan")
+            response = _getch()
+            console.print(response)  # Echo the key pressed
         except (EOFError, KeyboardInterrupt):
+            console.print()  # New line
             return False
         if response == 'f' and truncated:
             console.print(content)
             continue
-        if response in ('y', 'yes'):
+        if response in ('y',):
             _spinner.start()
             return True
-        if response in ('n', 'no'):
+        if response in ('n',):
             return False
-        console.print("[yellow]Please enter y, n" + (", or f" if truncated else "") + "[/]")
+        console.print("[yellow]Please press y, n" + (", or f" if truncated else "") + "[/]")
 
 
 def save_answer(last_answer, args: str):
