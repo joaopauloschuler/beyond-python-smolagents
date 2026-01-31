@@ -342,6 +342,7 @@ class MultiStepAgent(ABC):
         self.max_steps = max_steps
         self.step_number = 0
         self.planning_interval = planning_interval
+        self._last_plan_step = 0
         self.state: dict[str, Any] = {}
         self.name = self._validate_name(name)
         self.description = description
@@ -587,9 +588,10 @@ You have been provided with these additional arguments, that you can access dire
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
 
-            # Run a planning step if scheduled
+            # Run a planning step if scheduled (reset when PlanningTool is used)
             if self.planning_interval is not None and (
-                self.step_number == 1 or (self.step_number - 1) % self.planning_interval == 0
+                self.step_number == 1
+                or (self.step_number - self._last_plan_step) >= self.planning_interval
             ):
                 planning_start_time = time.time()
                 planning_step = None
@@ -606,6 +608,7 @@ You have been provided with these additional arguments, that you can access dire
                 )
                 self._finalize_step(planning_step)
                 self.memory.steps.append(planning_step)
+                self._last_plan_step = self.step_number
 
             # Start action step!
             action_step_start_time = time.time()

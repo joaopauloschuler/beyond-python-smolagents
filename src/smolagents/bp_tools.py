@@ -2556,4 +2556,7 @@ class PlanningTool(Tool):
         response = model.generate(input_messages, stop_sequences=["<end_plan>"])
         plan_text = response.content if isinstance(response.content, str) else str(response.content)
 
+        # Reset the planning interval so the next scheduled plan counts from this step
+        agent._last_plan_step = agent.step_number
+
         return plan_text
