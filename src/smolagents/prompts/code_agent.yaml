@@ -189,6 +189,20 @@ planning:
     ...
     [ ] Step n
     After writing the final step of the plan, write the '<end_plan>' tag and stop there.
+
+    The agent executing your plan has access to these tools:
+    {%- for tool in tools.values() %}
+    - {{ tool.name }}: {{ tool.description }}
+    {%- endfor %}
+    {%- if managed_agents and managed_agents.values() | list %}
+
+    The agent can also delegate tasks to these team members:
+    {%- for agent in managed_agents.values() %}
+    - {{ agent.name }}: {{ agent.description }}
+    {%- endfor %}
+    {%- endif %}
+
+    Take these capabilities into account when formulating your plan.
     ---
     Now begin! Here is your task:
     ```
@@ -217,6 +231,20 @@ planning:
 
     Find the task and history below:
   update_plan_post_messages: |-
+    The agent executing your plan has access to these tools:
+    {%- for tool in tools.values() %}
+    - {{ tool.name }}: {{ tool.description }}
+    {%- endfor %}
+    {%- if managed_agents and managed_agents.values() | list %}
+
+    The agent can also delegate tasks to these team members:
+    {%- for agent in managed_agents.values() %}
+    - {{ agent.name }}: {{ agent.description }}
+    {%- endfor %}
+    {%- endif %}
+
+    Take these capabilities into account when formulating your updated plan.
+
     Write a step-by-step high-level plan to solve the task above.
     [X] Step 1
     [X] Step 2
