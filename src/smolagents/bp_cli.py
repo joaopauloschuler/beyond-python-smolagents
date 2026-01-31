@@ -490,6 +490,7 @@ def run_repl():
 
         def get_input():
             try:
+                console.print(Rule(style="dim"))
                 return session.prompt("> ")
             except EOFError:
                 return None
@@ -499,6 +500,7 @@ def run_repl():
     except ImportError:
         def get_input():
             try:
+                console.print(Rule(style="dim"))
                 return input("> ")
             except EOFError:
                 return None
