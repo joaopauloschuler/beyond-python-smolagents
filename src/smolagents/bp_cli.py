@@ -349,14 +349,34 @@ def get_agent_token_usage(agent):
         return 0, 0
 
 
-def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_tokens: int):
+def get_compression_stats(agent):
+    """Get context compression statistics from the agent's memory."""
+    try:
+        from smolagents.bp_compression import CompressedHistoryStep
+        steps = agent.memory.steps
+        total_steps = len(steps)
+        compressed_count = sum(1 for s in steps if isinstance(s, CompressedHistoryStep))
+        compressed_original = sum(s.original_step_count for s in steps if isinstance(s, CompressedHistoryStep))
+        return total_steps, compressed_count, compressed_original
+    except Exception:
+        return 0, 0, 0
+
+
+def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_tokens: int, agent=None):
     """Print a one-line summary after each turn."""
     total = input_tokens + output_tokens
-    console.print(
+    line = (
         f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
         f"In: {format_tokens(input_tokens)} | Out: {format_tokens(output_tokens)} | "
-        f"Total: {format_tokens(total)}[/]"
+        f"Total: {format_tokens(total)}"
     )
+    if agent is not None:
+        total_steps, compressed_count, compressed_original = get_compression_stats(agent)
+        if compressed_count > 0:
+            line += f" | Compressed: {compressed_count} (from {compressed_original} steps)"
+        line += f" | Memory: {total_steps} steps"
+    line += "[/]"
+    console.print(line)
 
 
 def print_banner(model_id: str, server_model: str, tool_count: int):
@@ -774,7 +794,7 @@ def run_repl(skip_instructions: bool = False):
             console.print()
 
             # Per-turn summary line
-            print_turn_summary(turn_num, elapsed, turn_input, turn_output)
+            print_turn_summary(turn_num, elapsed, turn_input, turn_output, agent)
             console.print()
 
         except KeyboardInterrupt:
