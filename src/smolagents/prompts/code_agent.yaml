@@ -210,6 +210,10 @@ planning:
     In the case that the user is just saying "hello" or asking something simple that does not require a plan,
     just recommend a reply instead of a plan. Only write the plan if the task requires multiple steps to be solved.
     In the case that the task says to not code, just recommend a plan without coding.
+    If the plan can be improoved after gathering more information, you can write a plan like this:
+    [ ] Gather information about this ...
+    [ ] Gather information about that ...
+    [ ] At your discretion, call the planner assistant tool to update the plan based on the gathered information.
 
   update_plan_pre_messages: |-
     Create a simple and doable plan towards solving a task.

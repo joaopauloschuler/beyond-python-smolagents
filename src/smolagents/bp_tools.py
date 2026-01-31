@@ -2,11 +2,13 @@
 
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
+from .models import ChatMessage, MessageRole
 import difflib
 import os
 import subprocess
 import shlex
 import re
+import textwrap
 from slugify import slugify
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
@@ -2446,3 +2448,112 @@ def delete_lines_from_file(filename: str, start_line: int, end_line: int = None)
         f.write(content)
 
     return content
+
+
+class PlanningTool(Tool):
+    """A tool that lets the agent trigger a planning step on demand.
+
+    The tool makes a single LLM call (no tools, no agent loop) to generate or
+    update a plan based on the current task, memory, and available capabilities.
+    It must be bound to an agent via ``set_agent`` before use.
+    """
+
+    name = "plan"
+    description = (
+        "Call this tool whenever you need help to create or update your plan. "
+        "Use it when starting a complex task, when your current approach is failing, "
+        "when the task scope changes, or when you feel stuck. "
+        "Provide a short summary of what happened so far and what you need to plan for."
+        "I do have access to your recent steps."
+    )
+    inputs = {
+        "situation": {
+            "type": "string",
+            "description": (
+                "A brief description of the current situation: what has been tried, "
+                "what worked, what failed, and what needs to be planned next."
+            ),
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, model=None, **kwargs):
+        super().__init__(**kwargs)
+        self._agent = None
+        self._planning_model = model
+
+    def set_agent(self, agent):
+        """Bind this tool to an agent so it can access task, memory, tools, and model."""
+        self._agent = agent
+
+    def forward(self, situation: str) -> str:
+        if self._agent is None:
+            return "Error: PlanningTool is not bound to an agent. Call set_agent() first."
+
+        agent = self._agent
+        model = self._planning_model or agent.model
+        task = agent.task or "No task set"
+        remaining_steps = agent.max_steps - agent.step_number
+
+        # Build tool/agent capability list
+        capabilities = []
+        for t in agent.tools.values():
+            if t.name != self.name:  # Don't list ourselves
+                capabilities.append(f"- {t.name}: {t.description}")
+        if hasattr(agent, "managed_agents") and agent.managed_agents:
+            for a in agent.managed_agents.values():
+                capabilities.append(f"- {a.name} (team member): {a.description}")
+        capabilities_text = "\n".join(capabilities) if capabilities else "No tools available."
+
+        # Build memory summary (last steps only, to keep prompt small)
+        memory_summary = ""
+        if agent.memory and agent.memory.steps:
+            recent = agent.memory.steps[-22:]
+            parts = []
+            for step in recent:
+                messages = step.to_messages(summary_mode=True)
+                for msg in messages:
+                    if isinstance(msg.content, str):
+                        parts.append(msg.content[:5000])
+                    elif isinstance(msg.content, list):
+                        for block in msg.content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                parts.append(block["text"][:5000])
+            memory_summary = "\n---\n".join(parts)
+
+        prompt = textwrap.dedent(f"""\
+            You are a planning assistant. Your ONLY job is to produce a clear,actionable plan.
+            Do NOT write code. Do NOT execute actions. Just plan.
+
+            ## Task
+            {task}
+
+            ## Current situation
+            {situation}
+
+            ## Recent history
+            {memory_summary if memory_summary else "No history yet."}
+
+            ## Available capabilities
+            {capabilities_text}
+
+            ## Constraints
+            - {remaining_steps} steps remaining.
+
+            ## Instructions
+            Write a step-by-step plan to solve the task.
+            Mark completed steps with [X] and pending steps with [ ].
+            Be concise and actionable. End with <end_plan>.
+        """)
+
+        input_messages = [
+            ChatMessage(
+                role=MessageRole.USER,
+                content=[{"type": "text", "text": prompt}],
+            )
+        ]
+
+        response = model.generate(input_messages, stop_sequences=["<end_plan>"])
+        plan_text = response.content if isinstance(response.content, str) else str(response.content)
+
+        return plan_text

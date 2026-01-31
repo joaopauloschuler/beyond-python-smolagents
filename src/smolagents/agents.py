@@ -351,6 +351,7 @@ class MultiStepAgent(ABC):
         self.instructions = instructions
         self._setup_managed_agents(managed_agents)
         self._setup_tools(tools, add_base_tools)
+        self._bind_planning_tools()
         self._validate_tools_and_managed_agents(tools, managed_agents)
 
         self.task: str | None = None
@@ -415,6 +416,17 @@ class MultiStepAgent(ABC):
                 }
             )
         self.tools.setdefault("final_answer", FinalAnswerTool())
+
+    def _bind_planning_tools(self):
+        """If planning is enabled, ensure a PlanningTool is present and bind it to this agent."""
+        from .bp_tools import PlanningTool
+
+        if self.planning_interval is not None and "plan" not in self.tools:
+            self.tools["plan"] = PlanningTool()
+
+        for tool in self.tools.values():
+            if isinstance(tool, PlanningTool):
+                tool.set_agent(self)
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]

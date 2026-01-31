@@ -299,7 +299,7 @@ def build_agent(model, approval_callback=None):
         max_steps=DEFAULT_THINKER_MAX_STEPS,
         executor_type=executor_type,
         compression_config=DEFAULT_THINKER_COMPRESSION,
-        planning_interval=DEFAULT_THINKER_PLANNING_INTERVAL,
+        planning_interval=22,
         step_callbacks=[_compact_step_callback],
         approval_callback=approval_callback,
     )

@@ -9,14 +9,14 @@ import shutil
 DEFAULT_THINKER_STEP_CALLBACKS = []
 DEFAULT_THINKER_MAX_STEPS = 200
 DEFAULT_THINKER_EXECUTOR_TYPE = 'exec'
-DEFAULT_THINKER_PLANNING_INTERVAL = 22
+DEFAULT_THINKER_PLANNING_INTERVAL = None
 DEFAULT_THINKER_LOG_LEVEL = LogLevel.ERROR
 
 DEFAULT_THINKER_COMPRESSION = CompressionConfig(
-    keep_recent_steps=DEFAULT_THINKER_PLANNING_INTERVAL,      
-    max_uncompressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL+10,
-    keep_compressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL*2,
-    max_compressed_steps=DEFAULT_THINKER_PLANNING_INTERVAL*3,
+    keep_recent_steps=40,      
+    max_uncompressed_steps=40+10,
+    keep_compressed_steps=40*2,
+    max_compressed_steps=40*3,
     preserve_error_steps=False
 )
 
