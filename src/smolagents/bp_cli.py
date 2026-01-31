@@ -19,15 +19,16 @@ Environment variables:
 
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
 
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
-from rich.markdown import Markdown
 from rich.table import Table
 
 
@@ -374,6 +375,12 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
     console.print("[dim]Type /help for commands, /verbose to toggle verbosity, /exit to quit.[/]\n")
 
 
+SLASH_COMMANDS = [
+    "/help", "/exit", "/reset", "/tools", "/verbose",
+    "/save", "/stats", "/file", "/steps", "/run", "/cd", "/pwd",
+]
+
+
 def print_help():
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
     table.add_column("Command", style="bold cyan")
@@ -385,6 +392,11 @@ def print_help():
     table.add_row("/verbose", "Toggle verbose output")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/stats", "Show session statistics")
+    table.add_row("/file <path>", "Load a file's content as the prompt")
+    table.add_row("/steps <N>", "Change max_steps for the agent")
+    table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
+    table.add_row("/cd <dir>", "Change working directory")
+    table.add_row("/pwd", "Show current working directory")
     console.print(table)
     console.print()
 
@@ -440,6 +452,96 @@ def print_stats(session_stats: dict):
     console.print()
 
 
+def load_file_as_prompt(args: str) -> str | None:
+    """Load a file's content to use as a prompt."""
+    filepath = args.strip()
+    if not filepath:
+        console.print("[yellow]Usage: /file <path>[/]")
+        return None
+    filepath = os.path.expanduser(filepath)
+    if not os.path.isabs(filepath):
+        filepath = os.path.join(os.getcwd(), filepath)
+    if not os.path.isfile(filepath):
+        console.print(f"[red]File not found: {filepath}[/]")
+        return None
+    try:
+        with open(filepath, "r") as f:
+            content = f.read()
+        console.print(f"[green]Loaded {len(content):,} chars from {filepath}[/]")
+        return content
+    except OSError as e:
+        console.print(f"[red]Error reading file: {e}[/]")
+        return None
+
+
+def change_steps(agent, args: str):
+    """Change the agent's max_steps."""
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current max_steps: {agent.max_steps}[/]")
+        console.print("[dim]Usage: /steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 1:
+            console.print("[red]Steps must be at least 1.[/]")
+            return
+        agent.max_steps = n
+        console.print(f"[green]max_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /steps <N>[/]")
+
+
+def run_script(agent, args: str):
+    """Execute a Python script in the agent's executor."""
+    filepath = args.strip()
+    if not filepath:
+        console.print("[yellow]Usage: /run <script.py>[/]")
+        return
+    filepath = os.path.expanduser(filepath)
+    if not os.path.isabs(filepath):
+        filepath = os.path.join(os.getcwd(), filepath)
+    if not os.path.isfile(filepath):
+        console.print(f"[red]File not found: {filepath}[/]")
+        return
+    try:
+        with open(filepath, "r") as f:
+            code = f.read()
+        console.print(f"[dim]Running {filepath}...[/]")
+        result = subprocess.run(
+            [sys.executable, filepath],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.stdout:
+            console.print(result.stdout)
+        if result.stderr:
+            console.print(f"[red]{result.stderr}[/]")
+        if result.returncode == 0:
+            console.print(f"[green]Script finished (exit code 0)[/]")
+        else:
+            console.print(f"[yellow]Script finished (exit code {result.returncode})[/]")
+    except subprocess.TimeoutExpired:
+        console.print("[red]Script timed out (300s limit).[/]")
+    except OSError as e:
+        console.print(f"[red]Error running script: {e}[/]")
+
+
+def change_directory(args: str):
+    """Change the working directory."""
+    dirpath = args.strip()
+    if not dirpath:
+        console.print("[yellow]Usage: /cd <dir>[/]")
+        return
+    dirpath = os.path.expanduser(dirpath)
+    if not os.path.isabs(dirpath):
+        dirpath = os.path.join(os.getcwd(), dirpath)
+    try:
+        os.chdir(dirpath)
+        console.print(f"[green]Changed to {os.getcwd()}[/]")
+    except OSError as e:
+        console.print(f"[red]Error: {e}[/]")
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return f"{instructions}\n\n---\n\n# Task\n\n{task}"
@@ -483,10 +585,12 @@ def run_repl():
     # Try to use prompt_toolkit, fall back to basic input
     try:
         from prompt_toolkit import PromptSession
+        from prompt_toolkit.completion import WordCompleter
         from prompt_toolkit.history import FileHistory
 
         history_file = os.path.expanduser("~/.bpsa_history")
-        session = PromptSession(history=FileHistory(history_file))
+        completer = WordCompleter(SLASH_COMMANDS, sentence=True)
+        session = PromptSession(history=FileHistory(history_file), completer=completer)
 
         def get_input():
             try:
@@ -541,6 +645,7 @@ def run_repl():
                 break
             elif cmd == "/help":
                 print_help()
+                continue
             elif cmd == "/reset":
                 agent = build_agent(model)
                 session_stats = {
@@ -552,19 +657,43 @@ def run_repl():
                 last_answer = None
                 first_turn = True
                 console.print("[green]Agent reset. Conversation history cleared.[/]")
+                continue
             elif cmd == "/tools":
                 print_tools(agent)
+                continue
             elif cmd == "/verbose":
                 verbose = not verbose
                 _verbose = verbose
                 console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
+                continue
             elif cmd == "/save":
                 save_answer(last_answer, cmd_args)
+                continue
             elif cmd == "/stats":
                 print_stats(session_stats)
+                continue
+            elif cmd == "/file":
+                file_content = load_file_as_prompt(cmd_args)
+                if file_content:
+                    text = file_content
+                    # Fall through to agent run
+                else:
+                    continue
+            elif cmd == "/steps":
+                change_steps(agent, cmd_args)
+                continue
+            elif cmd == "/run":
+                run_script(agent, cmd_args)
+                continue
+            elif cmd == "/cd":
+                change_directory(cmd_args)
+                continue
+            elif cmd == "/pwd":
+                console.print(f"[cyan]{os.getcwd()}[/]")
+                continue
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
-            continue
+                continue
 
         # Visual separator before agent run
         turn_num = session_stats["turns"] + 1
