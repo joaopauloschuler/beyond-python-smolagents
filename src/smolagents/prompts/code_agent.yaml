@@ -181,8 +181,7 @@ system_prompt: |-
 
 planning:
   initial_plan : |-
-    You are a world expert at analyzing a situation to derive facts, and plan accordingly towards solving a task.
-    Develop a step-by-step high-level plan taking into account the above inputs and list of facts.
+    Create a simple and doable plan towards solving a task.
     Write your steps to solve the task using this example:
     [ ] Step 1
     [ ] Step 2
@@ -210,9 +209,10 @@ planning:
     ```
     In the case that the user is just saying "hello" or asking something simple that does not require a plan,
     just recommend a reply instead of a plan. Only write the plan if the task requires multiple steps to be solved.
+    In the case that the task says to not code, just recommend a plan without coding.
 
   update_plan_pre_messages: |-
-    You are a world expert at analyzing a situation, and plan accordingly towards solving a task.
+    Create a simple and doable plan towards solving a task.
     You have been given the following task:
     ```
     {{task}}
@@ -250,6 +250,9 @@ planning:
     [X] Step 2
     ...
     [ ] Step n
+
+    In the case that the task says to not code, just recommend a plan without coding.
+
 managed_agent:
   task: |-
       You're a helpful agent named '{{name}}'.
