@@ -425,8 +425,8 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 
 
 SLASH_COMMANDS = [
-    "/auto-approve", "/cd", "/exit", "/file", "/help",
-    "/clear", "/load-instructions", "/plan", "/pwd", "/run", "/save",
+    "/auto-approve", "/cd", "/clear", "/exit", "/file", "/help",
+    "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/stats", "/steps", "/tools", "/verbose",
 ]
 
@@ -435,15 +435,15 @@ def print_help():
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
     table.add_column("Command", style="bold cyan")
     table.add_column("Description")
-    table.add_row("/auto-approve [on|off]", "Toggle or set auto-approve for tag execution")
+    table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
+    table.add_row("/clear", "Clear screen, reset agent and conversation history")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/file <path>", "Load a file's content as the prompt")
     table.add_row("/help", "Show this help message")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
-    table.add_row("/plan [on|off|N]", "Toggle or set planning interval (default: 22)")
+    table.add_row("/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
-    table.add_row("/clear", "Clear screen, reset agent and conversation history")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/stats", "Show session statistics")
