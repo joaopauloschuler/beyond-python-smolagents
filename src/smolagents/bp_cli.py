@@ -806,7 +806,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
                 print_help()
                 continue
             elif cmd == "/clear":
-                agent = build_agent(model)
+                agent = build_agent(model, approval_callback=interactive_approval_callback)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
