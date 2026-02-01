@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -418,16 +418,16 @@ class MultiStepAgent(ABC):
             )
         self.tools.setdefault("final_answer", FinalAnswerTool())
 
+    def add_planning_tool(self):
+        if "plan" not in self.tools:
+            new_tool = PlanningTool()
+            new_tool.set_agent(self)
+            self.tools["plan"] = new_tool
+
     def _bind_planning_tools(self):
         """If planning is enabled, ensure a PlanningTool is present and bind it to this agent."""
-        from .bp_tools import PlanningTool
-
-        if self.planning_interval is not None and "plan" not in self.tools:
-            self.tools["plan"] = PlanningTool()
-
-        for tool in self.tools.values():
-            if isinstance(tool, PlanningTool):
-                tool.set_agent(self)
+        if self.planning_interval is not None:
+            self.add_planning_tool()
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]
