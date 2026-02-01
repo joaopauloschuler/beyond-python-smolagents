@@ -426,7 +426,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 
 SLASH_COMMANDS = [
     "/auto-approve", "/cd", "/exit", "/file", "/help",
-    "/load-instructions", "/pwd", "/reset", "/run", "/save",
+    "/clear", "/load-instructions", "/pwd", "/run", "/save",
     "/stats", "/steps", "/tools", "/verbose",
 ]
 
@@ -442,7 +442,7 @@ def print_help():
     table.add_row("/help", "Show this help message")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
     table.add_row("/pwd", "Show current working directory")
-    table.add_row("/reset", "Clear conversation history and reset the agent")
+    table.add_row("/clear", "Clear screen, reset agent and conversation history")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/stats", "Show session statistics")
@@ -803,7 +803,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
             elif cmd == "/help":
                 print_help()
                 continue
-            elif cmd == "/reset":
+            elif cmd == "/clear":
                 agent = build_agent(model)
                 session_stats = {
                     "turns": 0,
@@ -813,7 +813,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
                 }
                 last_answer = None
                 first_turn = True
-                console.print("[green]Agent reset. Conversation history cleared.[/]")
+                console.clear()
+                print_banner(model_id, server_model, count_tools(agent))
                 continue
             elif cmd == "/tools":
                 print_tools(agent)
