@@ -260,9 +260,8 @@ def build_model():
     api_endpoint = get_env("BPSA_API_ENDPOINT")
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
-
-    if server_model not in MODEL_CLASS_MAP:
-        supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+    supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+    if server_model not in MODEL_CLASS_MAP:     
         fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
 
     canonical_name = MODEL_CLASS_MAP[server_model]
@@ -271,7 +270,7 @@ def build_model():
 
     model_class = getattr(smolagents, canonical_name, None)
     if model_class is None:
-        fail(f"Model class {canonical_name} not found in smolagents. Check your installation.")
+        fail(f"Model class {canonical_name} not found. Supported models are: {supported}")
 
     # Build kwargs based on model type
     if canonical_name in ("OpenAIServerModel", "AzureOpenAIServerModel"):
