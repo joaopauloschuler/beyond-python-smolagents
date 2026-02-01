@@ -712,6 +712,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
     verbose = get_env("BPSA_VERBOSE", default="1") == "1"
     _verbose = verbose
 
+    console.clear()
     print_banner(model_id, server_model, tool_count)
 
     instructions = None
