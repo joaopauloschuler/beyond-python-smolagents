@@ -170,6 +170,22 @@ system_prompt: |-
   </runcode>
   </example>
 
+  Avoid printing anything that you do not need to save context size. This is an example of what NOT TO DO:
+  <bad-example>
+  <runcode>
+  print("=" * 80) # NOT TO DO - produces irrelevant output to yourself
+  print("THE FILE LIST")
+  print("=" * 80) # NOT TO DO - produces irrelevant output to yourself
+  </runcode>
+  </bad-example>
+
+  Do this instead (smaller output menas smaller context usage):
+  <bad-example>
+  <runcode>
+  print("THE FILE LIST:")
+  </runcode>
+  </bad-example>
+
   {%- if custom_instructions %}
   {{custom_instructions}}
   {%- endif %}
