@@ -426,7 +426,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 
 SLASH_COMMANDS = [
     "/auto-approve", "/cd", "/exit", "/file", "/help",
-    "/clear", "/load-instructions", "/pwd", "/run", "/save",
+    "/clear", "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/stats", "/steps", "/tools", "/verbose",
 ]
 
@@ -441,6 +441,7 @@ def print_help():
     table.add_row("/file <path>", "Load a file's content as the prompt")
     table.add_row("/help", "Show this help message")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
+    table.add_row("/plan [on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
@@ -858,6 +859,28 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
                     console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
                 else:
                     console.print("[yellow]No instruction files found.[/]")
+                continue
+            elif cmd == "/plan":
+                arg = cmd_args.strip().lower()
+                if arg == "":
+                    interval = getattr(agent, "planning_interval", None)
+                    status = f"on (every {interval} steps)" if interval else "off"
+                    console.print(f"[cyan]Planning: {status}[/]")
+                elif arg == "on":
+                    agent.planning_interval = 22
+                    console.print("[cyan]Planning: on (every 22 steps)[/]")
+                elif arg == "off":
+                    agent.planning_interval = None
+                    console.print("[cyan]Planning: off[/]")
+                else:
+                    try:
+                        n = int(arg)
+                        if n < 1:
+                            raise ValueError
+                        agent.planning_interval = n
+                        console.print(f"[cyan]Planning: on (every {n} steps)[/]")
+                    except ValueError:
+                        console.print("[yellow]Usage: /plan [on|off|N][/]")
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()
