@@ -778,29 +778,28 @@ def cmd_compress(agent, args: str):
 
     args = args.strip()
     if args:
-        # Compress a specific step
+        # Compress a specific step (1-based memory index, same as /show-steps and /show-step)
         try:
             step_num = int(args)
         except ValueError:
             console.print("[red]Invalid step number. Usage: /compress [N][/]")
             return
 
-        # Find the step
-        from smolagents.memory import ActionStep, PlanningStep
-        target = None
-        target_idx = None
-        for i, step in enumerate(agent.memory.steps):
-            if isinstance(step, ActionStep) and step.step_number == step_num:
-                target = step
-                target_idx = i
-                break
-
-        if target is None:
-            console.print(f"[red]ActionStep {step_num} not found in memory.[/]")
+        steps = agent.memory.steps
+        if step_num < 1 or step_num > len(steps):
+            console.print(f"[red]Step {step_num} not found (valid range: 1-{len(steps)}). Use /show-steps to list all.[/]")
             return
+
+        target_idx = step_num - 1
+        target = steps[target_idx]
 
         if isinstance(target, CompressedHistoryStep):
             console.print(f"[yellow]Step {step_num} is already compressed.[/]")
+            return
+
+        from smolagents.memory import ActionStep
+        if not isinstance(target, ActionStep):
+            console.print(f"[yellow]Step {step_num} is a {type(target).__name__}, only ActionSteps can be compressed.[/]")
             return
 
         # Compress just this step
@@ -818,9 +817,10 @@ def cmd_compress(agent, args: str):
             if isinstance(summary, list):
                 summary = " ".join(item.get("text", "") for item in summary if isinstance(item, dict))
 
+            original_step_number = target.step_number if hasattr(target, "step_number") else step_num
             compressed = CompressedHistoryStep(
                 summary=summary,
-                compressed_step_numbers=[step_num],
+                compressed_step_numbers=[original_step_number],
                 original_step_count=1,
                 timing=__import__("smolagents.monitoring", fromlist=["Timing"]).Timing(
                     start_time=start_time, end_time=time.time()
@@ -950,20 +950,12 @@ def cmd_show_step(agent, args: str):
         console.print("[red]Invalid step number.[/]")
         return
 
-    # Find step by index (1-based) or by step_number for ActionSteps
+    # Use 1-based memory index (matches /show-steps output)
     steps = agent.memory.steps
-
-    # First try by ActionStep step_number
-    for step in steps:
-        if isinstance(step, ActionStep) and step.step_number == step_num:
-            _print_step_detail(step)
-            return
-
-    # Fall back to 1-based index
     if 1 <= step_num <= len(steps):
         _print_step_detail(steps[step_num - 1])
     else:
-        console.print(f"[red]Step {step_num} not found. Use /show-steps to see available steps.[/]")
+        console.print(f"[red]Step {step_num} not found (valid range: 1-{len(steps)}). Use /show-steps to list all.[/]")
 
 
 def _print_step_detail(step):
@@ -975,7 +967,6 @@ def _print_step_detail(step):
     console.print(Rule(f"[bold]{type_name}", style="blue"))
 
     if isinstance(step, ActionStep):
-        console.print(f"[bold]Step number:[/] {step.step_number}")
         if step.timing and step.timing.duration is not None:
             console.print(f"[bold]Duration:[/] {step.timing.duration:.1f}s")
         if step.token_usage:
@@ -1027,36 +1018,34 @@ def cmd_show_steps(agent):
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
     table.add_column("Step", style="bold", justify="right")
     table.add_column("Type", style="cyan")
+    table.add_column("Compressed", justify="center")
     table.add_column("Size", justify="right")
     table.add_column("Preview")
 
     for i, step in enumerate(steps, 1):
         type_name = type(step).__name__
 
+        label = str(i)
+
         # Get content and size
         if isinstance(step, ActionStep):
-            label = f"{step.step_number}"
+            type_name = f"ActionStep(#{step.step_number})"
             content = str(step.model_output or step.observations or "")
             chars = len(str(step.model_output or "")) + len(str(step.observations or "")) + len(str(step.code_action or ""))
         elif isinstance(step, CompressedHistoryStep):
-            label = str(i)
             type_name = f"Compressed({step.original_step_count})"
             content = step.summary
             chars = len(step.summary)
         elif isinstance(step, PlanningStep):
-            label = str(i)
             content = step.plan or ""
             chars = len(content)
         elif isinstance(step, TaskStep):
-            label = str(i)
             content = step.task or ""
             chars = len(content)
         elif isinstance(step, SystemPromptStep):
-            label = str(i)
             content = step.system_prompt or ""
             chars = len(content)
         else:
-            label = str(i)
             content = str(step)
             chars = len(content)
 
@@ -1065,7 +1054,8 @@ def cmd_show_steps(agent):
         if len(preview) > 80:
             preview = preview[:77] + "..."
 
-        table.add_row(label, type_name, f"{chars:,} chars", preview)
+        compressed = "[green]yes[/]" if isinstance(step, CompressedHistoryStep) else "[dim]no[/]"
+        table.add_row(label, type_name, compressed, f"{chars:,} chars", preview)
 
     console.print(table)
     console.print()
