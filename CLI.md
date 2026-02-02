@@ -117,13 +117,30 @@ Use `prompt_toolkit` for:
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show available commands and brief descriptions |
+| `/auto-approve [on\|off]` | Toggle or set auto-approve for tag execution |
+| `/cd <dir>` | Change working directory |
+| `/clear` | Clear screen, reset agent and conversation history |
+| `/compress [N]` | Force compression now, or compress a specific step N |
+| `/compression [on\|off]` | Toggle compression on/off |
+| `/compression-keep-recent-steps <N>` | Change keep_recent_steps |
+| `/compression-max-uncompressed-steps <N>` | Change max_uncompressed_steps |
+| `/compression-model <model>` | Switch compression model |
 | `/exit` | Exit the REPL |
-| `/reset` | Clear conversation history and reset the agent |
+| `/file <path>` | Load a file's content as the prompt |
+| `/help` | Show available commands and brief descriptions |
+| `/load-instructions` | Load agent instruction files into next prompt |
+| `/plan [on\|off\|N]` | Toggle or set planning interval (default: 22) |
+| `/pwd` | Show current working directory |
+| `/run <script.py>` | Execute a Python script |
+| `/save <filename>` | Save the last answer to a file |
+| `/show-compression-stats` | Show compression config and stats |
+| `/show-memory-stats` | Show memory breakdown: steps, tokens, compressed vs uncompressed |
+| `/show-stats` | Show session statistics (token usage, time) |
+| `/show-step <N>` | Show full content of a specific step |
+| `/show-steps` | Show one-line summary of all memory steps |
+| `/steps <N>` | Change max_steps for the agent |
 | `/tools` | List all loaded tools |
 | `/verbose` | Toggle verbose output |
-| `/save <filename>` | Save the last answer to a file |
-| `/stats` | Show token usage and cost for the session |
 
 ## Configuration Layering
 

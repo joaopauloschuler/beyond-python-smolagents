@@ -425,9 +425,12 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 
 
 SLASH_COMMANDS = [
-    "/auto-approve", "/cd", "/clear", "/exit", "/file", "/help",
+    "/auto-approve", "/cd", "/clear", "/compress", "/compression",
+    "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
+    "/compression-model", "/exit", "/file", "/help",
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
-    "/stats", "/steps", "/tools", "/verbose",
+    "/show-compression-stats", "/show-memory-stats", "/show-stats",
+    "/show-step", "/show-steps", "/steps", "/tools", "/verbose",
 ]
 
 
@@ -438,6 +441,11 @@ def print_help():
     table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
+    table.add_row("/compress \[N]", "Force compression now, or compress a specific step N")
+    table.add_row("/compression \[on|off]", "Toggle compression on/off")
+    table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
+    table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
+    table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/file <path>", "Load a file's content as the prompt")
     table.add_row("/help", "Show this help message")
@@ -446,7 +454,11 @@ def print_help():
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
-    table.add_row("/stats", "Show session statistics")
+    table.add_row("/show-compression-stats", "Show compression config and stats")
+    table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
+    table.add_row("/show-step <N>", "Show full content of a specific step")
+    table.add_row("/show-steps", "Show one-line summary of all memory steps")
+    table.add_row("/show-stats", "Show session statistics")
     table.add_row("/steps <N>", "Change max_steps for the agent")
     table.add_row("/tools", "List all loaded tools")
     table.add_row("/verbose", "Toggle verbose output")
@@ -665,6 +677,400 @@ def change_directory(args: str):
         console.print(f"[red]Error: {e}[/]")
 
 
+def cmd_compression_stats(agent):
+    """Show current compression config and stats."""
+    from smolagents.bp_compression import CompressedHistoryStep, estimate_step_tokens
+
+    compressor = getattr(agent, "compressor", None)
+    config = getattr(agent, "compression_config", None)
+
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+        return
+
+    console.print(Rule("[bold]Compression Configuration", style="blue"))
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Setting", style="bold")
+    table.add_column("Value", style="cyan")
+    table.add_row("enabled", str(config.enabled))
+    table.add_row("keep_recent_steps", str(config.keep_recent_steps))
+    table.add_row("max_uncompressed_steps", str(config.max_uncompressed_steps))
+    table.add_row("estimated_token_threshold", str(config.estimated_token_threshold))
+    table.add_row("max_summary_tokens", str(config.max_summary_tokens))
+    table.add_row("preserve_error_steps", str(config.preserve_error_steps))
+    table.add_row("preserve_final_answer_steps", str(config.preserve_final_answer_steps))
+    table.add_row("max_compressed_steps", str(config.max_compressed_steps))
+    table.add_row("keep_compressed_steps", str(config.keep_compressed_steps))
+    comp_model = config.compression_model
+    table.add_row("compression_model", str(getattr(comp_model, "model_id", "same as main")) if comp_model else "same as main")
+    console.print(table)
+
+    # Stats
+    steps = agent.memory.steps
+    total_steps = len(steps)
+    compressed_count = sum(1 for s in steps if isinstance(s, CompressedHistoryStep))
+    compressed_original = sum(s.original_step_count for s in steps if isinstance(s, CompressedHistoryStep))
+    total_chars = sum(len(s.summary) for s in steps if isinstance(s, CompressedHistoryStep))
+    compression_count = compressor._compression_count if compressor else 0
+
+    console.print()
+    console.print(Rule("[bold]Compression Stats", style="blue"))
+    stats_table = Table(show_header=False, box=None, padding=(0, 2))
+    stats_table.add_column("Metric", style="bold")
+    stats_table.add_column("Value", style="cyan")
+    stats_table.add_row("Total memory steps", str(total_steps))
+    stats_table.add_row("Compressed summary steps", str(compressed_count))
+    stats_table.add_row("Original steps compressed", str(compressed_original))
+    stats_table.add_row("Compression runs", str(compression_count))
+    stats_table.add_row("Compressed summary chars", f"{total_chars:,}")
+    console.print(stats_table)
+    console.print()
+
+
+def cmd_memory_stats(agent):
+    """Show memory breakdown: total steps, compressed vs uncompressed, estimated token usage."""
+    from smolagents.bp_compression import CompressedHistoryStep, estimate_step_tokens
+    from smolagents.memory import ActionStep, PlanningStep, TaskStep, SystemPromptStep
+
+    steps = agent.memory.steps
+    total_steps = len(steps)
+
+    type_counts = {}
+    total_tokens = 0
+    total_chars = 0
+
+    for step in steps:
+        type_name = type(step).__name__
+        type_counts[type_name] = type_counts.get(type_name, 0) + 1
+        tokens = estimate_step_tokens(step)
+        total_tokens += tokens
+        # Estimate chars from step content
+        msgs = step.to_messages(summary_mode=False)
+        for msg in msgs:
+            if isinstance(msg.content, str):
+                total_chars += len(msg.content)
+            elif isinstance(msg.content, list):
+                for item in msg.content:
+                    if isinstance(item, dict) and "text" in item:
+                        total_chars += len(str(item["text"]))
+
+    console.print(Rule("[bold]Memory Stats", style="blue"))
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", style="cyan")
+    table.add_row("Total memory steps", str(total_steps))
+    for type_name, count in sorted(type_counts.items()):
+        table.add_row(f"  {type_name}", str(count))
+    table.add_row("Total chars", f"{total_chars:,}")
+    table.add_row("Estimated tokens", f"{total_tokens:,}")
+    console.print(table)
+    console.print()
+
+
+def cmd_compress(agent, args: str):
+    """Force immediate compression, or compress a specific step."""
+    from smolagents.bp_compression import CompressedHistoryStep
+
+    compressor = getattr(agent, "compressor", None)
+    if compressor is None:
+        console.print("[yellow]No compressor configured on this agent.[/]")
+        return
+
+    args = args.strip()
+    if args:
+        # Compress a specific step
+        try:
+            step_num = int(args)
+        except ValueError:
+            console.print("[red]Invalid step number. Usage: /compress [N][/]")
+            return
+
+        # Find the step
+        from smolagents.memory import ActionStep, PlanningStep
+        target = None
+        target_idx = None
+        for i, step in enumerate(agent.memory.steps):
+            if isinstance(step, ActionStep) and step.step_number == step_num:
+                target = step
+                target_idx = i
+                break
+
+        if target is None:
+            console.print(f"[red]ActionStep {step_num} not found in memory.[/]")
+            return
+
+        if isinstance(target, CompressedHistoryStep):
+            console.print(f"[yellow]Step {step_num} is already compressed.[/]")
+            return
+
+        # Compress just this step
+        from smolagents.bp_compression import create_compression_prompt
+        from smolagents.models import ChatMessage, MessageRole
+        import time
+
+        start_time = time.time()
+        prompt = create_compression_prompt([target])
+        try:
+            result = compressor.compression_model.generate(
+                [ChatMessage(role=MessageRole.USER, content=[{"type": "text", "text": prompt}])]
+            )
+            summary = result.content
+            if isinstance(summary, list):
+                summary = " ".join(item.get("text", "") for item in summary if isinstance(item, dict))
+
+            compressed = CompressedHistoryStep(
+                summary=summary,
+                compressed_step_numbers=[step_num],
+                original_step_count=1,
+                timing=__import__("smolagents.monitoring", fromlist=["Timing"]).Timing(
+                    start_time=start_time, end_time=time.time()
+                ),
+                compression_token_usage=result.token_usage,
+            )
+            agent.memory.steps[target_idx] = compressed
+            console.print(f"[green]Step {step_num} compressed successfully.[/]")
+        except Exception as e:
+            console.print(f"[red]Compression failed: {e}[/]")
+    else:
+        # Force compression of all eligible steps
+        old_threshold = compressor.config.max_uncompressed_steps
+        compressor.config.max_uncompressed_steps = 0  # Force trigger
+        original_len = len(agent.memory.steps)
+        agent.memory.steps = compressor.compress(agent.memory.steps)
+        compressor.config.max_uncompressed_steps = old_threshold
+        new_len = len(agent.memory.steps)
+        if new_len < original_len:
+            console.print(f"[green]Compression done: {original_len} steps → {new_len} steps.[/]")
+        else:
+            console.print("[yellow]No steps were eligible for compression.[/]")
+
+
+def cmd_compression_toggle(agent, args: str):
+    """Toggle compression on/off."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+        return
+
+    arg = args.strip().lower()
+    if arg == "on":
+        config.enabled = True
+    elif arg == "off":
+        config.enabled = False
+    elif arg == "":
+        config.enabled = not config.enabled
+    else:
+        console.print("[yellow]Usage: /compression [on|off][/]")
+        return
+    console.print(f"[cyan]Compression: {'on' if config.enabled else 'off'}[/]")
+
+
+def cmd_compression_keep_recent(agent, args: str):
+    """Change keep_recent_steps."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current keep_recent_steps: {config.keep_recent_steps}[/]")
+        console.print("[dim]Usage: /compression-keep-recent-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 0:
+            raise ValueError
+        config.keep_recent_steps = n
+        console.print(f"[green]keep_recent_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-keep-recent-steps <N>[/]")
+
+
+def cmd_compression_max_uncompressed(agent, args: str):
+    """Change max_uncompressed_steps."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current max_uncompressed_steps: {config.max_uncompressed_steps}[/]")
+        console.print("[dim]Usage: /compression-max-uncompressed-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 1:
+            raise ValueError
+        config.max_uncompressed_steps = n
+        console.print(f"[green]max_uncompressed_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-max-uncompressed-steps <N>[/]")
+
+
+def cmd_compression_model(agent, args: str):
+    """Switch compression model."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+        return
+    args = args.strip()
+    if not args:
+        comp_model = config.compression_model
+        current = getattr(comp_model, "model_id", "same as main") if comp_model else "same as main"
+        console.print(f"[cyan]Current compression model: {current}[/]")
+        console.print("[dim]Usage: /compression-model <model_id>[/]")
+        return
+
+    # Build a new model with the given model_id, using the same class/config as the main model
+    try:
+        main_model = agent.model
+        model_class = type(main_model)
+        # Try to create with same constructor pattern
+        import copy
+        new_model = copy.copy(main_model)
+        new_model.model_id = args
+        config.compression_model = new_model
+        console.print(f"[green]Compression model set to {args}[/]")
+    except Exception as e:
+        console.print(f"[red]Failed to set compression model: {e}[/]")
+
+
+def cmd_show_step(agent, args: str):
+    """Show a specific step's full content."""
+    from smolagents.bp_compression import CompressedHistoryStep
+    from smolagents.memory import ActionStep, PlanningStep, TaskStep, SystemPromptStep
+
+    args = args.strip()
+    if not args:
+        console.print("[yellow]Usage: /show-step <N>[/]")
+        return
+    try:
+        step_num = int(args)
+    except ValueError:
+        console.print("[red]Invalid step number.[/]")
+        return
+
+    # Find step by index (1-based) or by step_number for ActionSteps
+    steps = agent.memory.steps
+
+    # First try by ActionStep step_number
+    for step in steps:
+        if isinstance(step, ActionStep) and step.step_number == step_num:
+            _print_step_detail(step)
+            return
+
+    # Fall back to 1-based index
+    if 1 <= step_num <= len(steps):
+        _print_step_detail(steps[step_num - 1])
+    else:
+        console.print(f"[red]Step {step_num} not found. Use /show-steps to see available steps.[/]")
+
+
+def _print_step_detail(step):
+    """Print full detail of a single step."""
+    from smolagents.bp_compression import CompressedHistoryStep
+    from smolagents.memory import ActionStep, PlanningStep, TaskStep, SystemPromptStep
+
+    type_name = type(step).__name__
+    console.print(Rule(f"[bold]{type_name}", style="blue"))
+
+    if isinstance(step, ActionStep):
+        console.print(f"[bold]Step number:[/] {step.step_number}")
+        if step.timing and step.timing.duration is not None:
+            console.print(f"[bold]Duration:[/] {step.timing.duration:.1f}s")
+        if step.token_usage:
+            console.print(f"[bold]Tokens:[/] in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
+        if step.error:
+            console.print(f"[bold red]Error:[/] {step.error}")
+        if step.is_final_answer:
+            console.print("[bold green]Final answer[/]")
+        if step.model_output:
+            console.print(f"[bold]Model output:[/]")
+            console.print(str(step.model_output)[:2000])
+        if step.code_action:
+            console.print(f"[bold]Code action:[/]")
+            console.print(step.code_action[:2000])
+        if step.observations:
+            console.print(f"[bold]Observations:[/]")
+            console.print(str(step.observations)[:2000])
+    elif isinstance(step, CompressedHistoryStep):
+        console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
+        console.print(f"[bold]Step numbers:[/] {step.compressed_step_numbers}")
+        if step.timing and step.timing.duration is not None:
+            console.print(f"[bold]Compression duration:[/] {step.timing.duration:.1f}s")
+        console.print(f"[bold]Summary:[/]")
+        console.print(step.summary[:3000])
+    elif isinstance(step, PlanningStep):
+        console.print(f"[bold]Plan:[/]")
+        console.print(step.plan[:2000])
+    elif isinstance(step, TaskStep):
+        console.print(f"[bold]Task:[/]")
+        console.print(step.task[:2000])
+    elif isinstance(step, SystemPromptStep):
+        console.print(f"[bold]System prompt:[/]")
+        console.print(step.system_prompt[:2000])
+    else:
+        console.print(str(step)[:2000])
+    console.print()
+
+
+def cmd_show_steps(agent):
+    """Show all steps with one-line summaries."""
+    from smolagents.bp_compression import CompressedHistoryStep
+    from smolagents.memory import ActionStep, PlanningStep, TaskStep, SystemPromptStep
+
+    steps = agent.memory.steps
+    if not steps:
+        console.print("[yellow]No steps in memory.[/]")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Step", style="bold", justify="right")
+    table.add_column("Type", style="cyan")
+    table.add_column("Size", justify="right")
+    table.add_column("Preview")
+
+    for i, step in enumerate(steps, 1):
+        type_name = type(step).__name__
+
+        # Get content and size
+        if isinstance(step, ActionStep):
+            label = f"{step.step_number}"
+            content = str(step.model_output or step.observations or "")
+            chars = len(str(step.model_output or "")) + len(str(step.observations or "")) + len(str(step.code_action or ""))
+        elif isinstance(step, CompressedHistoryStep):
+            label = str(i)
+            type_name = f"Compressed({step.original_step_count})"
+            content = step.summary
+            chars = len(step.summary)
+        elif isinstance(step, PlanningStep):
+            label = str(i)
+            content = step.plan or ""
+            chars = len(content)
+        elif isinstance(step, TaskStep):
+            label = str(i)
+            content = step.task or ""
+            chars = len(content)
+        elif isinstance(step, SystemPromptStep):
+            label = str(i)
+            content = step.system_prompt or ""
+            chars = len(content)
+        else:
+            label = str(i)
+            content = str(step)
+            chars = len(content)
+
+        # Build preview: first line, truncated
+        preview = content.replace("\n", " ").strip()
+        if len(preview) > 80:
+            preview = preview[:77] + "..."
+
+        table.add_row(label, type_name, f"{chars:,} chars", preview)
+
+    console.print(table)
+    console.print()
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -829,7 +1235,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
             elif cmd == "/save":
                 save_answer(last_answer, cmd_args)
                 continue
-            elif cmd == "/stats":
+            elif cmd == "/show-stats":
                 print_stats(session_stats)
                 continue
             elif cmd == "/file":
@@ -881,6 +1287,33 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
                         console.print(f"[cyan]Planning: on (every {n} steps)[/]")
                     except ValueError:
                         console.print("[yellow]Usage: /plan [on|off|N][/]")
+                continue
+            elif cmd == "/show-compression-stats":
+                cmd_compression_stats(agent)
+                continue
+            elif cmd == "/show-memory-stats":
+                cmd_memory_stats(agent)
+                continue
+            elif cmd == "/compress":
+                cmd_compress(agent, cmd_args)
+                continue
+            elif cmd == "/compression":
+                cmd_compression_toggle(agent, cmd_args)
+                continue
+            elif cmd == "/compression-keep-recent-steps":
+                cmd_compression_keep_recent(agent, cmd_args)
+                continue
+            elif cmd == "/compression-max-uncompressed-steps":
+                cmd_compression_max_uncompressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-model":
+                cmd_compression_model(agent, cmd_args)
+                continue
+            elif cmd == "/show-step":
+                cmd_show_step(agent, cmd_args)
+                continue
+            elif cmd == "/show-steps":
+                cmd_show_steps(agent)
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()
