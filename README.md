@@ -25,33 +25,6 @@ limitations under the License.
 * 🔍 Tools that help agents to research and write technical documentation.
 * 📚 Generate and update documentation including READMEs for existing codebases.
 
-## The Thinkers
-There are 2 main functions that you can easily call:
-* [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
-
-  [![Watch the video](docs/img/writing-process.jpg?raw=true)](https://youtu.be/oQ2GdrtWR94)
-
-* [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
-
-  [![Watch the video](docs/img/evol.jpg?raw=true)](https://youtu.be/XuFL3PQGQkc)
-
-  [![Watch the video](docs/img/monologue.jpg?raw=true)](https://youtu.be/25uJ0VHDKZE)
-
-## Google colab ready to run examples 
-
-### Writing task examples
-* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
-* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
-* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C.ipynb)
-
-### Coding task examples
-  [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
-* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
-* [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/php/php-single-file-01.ipynb)
-* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
-* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
-* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
-
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
 
@@ -90,6 +63,33 @@ BPSA_KEY_VALUE=your_api_key
 BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
+
+## The Thinkers
+There are 2 main functions that you can easily call:
+* [fast_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-fast_solver) : A multi-agent parallel problem-solving approach that generates 3 independent solutions using different AI models, then synthesizes them into an optimized final solution. Think of it as automated "brainstorming → best-of-breed synthesis" that leverages diverse AI perspectives for higher quality outcomes.
+
+  [![Watch the video](docs/img/writing-process.jpg?raw=true)](https://youtu.be/oQ2GdrtWR94)
+
+* [evolutive_problem_solver](https://github.com/joaopauloschuler/beyond-python-smolagents?tab=readme-ov-file#the-heavy-thinker---evolutive_problem_solver) : An iterative evolutionary approach that refines solutions through multiple generations, using analysis, comparison, mixing, and improvement cycles with accumulated knowledge. It mimics natural selection where solutions compete, combine, and evolve over time to converge on increasingly better results.
+
+  [![Watch the video](docs/img/evol.jpg?raw=true)](https://youtu.be/XuFL3PQGQkc)
+
+  [![Watch the video](docs/img/monologue.jpg?raw=true)](https://youtu.be/25uJ0VHDKZE)
+
+## Google colab ready to run examples 
+
+### Writing task examples
+* [Write about the importance of vitamin C - `fast_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver.ipynb)
+* [Write about the importance of vitamin C - `fast_solver using 3 models working together`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C-with-fast-solver-3-models-work-together.ipynb)
+* [Write about the importance of vitamin C - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/vitamin-C.ipynb)
+
+### Coding task examples
+  [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
+* [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
+* [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/php/php-single-file-01.ipynb)
+* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
+* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
+* [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ### Usage
 
