@@ -405,7 +405,7 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
 def print_banner(model_id: str, server_model: str, tool_count: int):
     console.print(
         Panel.fit(
-            f"[bold]Beyond Python SmolAgents[/] v{VERSION}\n"
+            f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
             f"Tools: [green]{tool_count}[/] loaded",
             border_style="blue",

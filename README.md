@@ -13,8 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-# Beyond Python Smolagents
-**Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
+# BPSA - Beyond Python Smolagents
+**BPSA - Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
 
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 * ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
