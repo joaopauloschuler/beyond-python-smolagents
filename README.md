@@ -63,6 +63,16 @@ BPSA_KEY_VALUE=your_api_key
 BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
+### BPSA CLI Usage
+
+```bash
+bpsa                              # Interactive REPL (default)
+bpsa run "task description"       # One-shot mode
+echo "task" | bpsa                # Piped input
+bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
+```
+
+The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
 
 ## The Thinkers
 There are 2 main functions that you can easily call:
@@ -90,17 +100,6 @@ There are 2 main functions that you can easily call:
 * [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
 * [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
-
-### Usage
-
-```bash
-bpsa                              # Interactive REPL (default)
-bpsa run "task description"       # One-shot mode
-echo "task" | bpsa                # Piped input
-bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
-```
-
-The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
 
 ## Basic usage (single agent)
 Create a single agent with various tools for working with different programming languages:
