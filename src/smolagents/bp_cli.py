@@ -307,8 +307,16 @@ def build_agent(model, approval_callback=None, browser_enabled=False):
 
     executor_type = get_env("BPSA_GLOBAL_EXECUTOR", default="exec")
 
+    tools = list(DEFAULT_THINKER_TOOLS)
+    browser_manager = None
+
+    if browser_enabled:
+        from smolagents.bp_tools_browser import create_browser_tools
+        browser_manager, browser_tools = create_browser_tools()
+        tools.extend(browser_tools)
+
     agent = CodeAgent(
-        tools=DEFAULT_THINKER_TOOLS,
+        tools=tools,
         model=model,
         additional_authorized_imports=["*"],
         add_base_tools=True,
@@ -321,13 +329,8 @@ def build_agent(model, approval_callback=None, browser_enabled=False):
     )
     agent.add_planning_tool()
 
-    if browser_enabled:
-        from smolagents.bp_tools_browser import create_browser_tools
-        manager, browser_tools = create_browser_tools()
-        for tool in browser_tools:
-            agent.tools[tool.name] = tool
-        agent.python_executor.send_tools(agent.tools)
-        agent._browser_manager = manager
+    if browser_manager:
+        agent._browser_manager = browser_manager
 
     return agent
 
