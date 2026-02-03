@@ -59,7 +59,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_tools.py` - Extended tool library: file I/O, source code analysis, OS commands, multi-language support (24+ languages including Pascal, PHP, C++, Java, Go, Rust)
 - `bp_thinkers.py` - `Thinker` agent with multi-step reasoning (thoughts/plans/code sections)
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
-- `bp_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
+- `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
 - `bp_utils.py` - Utilities: code validation, tag fixing, file operations
 
 ### Agent Types
@@ -109,7 +109,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Add remote executor | `src/smolagents/remote_executors.py` |
 | Configure context compression | `src/smolagents/bp_compression.py` |
 | Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
-| Modify browser integration | `src/smolagents/bp_browser.py` |
+| Modify browser integration | `src/smolagents/bp_tools_browser.py` |
 
 ## Testing
 

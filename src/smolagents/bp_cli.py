@@ -322,11 +322,12 @@ def build_agent(model, approval_callback=None, browser_enabled=False):
     agent.add_planning_tool()
 
     if browser_enabled:
-        from smolagents.bp_browser import BROWSER_AGENT_INSTRUCTIONS, create_browser_functions
-        manager, browser_funcs = create_browser_functions()
-        agent.python_executor.globals_dict.update(browser_funcs)
+        from smolagents.bp_tools_browser import create_browser_tools
+        manager, browser_tools = create_browser_tools()
+        for tool in browser_tools:
+            agent.tools[tool.name] = tool
+        agent.python_executor.send_tools(agent.tools)
         agent._browser_manager = manager
-        agent.set_system_prompt(agent.system_prompt + BROWSER_AGENT_INSTRUCTIONS)
 
     return agent
 
