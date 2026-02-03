@@ -24,6 +24,7 @@ limitations under the License.
 * 👥 Collaborate across multiple agents to solve complex problems.
 * 🔍 Tools that help agents to research and write technical documentation.
 * 📚 Generate and update documentation including READMEs for existing codebases.
+* 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
@@ -70,6 +71,7 @@ bpsa                              # Interactive REPL (default)
 bpsa run "task description"       # One-shot mode
 echo "task" | bpsa                # Piped input
 bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
+bpsa --browser                    # Enable Playwright browser integration
 ```
 
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.

@@ -87,6 +87,9 @@ transformers = [
   "transformers>=4.0.0",
   "smolagents[torch]",
 ]
+browser = [
+  "playwright>=1.40.0",
+]
 vision = [
   "helium",
   "selenium",

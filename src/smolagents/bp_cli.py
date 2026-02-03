@@ -298,7 +298,7 @@ def build_model():
     return model
 
 
-def build_agent(model, approval_callback=None):
+def build_agent(model, approval_callback=None, browser_enabled=False):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -320,6 +320,14 @@ def build_agent(model, approval_callback=None):
         approval_callback=approval_callback,
     )
     agent.add_planning_tool()
+
+    if browser_enabled:
+        from smolagents.bp_browser import BROWSER_AGENT_INSTRUCTIONS, create_browser_functions
+        manager, browser_funcs = create_browser_functions()
+        agent.python_executor.globals_dict.update(browser_funcs)
+        agent._browser_manager = manager
+        agent.set_system_prompt(agent.system_prompt + BROWSER_AGENT_INSTRUCTIONS)
+
     return agent
 
 
@@ -1061,6 +1069,13 @@ def cmd_show_steps(agent):
     console.print()
 
 
+def _shutdown_browser(agent):
+    """Shut down the browser manager if one exists on the agent."""
+    manager = getattr(agent, "_browser_manager", None)
+    if manager:
+        manager.shutdown()
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -1069,13 +1084,13 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -1092,16 +1107,20 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
             console.print("\n[yellow]Execution rejected by user.[/]")
         else:
             raise
+    finally:
+        manager = getattr(agent, "_browser_manager", None)
+        if manager:
+            manager.shutdown()
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -1179,6 +1198,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
     while True:
         user_input = get_input()
         if user_input is None:
+            _shutdown_browser(agent)
             console.print("[dim]Goodbye![/]")
             break
 
@@ -1196,13 +1216,15 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True):
                 if session_stats["turns"] > 0:
                     console.print()
                     print_stats(session_stats)
+                _shutdown_browser(agent)
                 console.print("[dim]Goodbye![/]")
                 break
             elif cmd == "/help":
                 print_help()
                 continue
             elif cmd == "/clear":
-                agent = build_agent(model, approval_callback=interactive_approval_callback)
+                _shutdown_browser(agent)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -1391,6 +1413,10 @@ def main():
         "--auto-approve", choices=["on", "off"], default="off",
         help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: off",
     )
+    parser.add_argument(
+        "--browser", action="store_true",
+        help="Enable Playwright browser integration (navigate, click, type_text, etc. in runcode blocks)",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
@@ -1399,20 +1425,21 @@ def main():
     args = parser.parse_args()
     skip_instructions = not args.load_instructions
     auto_approve = args.auto_approve == "on"
+    browser_enabled = args.browser
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
 
 
 if __name__ == "__main__":
