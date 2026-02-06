@@ -688,16 +688,30 @@ def change_directory(args: str):
     except OSError as e:
         console.print(f"[red]Error: {e}[/]")
 
+def _get_compression_config(agent):
+    """Get compression config from agent, or print a warning and return None."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+    return config
+
+
+def _get_compressor(agent):
+    """Get compressor from agent, or print a warning and return None."""
+    compressor = getattr(agent, "compressor", None)
+    if compressor is None:
+        console.print("[yellow]No compressor configured on this agent.[/]")
+    return compressor
+
+
 
 def cmd_compression_stats(agent):
     """Show current compression config and stats."""
     from smolagents.bp_compression import CompressedHistoryStep, estimate_step_tokens
 
-    compressor = getattr(agent, "compressor", None)
-    config = getattr(agent, "compression_config", None)
-
+    compressor = _get_compressor(agent)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
 
     console.print(Rule("[bold]Compression Configuration", style="blue"))
@@ -783,9 +797,8 @@ def cmd_compress(agent, args: str):
     """Force immediate compression, or compress a specific step."""
     from smolagents.bp_compression import CompressedHistoryStep
 
-    compressor = getattr(agent, "compressor", None)
+    compressor = _get_compressor(agent)
     if compressor is None:
-        console.print("[yellow]No compressor configured on this agent.[/]")
         return
 
     args = args.strip()
@@ -859,9 +872,8 @@ def cmd_compress(agent, args: str):
 
 def cmd_compression_toggle(agent, args: str):
     """Toggle compression on/off."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
 
     arg = args.strip().lower()
@@ -879,9 +891,8 @@ def cmd_compression_toggle(agent, args: str):
 
 def cmd_compression_keep_recent(agent, args: str):
     """Change keep_recent_steps."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
@@ -900,9 +911,8 @@ def cmd_compression_keep_recent(agent, args: str):
 
 def cmd_compression_max_uncompressed(agent, args: str):
     """Change max_uncompressed_steps."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
@@ -921,9 +931,8 @@ def cmd_compression_max_uncompressed(agent, args: str):
 
 def cmd_compression_model(agent, args: str):
     """Switch compression model."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
