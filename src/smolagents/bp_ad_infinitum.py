@@ -1,0 +1,321 @@
+
+#!/usr/bin/env python
+# coding=utf-8
+
+"""
+Ad-Infinitum CLI for Beyond Python SmolAgents.
+
+Autonomous agent cycling: loads tasks from a folder of .md files (or a single file)
+and runs them repeatedly with a fresh agent per task.
+
+Folder convention:
+    tasks/
+    +-- _preamble.md          (optional) prepended to ALL tasks
+    +-- 01-scaffold.md        task 1
+    +-- 02-implement.md       task 2
+    +-- 03-test.md            task 3
+    +-- _postamble.md         (optional) appended to ALL tasks
+
+Files starting with '_' are modifiers, not tasks. All other .md files are
+loaded in alphabetical order. Each becomes one element in the task array.
+
+Environment variables (same BPSA_* as bpsa, plus):
+    BPSA_CYCLES         - Number of cycles, 0 = infinite (default: 1)
+    BPSA_PLAN_INTERVAL  - Planning interval (default: None = off)
+    BPSA_MAX_STEPS      - Max steps per agent run (default: 200)
+    BPSA_COOLDOWN       - Seconds to wait between cycles (default: 0)
+    BPSA_INJECT_FOLDER  - Inject directory tree (default: false, true = cwd, or a path)
+"""
+
+import glob
+import os
+import signal
+import sys
+import time
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.rule import Rule
+
+from smolagents.bp_cli import get_env
+
+console = Console()
+
+# Graceful shutdown flag
+_stop_requested = False
+
+
+def _signal_handler(signum, frame):
+    global _stop_requested
+    if _stop_requested:
+        console.print("\n[bold red]Double Ctrl+C: aborting immediately.[/]")
+        sys.exit(1)
+    _stop_requested = True
+    console.print("\n[yellow]Ctrl+C received. Will stop after current task finishes.[/]")
+
+
+def fail(msg: str):
+    console.print(f"[bold red]Error:[/] {msg}")
+    sys.exit(1)
+
+
+def load_tasks(path: str) -> list[str]:
+    """Load tasks from a folder of .md files or a single file.
+
+    Folder mode:
+        - _preamble.md and _postamble.md are optional wrappers
+        - All other *.md files are tasks, sorted alphabetically
+        - Each task = preamble + file content + postamble
+
+    File mode:
+        - Returns a single-element list with the file content.
+    """
+    if os.path.isdir(path):
+        all_md = sorted(glob.glob(os.path.join(path, "*.md")))
+        if not all_md:
+            fail(f"No .md files found in {path}")
+
+        preamble = ""
+        postamble = ""
+        task_files = []
+
+        for f in all_md:
+            basename = os.path.basename(f)
+            if basename == "_preamble.md":
+                with open(f, "r", encoding="utf-8") as fh:
+                    preamble = fh.read().strip() + "\n\n"
+                console.print(f"  [green]Preamble:[/] {basename}")
+            elif basename == "_postamble.md":
+                with open(f, "r", encoding="utf-8") as fh:
+                    postamble = "\n\n" + fh.read().strip()
+                console.print(f"  [green]Postamble:[/] {basename}")
+            elif not basename.startswith("_"):
+                task_files.append(f)
+
+        if not task_files:
+            fail(f"No task .md files found in {path} (files starting with '_' are modifiers, not tasks)")
+
+        tasks = []
+        for f in task_files:
+            with open(f, "r", encoding="utf-8") as fh:
+                content = fh.read().strip()
+            tasks.append(preamble + content + postamble)
+            console.print(f"  [cyan]Task:[/] {os.path.basename(f)}")
+
+        return tasks
+
+    elif os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            content = fh.read().strip()
+        if not content:
+            fail(f"File is empty: {path}")
+        console.print(f"  [cyan]Task:[/] {os.path.basename(path)}")
+        return [content]
+
+    else:
+        fail(f"Path not found: {path}")
+
+
+
+def get_int_env(name: str, default: int) -> int:
+    val = get_env(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        console.print(f"[yellow]Warning: Invalid integer for {name}='{val}', using default: {default}[/]")
+        return default
+
+
+def inject_tree(folder: str) -> str:
+    """Generate directory tree string to append to task prompts."""
+    from smolagents.bp_tools import list_directory_tree
+    tree = list_directory_tree(folder_path=folder, add_function_signatures=True)
+    return (
+        "\nThis is the result of list_directory_tree:\n<directory_tree>\n"
+        + tree
+        + "\n</directory_tree>\n"
+        "The contents of <directory_tree></directory_tree> is VERY important to you. "
+        "From <directory_tree></directory_tree>, you can get a general view/current state of the project:\n"
+        "* From the md files, if they exist, you can find the existing section titles "
+        "and have a general idea of the md file contents.\n"
+        "* For source code files, if they exist, you can find class and method names "
+        "so you can also develop a general idea of their contents.\n"
+    )
+
+
+def print_banner(config: dict):
+    cycles_str = str(config["cycles"]) if config["cycles"] > 0 else "infinite"
+    plan_str = str(config["plan_interval"]) if config["plan_interval"] else "off"
+    tree_str = config["tree_folder"] if config["tree_folder"] else "off"
+
+    console.print(
+        Panel.fit(
+            f"[bold]AD-INFINITUM[/] - Autonomous Agent Cycles\n"
+            f"Model: [cyan]{config['model_id']}[/] ({config['server_model']})\n"
+            f"Tasks: [green]{config['task_count']}[/] | "
+            f"Cycles: [green]{cycles_str}[/] | "
+            f"Steps/run: [green]{config['max_steps']}[/]\n"
+            f"Planning: {plan_str} | "
+            f"Inject folder: {tree_str} | "
+            f"Cooldown: {config['cooldown']}s",
+            border_style="blue",
+        )
+    )
+    console.print(
+        Panel.fit(
+            "[bold red]EXTREME SECURITY RISK[/]\n"
+            "Running autonomously with full system access.\n"
+            "Only run inside a securely isolated environment.\n"
+            "[bold]USE AT YOUR OWN RISK.[/]",
+            border_style="red",
+        )
+    )
+    console.print("[dim]Press Ctrl+C to stop after current task. Double Ctrl+C to abort.[/]\n")
+
+
+def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown):
+    """Core autonomous loop: cycles x tasks, fresh agent per task."""
+    from smolagents.bp_cli import build_agent
+
+    original_dir = os.getcwd()
+    total_start = time.time()
+    cycle = 0
+    total_tasks_run = 0
+
+    while cycles == 0 or cycle < cycles:
+        cycle += 1
+        cycle_label = f"{cycle}" if cycles > 0 else f"{cycle}"
+        cycle_limit = f"/{cycles}" if cycles > 0 else ""
+
+        console.print(Rule(f"[bold]Cycle {cycle_label}{cycle_limit}[/]", style="blue"))
+
+        for task_idx, task_text in enumerate(tasks):
+            if _stop_requested:
+                break
+
+            os.chdir(original_dir)
+
+            # Inject directory tree if configured
+            prompt = task_text
+            if tree_folder:
+                prompt += inject_tree(tree_folder)
+
+            task_label = f"Task {task_idx + 1}/{len(tasks)}"
+            console.print(f"[dim]{task_label} starting...[/]")
+
+            agent = build_agent(model)
+            if plan_interval:
+                agent.planning_interval = plan_interval
+
+            task_start = time.time()
+            try:
+                agent.run(prompt, reset=True)
+                elapsed = time.time() - task_start
+                total_tasks_run += 1
+
+                # Get token usage
+                try:
+                    usage = agent.monitor.get_total_token_counts()
+                    in_tok, out_tok = usage.input_tokens, usage.output_tokens
+                except Exception:
+                    in_tok, out_tok = 0, 0
+
+                console.print(
+                    f"[green]OK[/] {task_label} | {elapsed:.1f}s | "
+                    f"In: {in_tok:,} | Out: {out_tok:,}"
+                )
+            except KeyboardInterrupt:
+                console.print(f"[yellow]{task_label} interrupted.[/]")
+                break
+            except Exception as e:
+                elapsed = time.time() - task_start
+                total_tasks_run += 1
+                console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
+
+        if _stop_requested:
+            console.print(f"\n[yellow]Stopped after cycle {cycle}.[/]")
+            break
+
+        # Cooldown between cycles
+        if cooldown > 0 and (cycles == 0 or cycle < cycles):
+            console.print(f"[dim]Cooldown: {cooldown}s...[/]")
+            time.sleep(cooldown)
+
+    # Session summary
+    total_elapsed = time.time() - total_start
+    os.chdir(original_dir)
+    console.print()
+    console.print(Rule("[bold]Session Summary[/]", style="green"))
+    console.print(f"  Cycles completed: [green]{cycle}[/]")
+    console.print(f"  Tasks run: [green]{total_tasks_run}[/]")
+    console.print(f"  Total time: [green]{total_elapsed:.1f}s[/]")
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="ad-infinitum",
+        description="Ad-Infinitum: Autonomous agent cycling for Beyond Python SmolAgents",
+    )
+    parser.add_argument(
+        "task_source",
+        help="Folder of .md task files or a single .md file",
+    )
+    parser.add_argument(
+        "-c", "--cycles",
+        type=int,
+        default=None,
+        help="Number of cycles, 0 = infinite (overrides BPSA_CYCLES, default: 1)",
+    )
+    args = parser.parse_args()
+
+    # Install Ctrl+C handler
+    signal.signal(signal.SIGINT, _signal_handler)
+
+    # Load .env
+    from smolagents.bp_cli import try_load_dotenv, check_required_env, build_model
+    try_load_dotenv()
+    check_required_env()
+
+    # Read config from env
+    cycles = args.cycles if args.cycles is not None else get_int_env("BPSA_CYCLES", 1)
+    plan_interval_val = get_env("BPSA_PLAN_INTERVAL")
+    plan_interval = int(plan_interval_val) if plan_interval_val else None
+    max_steps = get_int_env("BPSA_MAX_STEPS", 200)
+    cooldown = get_int_env("BPSA_COOLDOWN", 0)
+    tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
+    if tree_folder_raw is None or tree_folder_raw.lower() == "false":
+        tree_folder = None
+    elif tree_folder_raw.lower() == "true":
+        tree_folder = os.getcwd()
+    else:
+        tree_folder = tree_folder_raw
+
+    # Load tasks
+    console.print("[dim]Loading tasks...[/]")
+    tasks = load_tasks(args.task_source)
+
+    config = {
+        "model_id": get_env("BPSA_MODEL_ID"),
+        "server_model": get_env("BPSA_SERVER_MODEL", "OpenAIServerModel"),
+        "task_count": len(tasks),
+        "cycles": cycles,
+        "max_steps": max_steps,
+        "plan_interval": plan_interval,
+        "tree_folder": tree_folder,
+        "cooldown": cooldown,
+    }
+    print_banner(config)
+
+    # Build model (reused across all cycles)
+    model = build_model()
+
+    # Run the loop
+    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown)
+
+
+if __name__ == "__main__":
+    main()

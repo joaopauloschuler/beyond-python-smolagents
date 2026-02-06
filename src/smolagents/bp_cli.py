@@ -343,9 +343,9 @@ def load_agent_instructions() -> str | None:
         if os.path.isfile(filepath):
             try:
                 with open(filepath, "r") as f:
-                    content = '<filecontent>' + f.read().strip() + '</filecontent>'
+                    content = f.read().strip()
                 if content:
-                    instructions.append(f"# Content from {filename}\n\n{content}")
+                    instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
                     console.print(f"  [green]Loaded:[/] {filename}")
             except OSError:
                 pass
@@ -442,7 +442,7 @@ SLASH_COMMANDS = [
     "/compression-model", "/exit", "/file", "/help",
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/show-step", "/show-steps", "/steps", "/tools", "/verbose",
+    "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -473,6 +473,7 @@ def print_help():
     table.add_row("/show-stats", "Show session statistics")
     table.add_row("/steps <N>", "Change max_steps for the agent")
     table.add_row("/tools", "List all loaded tools")
+    table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
     console.print(table)
     console.print()
@@ -504,7 +505,6 @@ def _getch():
         return key.decode('utf-8', errors='ignore').lower()
     except ImportError:
         # Unix/Linux/Mac
-        import sys
         import tty
         import termios
         fd = sys.stdin.fileno()
@@ -657,7 +657,7 @@ def run_script(agent, args: str):
         console.print(f"[dim]Running {filepath}...[/]")
         result = subprocess.run(
             [sys.executable, filepath],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, timeout=3600,
         )
         if result.stdout:
             console.print(result.stdout)
@@ -668,7 +668,7 @@ def run_script(agent, args: str):
         else:
             console.print(f"[yellow]Script finished (exit code {result.returncode})[/]")
     except subprocess.TimeoutExpired:
-        console.print("[red]Script timed out (300s limit).[/]")
+        console.print("[red]Script timed out (3600s limit).[/]")
     except OSError as e:
         console.print(f"[red]Error running script: {e}[/]")
 
@@ -688,16 +688,30 @@ def change_directory(args: str):
     except OSError as e:
         console.print(f"[red]Error: {e}[/]")
 
+def _get_compression_config(agent):
+    """Get compression config from agent, or print a warning and return None."""
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        console.print("[yellow]No compression config set on this agent.[/]")
+    return config
+
+
+def _get_compressor(agent):
+    """Get compressor from agent, or print a warning and return None."""
+    compressor = getattr(agent, "compressor", None)
+    if compressor is None:
+        console.print("[yellow]No compressor configured on this agent.[/]")
+    return compressor
+
+
 
 def cmd_compression_stats(agent):
     """Show current compression config and stats."""
     from smolagents.bp_compression import CompressedHistoryStep, estimate_step_tokens
 
-    compressor = getattr(agent, "compressor", None)
-    config = getattr(agent, "compression_config", None)
-
+    compressor = _get_compressor(agent)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
 
     console.print(Rule("[bold]Compression Configuration", style="blue"))
@@ -783,9 +797,8 @@ def cmd_compress(agent, args: str):
     """Force immediate compression, or compress a specific step."""
     from smolagents.bp_compression import CompressedHistoryStep
 
-    compressor = getattr(agent, "compressor", None)
+    compressor = _get_compressor(agent)
     if compressor is None:
-        console.print("[yellow]No compressor configured on this agent.[/]")
         return
 
     args = args.strip()
@@ -859,9 +872,8 @@ def cmd_compress(agent, args: str):
 
 def cmd_compression_toggle(agent, args: str):
     """Toggle compression on/off."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
 
     arg = args.strip().lower()
@@ -879,9 +891,8 @@ def cmd_compression_toggle(agent, args: str):
 
 def cmd_compression_keep_recent(agent, args: str):
     """Change keep_recent_steps."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
@@ -900,9 +911,8 @@ def cmd_compression_keep_recent(agent, args: str):
 
 def cmd_compression_max_uncompressed(agent, args: str):
     """Change max_uncompressed_steps."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
@@ -921,9 +931,8 @@ def cmd_compression_max_uncompressed(agent, args: str):
 
 def cmd_compression_model(agent, args: str):
     """Switch compression model."""
-    config = getattr(agent, "compression_config", None)
+    config = _get_compression_config(agent)
     if config is None:
-        console.print("[yellow]No compression config set on this agent.[/]")
         return
     args = args.strip()
     if not args:
@@ -1071,6 +1080,62 @@ def cmd_show_steps(agent):
 
     console.print(table)
     console.print()
+
+
+def cmd_undo(agent, args: str):
+    """Remove the last N steps from agent memory. Default N=1."""
+    from smolagents.memory import SystemPromptStep
+
+    steps = agent.memory.steps
+    if not steps:
+        console.print("[yellow]No steps in memory.[/]")
+        return
+
+    args = args.strip()
+    if args:
+        try:
+            n = int(args)
+            if n < 1:
+                console.print("[red]N must be at least 1.[/]")
+                return
+        except ValueError:
+            console.print("[red]Invalid number. Usage: /undo [N][/]")
+            return
+    else:
+        n = 1
+
+    # Count removable steps from the end (skip SystemPromptStep)
+    removable = 0
+    for step in reversed(steps):
+        if isinstance(step, SystemPromptStep):
+            break
+        removable += 1
+
+    if removable == 0:
+        console.print("[yellow]No removable steps (only system prompt steps remain).[/]")
+        return
+
+    actual = min(n, removable)
+    removed = steps[-actual:]
+    agent.memory.steps = steps[:-actual]
+
+    for step in removed:
+        type_name = type(step).__name__
+        preview = ""
+        if hasattr(step, "model_output") and step.model_output:
+            preview = str(step.model_output).replace("\n", " ")[:60]
+        elif hasattr(step, "summary"):
+            preview = step.summary.replace("\n", " ")[:60]
+        elif hasattr(step, "plan"):
+            preview = step.plan.replace("\n", " ")[:60]
+        if preview:
+            console.print(f"  [red]Removed:[/] {type_name} - {preview}...")
+        else:
+            console.print(f"  [red]Removed:[/] {type_name}")
+
+    console.print(f"[green]Undone {actual} step{'s' if actual != 1 else ''}. {len(agent.memory.steps)} steps remain.[/]")
+    if actual < n:
+        console.print(f"[yellow]Only {actual} of {n} requested steps were removable (protected system prompt steps).[/]")
 
 
 def _shutdown_browser(agent):
@@ -1330,6 +1395,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-steps":
                 cmd_show_steps(agent)
+                continue
+            elif cmd == "/undo-steps":
+                cmd_undo(agent, cmd_args)
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()

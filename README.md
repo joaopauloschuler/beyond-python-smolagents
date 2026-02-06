@@ -16,15 +16,17 @@ limitations under the License.
 # BPSA - Beyond Python Smolagents
 **BPSA - Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
 
+* 💻 **Interactive CLI ([`bpsa`](#cli-bpsa)):** Multi-turn REPL with slash commands, command history, tab completion, session stats, and auto-approve mode.
+* 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
+* 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
-* 🔄 **Infinite runtime:** The thinkers allow agents to **run ad infinitum**.
 * 🔄 Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
 * 🛠️ Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
 * 👥 Collaborate across multiple agents to solve complex problems.
 * 🔍 Tools that help agents to research and write technical documentation.
 * 📚 Generate and update documentation including READMEs for existing codebases.
-* 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
+
 
 ## Installation
 To get started with Beyond Python Smolagents, follow these steps:
@@ -75,6 +77,92 @@ bpsa --browser                    # Enable Playwright browser integration
 ```
 
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
+
+
+## CLI (`ad-infinitum`)
+
+`ad-infinitum` is a dedicated CLI for autonomous, looping agent execution. It loads tasks from a folder of `.md` files (or a single file) and runs them repeatedly.
+
+### How It Works
+
+Each cycle iterates through all tasks in order.
+
+### Task Folder Convention
+
+```
+tasks/
++-- _preamble.md          (optional) prepended to ALL tasks
++-- 01-scaffold.md        task 1
++-- 02-implement.md       task 2
++-- 03-test.md            task 3
++-- _postamble.md         (optional) appended to ALL tasks
+```
+
+- Files starting with `_` are **modifiers**, not tasks
+- `_preamble.md` is prepended to every task (e.g., project context, coding standards)
+- `_postamble.md` is appended to every task (e.g., "commit when done", "call final_answer with a summary")
+- All other `.md` files are tasks, loaded in **alphabetical order**
+- Numbering prefixes (`01-`, `02-`) give natural sequencing
+
+### Usage
+
+```bash
+ad-infinitum ../tasks/              # Run all .md files from a folder
+ad-infinitum ../single-task.md      # Run a single task file
+ad-infinitum ../tasks/ -c 5         # Run 5 cycles
+ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
+```
+
+| Flag | Description |
+|---|---|
+| `-c`, `--cycles` | Number of cycles, 0 = infinite (overrides `BPSA_CYCLES`) |
+
+### Environment Variables
+
+`ad-infinitum` uses the same `BPSA_*` environment variables as `bpsa`, plus these additional ones:
+
+| Variable | Default | Description |
+|---|---|---|
+| `BPSA_CYCLES` | `1` | Number of cycles (0 = infinite) |
+| `BPSA_MAX_STEPS` | `200` | Max steps per agent run |
+| `BPSA_PLAN_INTERVAL` | off | Planning interval (e.g., `22`) |
+| `BPSA_COOLDOWN` | `0` | Seconds to wait between cycles |
+| `BPSA_INJECT_FOLDER` | `false` | Inject directory tree (`false`, `true` = cwd, or a path) |
+
+When `BPSA_INJECT_FOLDER` is set to `true`, a fresh `list_directory_tree` snapshot of the current working directory is appended to each task prompt, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`.
+
+Example `.env` file:
+```
+BPSA_SERVER_MODEL=OpenAIServerModel
+BPSA_API_ENDPOINT=https://api.poe.com/v1
+BPSA_KEY_VALUE=your_api_key
+BPSA_MODEL_ID=Gemini-2.5-Flash
+BPSA_CYCLES=3
+BPSA_INJECT_FOLDER=true
+BPSA_MAX_STEPS=200
+BPSA_COOLDOWN=5
+```
+
+### Execution Model
+
+With 3 task files and `BPSA_CYCLES=2`:
+
+```
+Cycle 1/2:
+  Task 1/3: 01-scaffold.md    (fresh agent)
+  Task 2/3: 02-implement.md   (fresh agent, sees files from task 1)
+  Task 3/3: 03-test.md        (fresh agent, sees files from tasks 1-2)
+Cycle 2/2:
+  Task 1/3: 01-scaffold.md    (fresh agent, sees evolved project)
+  Task 2/3: 02-implement.md   (fresh agent)
+  Task 3/3: 03-test.md        (fresh agent)
+```
+
+### Graceful Shutdown
+
+- **Single Ctrl+C**: Finishes the current task, then stops
+- **Double Ctrl+C**: Aborts immediately
+
 
 ## The Thinkers
 There are 2 main functions that you can easily call:
