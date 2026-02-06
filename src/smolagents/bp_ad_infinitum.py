@@ -24,7 +24,7 @@ Environment variables (same BPSA_* as bpsa, plus):
     BPSA_PLAN_INTERVAL  - Planning interval (default: None = off)
     BPSA_MAX_STEPS      - Max steps per agent run (default: 200)
     BPSA_COOLDOWN       - Seconds to wait between cycles (default: 0)
-    BPSA_TREE_FOLDER    - Folder for directory tree injection (default: None)
+    BPSA_INJECT_FOLDER  - Inject directory tree (default: false, true = cwd, or a path)
 """
 
 import glob
@@ -158,7 +158,7 @@ def print_banner(config: dict):
             f"Cycles: [green]{cycles_str}[/] | "
             f"Steps/run: [green]{config['max_steps']}[/]\n"
             f"Planning: {plan_str} | "
-            f"Tree: {tree_str} | "
+            f"Inject folder: {tree_str} | "
             f"Cooldown: {config['cooldown']}s",
             border_style="blue",
         )
@@ -280,7 +280,13 @@ def main():
     plan_interval = int(plan_interval_val) if plan_interval_val else None
     max_steps = get_int_env("BPSA_MAX_STEPS", 200)
     cooldown = get_int_env("BPSA_COOLDOWN", 0)
-    tree_folder = get_env("BPSA_TREE_FOLDER")
+    tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
+    if tree_folder_raw is None or tree_folder_raw.lower() == "false":
+        tree_folder = None
+    elif tree_folder_raw.lower() == "true":
+        tree_folder = os.getcwd()
+    else:
+        tree_folder = tree_folder_raw
 
     # Load tasks
     console.print("[dim]Loading tasks...[/]")

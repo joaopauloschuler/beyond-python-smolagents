@@ -121,9 +121,9 @@ ad-infinitum ../single-task.md  # Run a single task file
 | `BPSA_MAX_STEPS` | `200` | Max steps per agent run |
 | `BPSA_PLAN_INTERVAL` | off | Planning interval (e.g., `22`) |
 | `BPSA_COOLDOWN` | `0` | Seconds to wait between cycles |
-| `BPSA_TREE_FOLDER` | off | Folder for directory tree injection |
+| `BPSA_INJECT_FOLDER` | `false` | Inject directory tree (`false`, `true` = cwd, or a path) |
 
-When `BPSA_TREE_FOLDER` is set, a fresh `list_directory_tree` snapshot of the specified folder is appended to each task prompt, so the agent can "see" the current project structure (files, class/method signatures, section titles).
+When `BPSA_INJECT_FOLDER` is set to `true`, a fresh `list_directory_tree` snapshot of the current working directory is appended to each task prompt, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`.
 
 Example `.env` file:
 ```
@@ -132,7 +132,7 @@ BPSA_API_ENDPOINT=https://api.poe.com/v1
 BPSA_KEY_VALUE=your_api_key
 BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_CYCLES=3
-BPSA_TREE_FOLDER=solution1
+BPSA_INJECT_FOLDER=true
 BPSA_MAX_STEPS=200
 BPSA_COOLDOWN=5
 ```
