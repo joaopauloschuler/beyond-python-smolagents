@@ -152,7 +152,7 @@ def print_banner(config: dict):
 
     console.print(
         Panel.fit(
-            f"[bold]AD-INFINITUM[/] - Autonomous Agent Cycles\n"
+            f"[bold]AD-INFINITUM[/] - Autonomous Agents\n"
             f"Model: [cyan]{config['model_id']}[/] ({config['server_model']})\n"
             f"Tasks: [green]{config['task_count']}[/] | "
             f"Cycles: [green]{cycles_str}[/] | "
