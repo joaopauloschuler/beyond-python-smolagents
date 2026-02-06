@@ -504,7 +504,6 @@ def _getch():
         return key.decode('utf-8', errors='ignore').lower()
     except ImportError:
         # Unix/Linux/Mac
-        import sys
         import tty
         import termios
         fd = sys.stdin.fileno()
