@@ -149,3 +149,4 @@ lines-after-imports = 2
 smolagent = "smolagents.cli:main"
 bpsa = "smolagents.bp_cli:main"
 webagent = "smolagents.vision_web_browser:main"
+ad-infinitum = "smolagents.bp_ad_infinitum:main"
