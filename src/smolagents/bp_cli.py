@@ -343,9 +343,9 @@ def load_agent_instructions() -> str | None:
         if os.path.isfile(filepath):
             try:
                 with open(filepath, "r") as f:
-                    content = '<filecontent>' + f.read().strip() + '</filecontent>'
+                    content = f.read().strip()
                 if content:
-                    instructions.append(f"# Content from {filename}\n\n{content}")
+                    instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
                     console.print(f"  [green]Loaded:[/] {filename}")
             except OSError:
                 pass
