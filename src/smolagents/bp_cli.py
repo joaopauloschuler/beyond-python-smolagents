@@ -656,7 +656,7 @@ def run_script(agent, args: str):
         console.print(f"[dim]Running {filepath}...[/]")
         result = subprocess.run(
             [sys.executable, filepath],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, text=True, timeout=3600,
         )
         if result.stdout:
             console.print(result.stdout)
@@ -667,7 +667,7 @@ def run_script(agent, args: str):
         else:
             console.print(f"[yellow]Script finished (exit code {result.returncode})[/]")
     except subprocess.TimeoutExpired:
-        console.print("[red]Script timed out (300s limit).[/]")
+        console.print("[red]Script timed out (3600s limit).[/]")
     except OSError as e:
         console.print(f"[red]Error running script: {e}[/]")
 
