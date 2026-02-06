@@ -442,7 +442,7 @@ SLASH_COMMANDS = [
     "/compression-model", "/exit", "/file", "/help",
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/show-step", "/show-steps", "/steps", "/tools", "/verbose",
+    "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -473,6 +473,7 @@ def print_help():
     table.add_row("/show-stats", "Show session statistics")
     table.add_row("/steps <N>", "Change max_steps for the agent")
     table.add_row("/tools", "List all loaded tools")
+    table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
     console.print(table)
     console.print()
@@ -1081,6 +1082,62 @@ def cmd_show_steps(agent):
     console.print()
 
 
+def cmd_undo(agent, args: str):
+    """Remove the last N steps from agent memory. Default N=1."""
+    from smolagents.memory import SystemPromptStep
+
+    steps = agent.memory.steps
+    if not steps:
+        console.print("[yellow]No steps in memory.[/]")
+        return
+
+    args = args.strip()
+    if args:
+        try:
+            n = int(args)
+            if n < 1:
+                console.print("[red]N must be at least 1.[/]")
+                return
+        except ValueError:
+            console.print("[red]Invalid number. Usage: /undo [N][/]")
+            return
+    else:
+        n = 1
+
+    # Count removable steps from the end (skip SystemPromptStep)
+    removable = 0
+    for step in reversed(steps):
+        if isinstance(step, SystemPromptStep):
+            break
+        removable += 1
+
+    if removable == 0:
+        console.print("[yellow]No removable steps (only system prompt steps remain).[/]")
+        return
+
+    actual = min(n, removable)
+    removed = steps[-actual:]
+    agent.memory.steps = steps[:-actual]
+
+    for step in removed:
+        type_name = type(step).__name__
+        preview = ""
+        if hasattr(step, "model_output") and step.model_output:
+            preview = str(step.model_output).replace("\n", " ")[:60]
+        elif hasattr(step, "summary"):
+            preview = step.summary.replace("\n", " ")[:60]
+        elif hasattr(step, "plan"):
+            preview = step.plan.replace("\n", " ")[:60]
+        if preview:
+            console.print(f"  [red]Removed:[/] {type_name} - {preview}...")
+        else:
+            console.print(f"  [red]Removed:[/] {type_name}")
+
+    console.print(f"[green]Undone {actual} step{'s' if actual != 1 else ''}. {len(agent.memory.steps)} steps remain.[/]")
+    if actual < n:
+        console.print(f"[yellow]Only {actual} of {n} requested steps were removable (protected system prompt steps).[/]")
+
+
 def _shutdown_browser(agent):
     """Shut down the browser manager if one exists on the agent."""
     manager = getattr(agent, "_browser_manager", None)
@@ -1338,6 +1395,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-steps":
                 cmd_show_steps(agent)
+                continue
+            elif cmd == "/undo-steps":
+                cmd_undo(agent, cmd_args)
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()
