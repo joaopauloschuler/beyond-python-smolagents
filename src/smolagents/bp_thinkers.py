@@ -1050,7 +1050,7 @@ def run_agent_cycles(
 ):
   # Convert string to list if needed, maintaining backward compatibility
   if isinstance(task_str, str):
-    task_list = [task_str] * cycles_cnt
+    task_list = [task_str]
   else:
     task_list = list(task_str)
   
