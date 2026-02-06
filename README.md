@@ -107,9 +107,15 @@ tasks/
 ### Usage
 
 ```bash
-ad-infinitum ../tasks/          # Run all .md files from a folder
-ad-infinitum ../single-task.md  # Run a single task file
+ad-infinitum ../tasks/              # Run all .md files from a folder
+ad-infinitum ../single-task.md      # Run a single task file
+ad-infinitum ../tasks/ -c 5         # Run 5 cycles
+ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 ```
+
+| Flag | Description |
+|---|---|
+| `-c`, `--cycles` | Number of cycles, 0 = infinite (overrides `BPSA_CYCLES`) |
 
 ### Environment Variables
 

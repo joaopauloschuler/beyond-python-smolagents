@@ -264,6 +264,12 @@ def main():
         "task_source",
         help="Folder of .md task files or a single .md file",
     )
+    parser.add_argument(
+        "-c", "--cycles",
+        type=int,
+        default=None,
+        help="Number of cycles, 0 = infinite (overrides BPSA_CYCLES, default: 1)",
+    )
     args = parser.parse_args()
 
     # Install Ctrl+C handler
@@ -275,7 +281,7 @@ def main():
     check_required_env()
 
     # Read config from env
-    cycles = get_int_env("BPSA_CYCLES", 1)
+    cycles = args.cycles if args.cycles is not None else get_int_env("BPSA_CYCLES", 1)
     plan_interval_val = get_env("BPSA_PLAN_INTERVAL")
     plan_interval = int(plan_interval_val) if plan_interval_val else None
     max_steps = get_int_env("BPSA_MAX_STEPS", 200)
