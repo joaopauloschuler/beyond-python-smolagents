@@ -17,7 +17,7 @@ limitations under the License.
 **BPSA - Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
 
 * 💻 **Interactive CLI ([`bpsa`](#cli-bpsa)):** Multi-turn REPL with slash commands, command history, tab completion, session stats, and auto-approve mode.
-* 🔄 **Infinite runtime:** The [`ad-infinitum`](#cli-ad-infinitum) CLI allows agents to **run ad infinitum** via autonomous looping.
+* 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
