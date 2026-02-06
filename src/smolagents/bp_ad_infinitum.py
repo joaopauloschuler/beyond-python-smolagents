@@ -37,6 +37,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 
+from smolagents.bp_cli import get_env
+
 console = Console()
 
 # Graceful shutdown flag
@@ -113,9 +115,6 @@ def load_tasks(path: str) -> list[str]:
     else:
         fail(f"Path not found: {path}")
 
-
-def get_env(name: str, default: str | None = None) -> str | None:
-    return os.environ.get(name, default)
 
 
 def get_int_env(name: str, default: int) -> int:
