@@ -81,7 +81,13 @@ The REPL supports command history, tab completion for slash commands, and multi-
 
 ## CLI (`ad-infinitum`)
 
-`ad-infinitum` is a dedicated CLI for autonomous, looping agent execution. It loads tasks from a folder of `.md` files (or a single file) and runs them repeatedly.
+`ad-infinitum` is a dedicated CLI for autonomous, looping agent execution. It loads tasks from a folder of task files (`.md`, `.py`, `.sh`) or a single file and runs them repeatedly.
+
+- **`.md` files** are treated as agent prompts (run via `agent.run()`)
+- **`.py` files** are executed directly via the Python interpreter (`subprocess`)
+- **`.sh` files** are executed directly via bash (`subprocess`)
+
+Script files (`.py`, `.sh`) bypass the agent entirely, enabling mixed workflows where setup, validation, and cleanup steps run as plain scripts alongside agent-driven prompt tasks.
 
 ### How It Works
 
@@ -91,24 +97,28 @@ Each cycle iterates through all tasks in order.
 
 ```
 tasks/
-+-- _preamble.md          (optional) prepended to ALL tasks
-+-- 01-scaffold.md        task 1
-+-- 02-implement.md       task 2
-+-- 03-test.md            task 3
-+-- _postamble.md         (optional) appended to ALL tasks
++-- _preamble.md          (optional) prepended to ALL prompt tasks
++-- 01-setup-env.sh       script: install deps, create dirs
++-- 02-implement.md       prompt: agent does the work
++-- 03-validate.py        script: programmatic validation
++-- 04-refine.md          prompt: agent fixes issues
++-- _postamble.md         (optional) appended to ALL prompt tasks
 ```
 
 - Files starting with `_` are **modifiers**, not tasks
-- `_preamble.md` is prepended to every task (e.g., project context, coding standards)
-- `_postamble.md` is appended to every task (e.g., "commit when done", "call final_answer with a summary")
-- All other `.md` files are tasks, loaded in **alphabetical order**
+- `_preamble.md` is prepended to every **prompt** task (e.g., project context, coding standards)
+- `_postamble.md` is appended to every **prompt** task (e.g., "commit when done", "call final_answer with a summary")
+- All other `.md`, `.py`, and `.sh` files are tasks, loaded in **alphabetical order**
 - Numbering prefixes (`01-`, `02-`) give natural sequencing
+- Script tasks (`.py`, `.sh`) are executed directly and report exit codes instead of token usage
 
 ### Usage
 
 ```bash
-ad-infinitum ../tasks/              # Run all .md files from a folder
-ad-infinitum ../single-task.md      # Run a single task file
+ad-infinitum ../tasks/              # Run all task files from a folder
+ad-infinitum ../single-task.md      # Run a single prompt task
+ad-infinitum ../setup.sh            # Run a single shell script
+ad-infinitum ../validate.py         # Run a single Python script
 ad-infinitum ../tasks/ -c 5         # Run 5 cycles
 ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 ```
@@ -129,7 +139,7 @@ ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 | `BPSA_COOLDOWN` | `0` | Seconds to wait between cycles |
 | `BPSA_INJECT_FOLDER` | `false` | Inject directory tree (`false`, `true` = cwd, or a path) |
 
-When `BPSA_INJECT_FOLDER` is set to `true`, a fresh `list_directory_tree` snapshot of the current working directory is appended to each task prompt, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`.
+When `BPSA_INJECT_FOLDER` is set to `true`, a fresh `list_directory_tree` snapshot of the current working directory is appended to each prompt task, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`. This only applies to `.md` prompt tasks; script tasks are unaffected.
 
 Example `.env` file:
 ```
@@ -145,17 +155,19 @@ BPSA_COOLDOWN=5
 
 ### Execution Model
 
-With 3 task files and `BPSA_CYCLES=2`:
+With 4 task files and `BPSA_CYCLES=2`:
 
 ```
 Cycle 1/2:
-  Task 1/3: 01-scaffold.md    (fresh agent)
-  Task 2/3: 02-implement.md   (fresh agent, sees files from task 1)
-  Task 3/3: 03-test.md        (fresh agent, sees files from tasks 1-2)
+  Task 1/4: 01-setup-env.sh     (script, runs via bash)
+  Task 2/4: 02-implement.md     (prompt, fresh agent)
+  Task 3/4: 03-validate.py      (script, runs via python)
+  Task 4/4: 04-refine.md        (prompt, fresh agent, sees files from earlier tasks)
 Cycle 2/2:
-  Task 1/3: 01-scaffold.md    (fresh agent, sees evolved project)
-  Task 2/3: 02-implement.md   (fresh agent)
-  Task 3/3: 03-test.md        (fresh agent)
+  Task 1/4: 01-setup-env.sh     (script, re-runs setup)
+  Task 2/4: 02-implement.md     (prompt, fresh agent, sees evolved project)
+  Task 3/4: 03-validate.py      (script, re-validates)
+  Task 4/4: 04-refine.md        (prompt, fresh agent)
 ```
 
 ### Graceful Shutdown
