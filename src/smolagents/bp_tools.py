@@ -257,7 +257,7 @@ def force_directories(file_path: str) -> None:
 def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 274877906944) -> str:
     """
 Runs an OS command and returns the output.
-This implementation uses Popen with shell=False.
+This implementation uses Popen with shell=True.
 
 For finding files in the file system, use this example:
 <example>
@@ -285,14 +285,14 @@ As you can see in the above command, you can use any computer language that is a
       max_memory: int bytes
     """
     if max_memory > 0 and _HAS_PRLIMIT:
-        command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
+        command = "prlimit --as=" + str(max_memory) + " " + str_command
     else:
-        command = shlex.split(str_command)
+        command = str_command
     result = ""
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         try:
             outs, errs = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
