@@ -5,11 +5,14 @@ from .default_tools import VisitWebpageTool
 from .models import ChatMessage, MessageRole
 import difflib
 import os
+import shutil
 import subprocess
 import shlex
 import re
 import textwrap
 from slugify import slugify
+
+_HAS_PRLIMIT = shutil.which("prlimit") is not None
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -281,7 +284,7 @@ As you can see in the above command, you can use any computer language that is a
       timeout: int seconds
       max_memory: int bytes
     """
-    if (max_memory>0):
+    if max_memory > 0 and _HAS_PRLIMIT:
         command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
     else:
         command = shlex.split(str_command)
@@ -289,14 +292,14 @@ As you can see in the above command, you can use any computer language that is a
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
         try:
-            outs, errs = proc.communicate(input="", timeout=timeout)
+            outs, errs = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             result += "ERROR: timeout has expired. "
             proc.kill()
             outs, errs = proc.communicate()
-        except:
+        except Exception:
             proc.kill()
             outs, errs = proc.communicate()
     except Exception as e:
