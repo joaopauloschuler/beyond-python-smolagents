@@ -5,18 +5,23 @@
 """
 Ad-Infinitum CLI for Beyond Python SmolAgents.
 
-Autonomous agent cycling: loads tasks from a folder of .md files (or a single file)
-and runs them repeatedly with a fresh agent per task.
+Autonomous agent cycling: loads tasks from a folder of task files (.md, .py, .sh)
+or a single file and runs them repeatedly.
+
+- .md files are treated as agent prompts (run via agent.run())
+- .py files are executed directly via the Python interpreter (subprocess)
+- .sh files are executed directly via bash (subprocess)
 
 Folder convention:
     tasks/
-    +-- _preamble.md          (optional) prepended to ALL tasks
-    +-- 01-scaffold.md        task 1
-    +-- 02-implement.md       task 2
-    +-- 03-test.md            task 3
-    +-- _postamble.md         (optional) appended to ALL tasks
+    +-- _preamble.md          (optional) prepended to ALL prompt tasks
+    +-- 01-setup-env.sh       script: install deps, create/clean dirs
+    +-- 02-implement.md       prompt: agent does the work
+    +-- 03-validate.py        script: programmatic validation
+    +-- 04-refine.md          prompt: agent fixes issues
+    +-- _postamble.md         (optional) appended to ALL prompt tasks
 
-Files starting with '_' are modifiers, not tasks. All other .md files are
+Files starting with '_' are modifiers, not tasks. All other task files are
 loaded in alphabetical order. Each becomes one element in the task array.
 
 Environment variables (same BPSA_* as bpsa, plus):
@@ -30,8 +35,10 @@ Environment variables (same BPSA_* as bpsa, plus):
 import glob
 import os
 import signal
+import subprocess
 import sys
 import time
+from dataclasses import dataclass
 
 from rich.console import Console
 from rich.panel import Panel
@@ -40,6 +47,25 @@ from rich.rule import Rule
 from smolagents.bp_cli import get_env
 
 console = Console()
+
+_EXTENSION_TO_KIND = {".md": "prompt", ".py": "python", ".sh": "shell"}
+
+
+@dataclass
+class TaskItem:
+    """A single task: either an agent prompt or an executable script."""
+
+    name: str  # display name (file basename)
+    kind: str  # "prompt" | "python" | "shell"
+    content: str  # assembled prompt text (prompts) or raw content (scripts)
+    path: str | None  # original file path (needed for script execution)
+
+
+def _file_kind(filepath: str) -> str | None:
+    """Return task kind for a file extension, or None if unsupported."""
+    _, ext = os.path.splitext(filepath)
+    return _EXTENSION_TO_KIND.get(ext.lower())
+
 
 # Graceful shutdown flag
 _stop_requested = False
@@ -59,27 +85,33 @@ def fail(msg: str):
     sys.exit(1)
 
 
-def load_tasks(path: str) -> list[str]:
-    """Load tasks from a folder of .md files or a single file.
+def load_tasks(path: str) -> list[TaskItem]:
+    """Load tasks from a folder of task files (.md, .py, .sh) or a single file.
 
     Folder mode:
-        - _preamble.md and _postamble.md are optional wrappers
-        - All other *.md files are tasks, sorted alphabetically
-        - Each task = preamble + file content + postamble
+        - _preamble.md and _postamble.md are optional wrappers (prompt tasks only)
+        - All other *.md, *.py, *.sh files are tasks, sorted alphabetically
+        - Each prompt task = preamble + file content + postamble
+        - Script tasks (.py, .sh) are executed directly via subprocess
 
     File mode:
-        - Returns a single-element list with the file content.
+        - Returns a single-element list with a TaskItem.
     """
     if os.path.isdir(path):
-        all_md = sorted(glob.glob(os.path.join(path, "*.md")))
-        if not all_md:
-            fail(f"No .md files found in {path}")
+        # Collect all supported files, sorted alphabetically
+        all_files = sorted(
+            f
+            for ext in ("*.md", "*.py", "*.sh")
+            for f in glob.glob(os.path.join(path, ext))
+        )
+        if not all_files:
+            fail(f"No task files (.md, .py, .sh) found in {path}")
 
         preamble = ""
         postamble = ""
         task_files = []
 
-        for f in all_md:
+        for f in all_files:
             basename = os.path.basename(f)
             if basename == "_preamble.md":
                 with open(f, "r", encoding="utf-8") as fh:
@@ -93,24 +125,39 @@ def load_tasks(path: str) -> list[str]:
                 task_files.append(f)
 
         if not task_files:
-            fail(f"No task .md files found in {path} (files starting with '_' are modifiers, not tasks)")
+            fail(f"No task files found in {path} (files starting with '_' are modifiers, not tasks)")
 
         tasks = []
         for f in task_files:
+            basename = os.path.basename(f)
+            kind = _file_kind(f)
             with open(f, "r", encoding="utf-8") as fh:
                 content = fh.read().strip()
-            tasks.append(preamble + content + postamble)
-            console.print(f"  [cyan]Task:[/] {os.path.basename(f)}")
+
+            if kind == "prompt":
+                content = preamble + content + postamble
+                console.print(f"  [cyan]Task:[/] {basename}")
+            else:
+                console.print(f"  [magenta]Script ({kind}):[/] {basename}")
+
+            tasks.append(TaskItem(name=basename, kind=kind, content=content, path=f))
 
         return tasks
 
     elif os.path.isfile(path):
+        kind = _file_kind(path)
+        if kind is None:
+            fail(f"Unsupported file type: {path} (expected .md, .py, or .sh)")
         with open(path, "r", encoding="utf-8") as fh:
             content = fh.read().strip()
         if not content:
             fail(f"File is empty: {path}")
-        console.print(f"  [cyan]Task:[/] {os.path.basename(path)}")
-        return [content]
+        basename = os.path.basename(path)
+        if kind == "prompt":
+            console.print(f"  [cyan]Task:[/] {basename}")
+        else:
+            console.print(f"  [magenta]Script ({kind}):[/] {basename}")
+        return [TaskItem(name=basename, kind=kind, content=content, path=path)]
 
     else:
         fail(f"Path not found: {path}")
@@ -143,6 +190,17 @@ def inject_tree(folder: str) -> str:
         "* For source code files, if they exist, you can find class and method names "
         "so you can also develop a general idea of their contents.\n"
     )
+
+
+def run_script(task: TaskItem) -> subprocess.CompletedProcess:
+    """Execute a .py or .sh script directly via subprocess."""
+    if task.kind == "python":
+        cmd = [sys.executable, task.path]
+    elif task.kind == "shell":
+        cmd = ["bash", task.path]
+    else:
+        raise ValueError(f"Unknown script kind: {task.kind}")
+    return subprocess.run(cmd)
 
 
 def print_banner(config: dict):
@@ -191,48 +249,71 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
 
         console.print(Rule(f"[bold]Cycle {cycle_label}{cycle_limit}[/]", style="blue"))
 
-        for task_idx, task_text in enumerate(tasks):
+        for task_idx, task in enumerate(tasks):
             if _stop_requested:
                 break
 
             os.chdir(original_dir)
 
-            # Inject directory tree if configured
-            prompt = task_text
-            if tree_folder:
-                prompt += inject_tree(tree_folder)
-
-            task_label = f"Task {task_idx + 1}/{len(tasks)}"
+            task_label = f"Task {task_idx + 1}/{len(tasks)} ({task.name})"
             console.print(f"[dim]{task_label} starting...[/]")
 
-            agent = build_agent(model)
-            if plan_interval:
-                agent.planning_interval = plan_interval
-
             task_start = time.time()
-            try:
-                agent.run(prompt, reset=True)
-                elapsed = time.time() - task_start
-                total_tasks_run += 1
 
-                # Get token usage
+            if task.kind == "prompt":
+                # Inject directory tree if configured
+                prompt = task.content
+                if tree_folder:
+                    prompt += inject_tree(tree_folder)
+
+                agent = build_agent(model)
+                if plan_interval:
+                    agent.planning_interval = plan_interval
+
                 try:
-                    usage = agent.monitor.get_total_token_counts()
-                    in_tok, out_tok = usage.input_tokens, usage.output_tokens
-                except Exception:
-                    in_tok, out_tok = 0, 0
+                    agent.run(prompt, reset=True)
+                    elapsed = time.time() - task_start
+                    total_tasks_run += 1
 
-                console.print(
-                    f"[green]OK[/] {task_label} | {elapsed:.1f}s | "
-                    f"In: {in_tok:,} | Out: {out_tok:,}"
-                )
-            except KeyboardInterrupt:
-                console.print(f"[yellow]{task_label} interrupted.[/]")
-                break
-            except Exception as e:
-                elapsed = time.time() - task_start
-                total_tasks_run += 1
-                console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
+                    # Get token usage
+                    try:
+                        usage = agent.monitor.get_total_token_counts()
+                        in_tok, out_tok = usage.input_tokens, usage.output_tokens
+                    except Exception:
+                        in_tok, out_tok = 0, 0
+
+                    console.print(
+                        f"[green]OK[/] {task_label} | {elapsed:.1f}s | "
+                        f"In: {in_tok:,} | Out: {out_tok:,}"
+                    )
+                except KeyboardInterrupt:
+                    console.print(f"[yellow]{task_label} interrupted.[/]")
+                    break
+                except Exception as e:
+                    elapsed = time.time() - task_start
+                    total_tasks_run += 1
+                    console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
+
+            else:
+                # Script execution (python or shell)
+                try:
+                    result = run_script(task)
+                    elapsed = time.time() - task_start
+                    total_tasks_run += 1
+
+                    if result.returncode == 0:
+                        console.print(f"[green]OK[/] {task_label} | {elapsed:.1f}s | exit 0")
+                    else:
+                        console.print(
+                            f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | exit {result.returncode}"
+                        )
+                except KeyboardInterrupt:
+                    console.print(f"[yellow]{task_label} interrupted.[/]")
+                    break
+                except Exception as e:
+                    elapsed = time.time() - task_start
+                    total_tasks_run += 1
+                    console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
 
         if _stop_requested:
             console.print(f"\n[yellow]Stopped after cycle {cycle}.[/]")
@@ -262,7 +343,7 @@ def main():
     )
     parser.add_argument(
         "task_source",
-        help="Folder of .md task files or a single .md file",
+        help="Folder of task files (.md, .py, .sh) or a single task file",
     )
     parser.add_argument(
         "-c", "--cycles",
