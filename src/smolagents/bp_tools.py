@@ -5,11 +5,14 @@ from .default_tools import VisitWebpageTool
 from .models import ChatMessage, MessageRole
 import difflib
 import os
+import shutil
 import subprocess
 import shlex
 import re
 import textwrap
 from slugify import slugify
+
+_HAS_PRLIMIT = shutil.which("prlimit") is not None
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -254,7 +257,7 @@ def force_directories(file_path: str) -> None:
 def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 274877906944) -> str:
     """
 Runs an OS command and returns the output.
-This implementation uses Popen with shell=False.
+This implementation uses Popen with shell=True.
 
 For finding files in the file system, use this example:
 <example>
@@ -281,22 +284,22 @@ As you can see in the above command, you can use any computer language that is a
       timeout: int seconds
       max_memory: int bytes
     """
-    if (max_memory>0):
-        command = shlex.split("prlimit --as="+str(max_memory)+" "+str_command)
+    if max_memory > 0 and _HAS_PRLIMIT:
+        command = "prlimit --as=" + str(max_memory) + " " + str_command
     else:
-        command = shlex.split(str_command)
+        command = str_command
     result = ""
     outs = None
     errs = None
     try:
-        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         try:
-            outs, errs = proc.communicate(input="", timeout=timeout)
+            outs, errs = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             result += "ERROR: timeout has expired. "
             proc.kill()
             outs, errs = proc.communicate()
-        except:
+        except Exception:
             proc.kill()
             outs, errs = proc.communicate()
     except Exception as e:
