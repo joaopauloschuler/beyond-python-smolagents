@@ -350,10 +350,17 @@ def get_clean_message_list(
                         element["image"] = encode_image_base64(element["image"])
 
         if len(output_message_list) > 0 and message.role == output_message_list[-1]["role"]:
-            assert isinstance(message.content, list), "Error: wrong content:" + str(message.content)
             if flatten_messages_as_text:
-                output_message_list[-1]["content"] += "\n" + message.content[0]["text"]
+                # Handle both string and list content when merging
+                if isinstance(message.content, str):
+                    text_to_append = message.content
+                elif isinstance(message.content, list):
+                    text_to_append = message.content[0]["text"]
+                else:
+                    raise ValueError(f"Unexpected content type: {type(message.content)}")
+                output_message_list[-1]["content"] += "\n" + text_to_append
             else:
+                assert isinstance(message.content, list), "Error: wrong content:" + str(message.content)
                 for el in message.content:
                     if el["type"] == "text" and output_message_list[-1]["content"][-1]["type"] == "text":
                         # Merge consecutive text messages rather than creating new ones
@@ -362,7 +369,13 @@ def get_clean_message_list(
                         output_message_list[-1]["content"].append(el)
         else:
             if flatten_messages_as_text:
-                content = message.content[0]["text"]
+                # Handle both string content and list content
+                if isinstance(message.content, str):
+                    content = message.content
+                elif isinstance(message.content, list):
+                    content = message.content[0]["text"]
+                else:
+                    raise ValueError(f"Unexpected content type: {type(message.content)}")
             else:
                 content = message.content
             output_message_list.append(
