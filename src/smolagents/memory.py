@@ -63,6 +63,8 @@ class ActionStep(MemoryStep):
     token_usage: TokenUsage | None = None
     is_final_answer: bool = False
     actionstep_id: int | None = None
+    _archived_observations: str | None = None
+    _archived_model_output: str | list[dict[str, Any]] | None = None
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually

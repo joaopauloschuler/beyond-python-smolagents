@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -354,6 +354,7 @@ class MultiStepAgent(ABC):
         self._setup_managed_agents(managed_agents)
         self._setup_tools(tools, add_base_tools)
         self._bind_planning_tools()
+        self._bind_memory_tools()
         self._validate_tools_and_managed_agents(tools, managed_agents)
 
         self.task: str | None = None
@@ -429,6 +430,17 @@ class MultiStepAgent(ABC):
         """If planning is enabled, ensure a PlanningTool is present and bind it to this agent."""
         if self.planning_interval is not None:
             self.add_planning_tool()
+
+    def _bind_memory_tools(self):
+        """Add MoveActionStepToMemory and RetrieveActionStepFromMemory tools."""
+        if "move_actionstep_to_memory" not in self.tools:
+            tool = MoveActionStepToMemory()
+            tool.set_agent(self)
+            self.tools["move_actionstep_to_memory"] = tool
+        if "move_actionstep_from_memory" not in self.tools:
+            tool = RetrieveActionStepFromMemory()
+            tool.set_agent(self)
+            self.tools["move_actionstep_from_memory"] = tool
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]

@@ -2564,3 +2564,158 @@ class PlanningTool(Tool):
         agent._last_plan_step = agent.step_number
 
         return plan_text
+
+
+class MoveActionStepToMemory(Tool):
+    """A tool that moves content from an ActionStep into off-context memory,
+    leaving a short placeholder in the context. The original content is preserved
+    and can be restored with RetrieveActionStepFromMemory.
+
+    Must be bound to an agent via ``set_agent`` before use.
+    """
+
+    name = "move_actionstep_to_memory"
+    description = (
+        "Move content from a specific ActionStep out of the active context into memory. "
+        "This reduces context size while preserving the original content for later retrieval. "
+        "Use this when a step's response or model_output is large and no longer needed in context. "
+        "The step is identified by its actionstep_id (shown as step=\"N\" in <response> tags)."
+    )
+    inputs = {
+        "actionstep_id": {
+            "type": "integer",
+            "description": "The actionstep_id of the step to archive (the number shown in step=\"N\" in <response> tags).",
+        },
+        "content": {
+            "type": "string",
+            "description": "What to move: 'response' (observations/results), 'model_output' (the model's own output), or 'both'.",
+            "enum": ["response", "model_output", "both"],
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._agent = None
+
+    def set_agent(self, agent):
+        """Bind this tool to an agent so it can access memory steps."""
+        self._agent = agent
+
+    def _find_step(self, actionstep_id: int):
+        """Find an ActionStep by its actionstep_id."""
+        from smolagents.memory import ActionStep
+        for step in self._agent.memory.steps:
+            if isinstance(step, ActionStep) and step.actionstep_id == actionstep_id:
+                return step
+        return None
+
+    def forward(self, actionstep_id: int, content: str) -> str:
+        if self._agent is None:
+            return "Error: MoveActionStepToMemory is not bound to an agent. Call set_agent() first."
+
+        step = self._find_step(actionstep_id)
+        if step is None:
+            return f"Error: No ActionStep with actionstep_id={actionstep_id} found."
+
+        if content not in ("response", "model_output", "both"):
+            return f"Error: content must be 'response', 'model_output', or 'both'. Got '{content}'."
+
+        moved = []
+        placeholder = f"[Moved to memory. Use move_actionstep_from_memory({actionstep_id}, \"{content}\") to restore.]"
+
+        if content in ("response", "both"):
+            if step._archived_observations is not None:
+                return f"Error: response for actionstep_id={actionstep_id} is already in memory."
+            if step.observations is not None:
+                step._archived_observations = step.observations
+                step.observations = placeholder
+                moved.append("response")
+
+        if content in ("model_output", "both"):
+            if step._archived_model_output is not None:
+                return f"Error: model_output for actionstep_id={actionstep_id} is already in memory."
+            if step.model_output is not None:
+                step._archived_model_output = step.model_output
+                step.model_output = placeholder
+                moved.append("model_output")
+
+        if not moved:
+            return f"Nothing to move for actionstep_id={actionstep_id} — the requested fields are empty."
+
+        return f"Moved {', '.join(moved)} from actionstep_id={actionstep_id} to memory."
+
+
+class RetrieveActionStepFromMemory(Tool):
+    """A tool that restores previously archived content back into an ActionStep's
+    active context. Reverses the effect of MoveActionStepToMemory.
+
+    Must be bound to an agent via ``set_agent`` before use.
+    """
+
+    name = "move_actionstep_from_memory"
+    description = (
+        "Restore content that was previously moved to memory back into the active context. "
+        "Use this when you need to re-examine a step's response or model_output that was archived. "
+        "The step is identified by its actionstep_id (shown as step=\"N\" in <response> tags)."
+    )
+    inputs = {
+        "actionstep_id": {
+            "type": "integer",
+            "description": "The actionstep_id of the step to restore (the number shown in step=\"N\" in <response> tags).",
+        },
+        "content": {
+            "type": "string",
+            "description": "What to restore: 'response' (observations/results), 'model_output' (the model's own output), or 'both'.",
+            "enum": ["response", "model_output", "both"],
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._agent = None
+
+    def set_agent(self, agent):
+        """Bind this tool to an agent so it can access memory steps."""
+        self._agent = agent
+
+    def _find_step(self, actionstep_id: int):
+        """Find an ActionStep by its actionstep_id."""
+        from smolagents.memory import ActionStep
+        for step in self._agent.memory.steps:
+            if isinstance(step, ActionStep) and step.actionstep_id == actionstep_id:
+                return step
+        return None
+
+    def forward(self, actionstep_id: int, content: str) -> str:
+        if self._agent is None:
+            return "Error: RetrieveActionStepFromMemory is not bound to an agent. Call set_agent() first."
+
+        step = self._find_step(actionstep_id)
+        if step is None:
+            return f"Error: No ActionStep with actionstep_id={actionstep_id} found."
+
+        if content not in ("response", "model_output", "both"):
+            return f"Error: content must be 'response', 'model_output', or 'both'. Got '{content}'."
+
+        restored = []
+
+        if content in ("response", "both"):
+            if step._archived_observations is None:
+                return f"Error: No archived response for actionstep_id={actionstep_id}."
+            step.observations = step._archived_observations
+            step._archived_observations = None
+            restored.append("response")
+
+        if content in ("model_output", "both"):
+            if step._archived_model_output is None:
+                return f"Error: No archived model_output for actionstep_id={actionstep_id}."
+            step.model_output = step._archived_model_output
+            step._archived_model_output = None
+            restored.append("model_output")
+
+        if not restored:
+            return f"Nothing to restore for actionstep_id={actionstep_id}."
+
+        return f"Restored {', '.join(restored)} for actionstep_id={actionstep_id} back into context."
