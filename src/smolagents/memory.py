@@ -130,16 +130,16 @@ class ActionStep(MemoryStep):
                     content=[
                         {
                             "type": "text",
-                            "text": f"Observation:\n{self.observations}",
+                            "text": f"<response>{self.observations}</response>",
                         }
                     ],
                 )
             )
         if self.error is not None:
             error_message = (
-                "Error:\n"
+                "<error>"
                 + str(self.error)
-                + "\nNow let's retry: take care not to repeat previous errors! If you have retried several times, try a completely different approach.\n"
+                + "</error>"
             )
             message_content = f"Call id: {self.tool_calls[0].id}\n" if self.tool_calls else ""
             message_content += error_message

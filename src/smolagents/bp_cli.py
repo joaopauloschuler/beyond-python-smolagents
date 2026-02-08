@@ -994,16 +994,16 @@ def _print_step_detail(step):
             console.print(f"[bold]Tokens:[/] in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
         if step.error:
             console.print(f"[bold red]Error:[/] {step.error}")
-        if step.is_final_answer:
-            console.print("[bold green]Final answer[/]")
+        # if step.is_final_answer:
+        #    console.print("[bold green]Final answer[/]")
         if step.model_output:
             console.print(f"[bold]Model output:[/]")
             console.print(str(step.model_output)[:2000])
-        if step.code_action:
-            console.print(f"[bold]Code action:[/]")
-            console.print(step.code_action[:2000])
+        # if step.code_action:
+        #    console.print(f"[bold]Code action:[/]")
+        #    console.print(step.code_action[:2000])
         if step.observations:
-            console.print(f"[bold]Observations:[/]")
+            console.print(f"[bold]Run output:[/]")
             console.print(str(step.observations)[:2000])
     elif isinstance(step, CompressedHistoryStep):
         console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
