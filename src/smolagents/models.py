@@ -2068,7 +2068,7 @@ class GoogleColabModel(Model):
 
     def __init__(
         self,
-        model_id: str = "google/gemini-2.5-pro",
+        model_id: str = "google/gemini-2.5-flash",
         **kwargs,
     ):
         super().__init__(
@@ -2077,6 +2077,23 @@ class GoogleColabModel(Model):
             **kwargs,
         )
         self._ai_module = None
+
+        # Early validation of environment
+        try:
+            from IPython import get_ipython
+            ipython = get_ipython()
+            if ipython is None or not hasattr(ipython, 'kernel'):
+                raise RuntimeError(
+                    "GoogleColabModel requires an active IPython/Jupyter kernel. "
+                    "This model only works within Google Colab notebooks. "
+                    "Please run your code in a Google Colab notebook environment, "
+                    "not as a standalone Python script."
+                )
+        except ImportError:
+            raise RuntimeError(
+                "IPython is not available. GoogleColabModel only works within "
+                "Google Colab notebooks with an active kernel."
+            )
 
     def _get_ai_module(self):
         """Lazily import and cache the google.colab.ai module."""
@@ -2147,13 +2164,13 @@ class GoogleColabModel(Model):
         ai = self._get_ai_module()
         response_text = ai.generate_text(prompt, model_name=self.model_id)
 
-        # Apply stop sequences manually if provided
-        if stop_sequences:
-            response_text = remove_content_after_stop_sequences(response_text, stop_sequences)
-
         # Estimate token usage since Google Colab AI doesn't provide it
         input_tokens = len(prompt) // CHARS_PER_TOKEN
         output_tokens = len(response_text) // CHARS_PER_TOKEN
+
+        # Apply stop sequences manually if provided
+        if stop_sequences:
+            response_text = remove_content_after_stop_sequences(response_text, stop_sequences)
 
         return ChatMessage(
             role=MessageRole.ASSISTANT,
