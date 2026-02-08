@@ -1133,7 +1133,7 @@ def cmd_show_steps(agent):
 
         # Get content and size
         if isinstance(step, ActionStep):
-            type_name = f"ActionStep(#{step.step_number})"
+            type_name = f"ActionStep(#{step.actionstep_id})"
             content = str(step.model_output or step.observations or "")
             chars = len(str(step.model_output or "")) + len(str(step.observations or "")) + len(str(step.code_action or ""))
         elif isinstance(step, CompressedHistoryStep):

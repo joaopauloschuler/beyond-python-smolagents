@@ -62,6 +62,7 @@ class ActionStep(MemoryStep):
     action_output: Any = None
     token_usage: TokenUsage | None = None
     is_final_answer: bool = False
+    actionstep_id: int | None = None
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually
@@ -130,14 +131,14 @@ class ActionStep(MemoryStep):
                     content=[
                         {
                             "type": "text",
-                            "text": f"<response>{self.observations}</response>",
+                            "text": f'<response step="{self.actionstep_id}">{self.observations}</response>',
                         }
                     ],
                 )
             )
         if self.error is not None:
             error_message = (
-                "<error>"
+                f'<error step="{self.actionstep_id}">'
                 + str(self.error)
                 + "</error>"
             )

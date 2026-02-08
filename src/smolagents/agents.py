@@ -341,6 +341,7 @@ class MultiStepAgent(ABC):
 
         self.max_steps = max_steps
         self.step_number = 0
+        self._next_actionstep_id = 1
         self.planning_interval = planning_interval
         self._last_plan_step = 0
         self.state: dict[str, Any] = {}
@@ -616,7 +617,9 @@ You have been provided with these additional arguments, that you can access dire
                 step_number=self.step_number,
                 timing=Timing(start_time=action_step_start_time),
                 observations_images=images,
+                actionstep_id=self._next_actionstep_id,
             )
+            self._next_actionstep_id += 1
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
                 for output in self._step_stream(action_step):
@@ -674,7 +677,9 @@ You have been provided with these additional arguments, that you can access dire
             error=AgentMaxStepsError("Reached max steps.", self.logger),
             timing=Timing(start_time=action_step_start_time, end_time=time.time()),
             token_usage=final_answer.token_usage,
+            actionstep_id=self._next_actionstep_id,
         )
+        self._next_actionstep_id += 1
         final_memory_step.action_output = final_answer.content
         self._finalize_step(final_memory_step)
         self.memory.steps.append(final_memory_step)
