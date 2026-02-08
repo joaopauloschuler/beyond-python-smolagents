@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, CompressActionStep
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -432,7 +432,7 @@ class MultiStepAgent(ABC):
             self.add_planning_tool()
 
     def _bind_memory_tools(self):
-        """Add MoveActionStepToMemory and RetrieveActionStepFromMemory tools."""
+        """Add memory management tools (move, retrieve, compress)."""
         if "move_actionstep_to_memory" not in self.tools:
             tool = MoveActionStepToMemory()
             tool.set_agent(self)
@@ -441,6 +441,10 @@ class MultiStepAgent(ABC):
             tool = RetrieveActionStepFromMemory()
             tool.set_agent(self)
             self.tools["move_actionstep_from_memory"] = tool
+        if "compress_actionstep" not in self.tools:
+            tool = CompressActionStep()
+            tool.set_agent(self)
+            self.tools["compress_actionstep"] = tool
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]

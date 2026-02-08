@@ -2719,3 +2719,122 @@ class RetrieveActionStepFromMemory(Tool):
             return f"Nothing to restore for actionstep_id={actionstep_id}."
 
         return f"Restored {', '.join(restored)} for actionstep_id={actionstep_id} back into context."
+
+
+class CompressActionStep(Tool):
+    """A tool that compresses content from an ActionStep using an LLM call with
+    custom instructions. The original content is archived and can be restored
+    with RetrieveActionStepFromMemory.
+
+    Must be bound to an agent via ``set_agent`` before use.
+    """
+
+    name = "compress_actionstep"
+    description = (
+        "Compress content from a specific ActionStep using custom instructions. "
+        "This replaces the content with an LLM-generated summary while archiving the original for later retrieval. "
+        "Use this when a step's response or model_output is large and you want a shorter version in context "
+        "rather than removing it entirely. "
+        "The step is identified by its actionstep_id (shown as step=\"N\" in <response> tags)."
+    )
+    inputs = {
+        "actionstep_id": {
+            "type": "integer",
+            "description": "The actionstep_id of the step to compress (the number shown in step=\"N\" in <response> tags).",
+        },
+        "content": {
+            "type": "string",
+            "description": "What to compress: 'response' (observations/results), 'model_output' (the model's own output), or 'both'.",
+            "enum": ["response", "model_output", "both"],
+        },
+        "compression_instructions": {
+            "type": "string",
+            "description": "Instructions for how to compress the content. Examples: 'Keep only file paths and sizes', 'Summarize in 3 bullet points', 'Keep only error messages and stack traces'.",
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._agent = None
+
+    def set_agent(self, agent):
+        """Bind this tool to an agent so it can access memory steps and the model."""
+        self._agent = agent
+
+    def _find_step(self, actionstep_id: int):
+        """Find an ActionStep by its actionstep_id."""
+        from smolagents.memory import ActionStep
+        for step in self._agent.memory.steps:
+            if isinstance(step, ActionStep) and step.actionstep_id == actionstep_id:
+                return step
+        return None
+
+    def _compress_text(self, text: str, compression_instructions: str) -> str:
+        """Call the LLM to compress text following the given instructions."""
+        prompt = f"""Compress the following content according to these instructions:
+
+INSTRUCTIONS: {compression_instructions}
+
+CONTENT TO COMPRESS:
+{text}
+
+COMPRESSED VERSION:"""
+
+        response = self._agent.model.generate(
+            [
+                ChatMessage(
+                    role=MessageRole.USER,
+                    content=[{"type": "text", "text": prompt}],
+                )
+            ]
+        )
+        result = response.content
+        if isinstance(result, list):
+            result = " ".join(item.get("text", "") for item in result if isinstance(item, dict))
+        return result
+
+    def forward(self, actionstep_id: int, content: str, compression_instructions: str) -> str:
+        if self._agent is None:
+            return "Error: CompressActionStep is not bound to an agent. Call set_agent() first."
+
+        step = self._find_step(actionstep_id)
+        if step is None:
+            return f"Error: No ActionStep with actionstep_id={actionstep_id} found."
+
+        if content not in ("response", "model_output", "both"):
+            return f"Error: content must be 'response', 'model_output', or 'both'. Got '{content}'."
+
+        compressed = []
+
+        if content in ("response", "both"):
+            if step._archived_observations is not None:
+                return f"Error: response for actionstep_id={actionstep_id} is already archived. Restore it first to re-compress."
+            if step.observations is None:
+                return f"Error: No response content for actionstep_id={actionstep_id}."
+            try:
+                summary = self._compress_text(step.observations, compression_instructions)
+            except Exception as e:
+                return f"Error: Compression failed for response: {e}"
+            step._archived_observations = step.observations
+            step.observations = f"[Compressed. Use move_actionstep_from_memory({actionstep_id}, \"response\") to restore original.]\n{summary}"
+            compressed.append("response")
+
+        if content in ("model_output", "both"):
+            if step._archived_model_output is not None:
+                return f"Error: model_output for actionstep_id={actionstep_id} is already archived. Restore it first to re-compress."
+            if step.model_output is None:
+                return f"Error: No model_output content for actionstep_id={actionstep_id}."
+            text = step.model_output if isinstance(step.model_output, str) else str(step.model_output)
+            try:
+                summary = self._compress_text(text, compression_instructions)
+            except Exception as e:
+                return f"Error: Compression failed for model_output: {e}"
+            step._archived_model_output = step.model_output
+            step.model_output = f"[Compressed. Use move_actionstep_from_memory({actionstep_id}, \"model_output\") to restore original.]\n{summary}"
+            compressed.append("model_output")
+
+        if not compressed:
+            return f"Nothing to compress for actionstep_id={actionstep_id}."
+
+        return f"Compressed {', '.join(compressed)} for actionstep_id={actionstep_id}. Original archived — use move_actionstep_from_memory to restore."
