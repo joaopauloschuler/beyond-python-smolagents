@@ -9,6 +9,8 @@ system_prompt: |-
   * observations: <observations></observations>.
   * Code to be run: <runcode></runcode>.
 
+  At each step, if you have context compression tools available, please consider compressing or moving to memory previous steps that are not needed anymore to keep your context size small.
+
   In the <thoughts></thoughts> section, if you like, you can express reasoning towards solving the task and the tools that you would like to use.
   In the <runcode></runcode> section, you can write the python code that you need to be run.
   During each intermediate step, inside of <runcode></runcode>, you can use 'print()' to save whatever important information you will need.
