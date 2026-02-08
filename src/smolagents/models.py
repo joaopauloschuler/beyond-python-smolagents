@@ -2145,7 +2145,7 @@ class GoogleColabModel(Model):
 
         # Call Google Colab AI
         ai = self._get_ai_module()
-        response_text = ai.generate_text(prompt)
+        response_text = ai.generate_text(prompt, model_name=self.model_id)
 
         # Apply stop sequences manually if provided
         if stop_sequences:
