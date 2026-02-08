@@ -62,6 +62,9 @@ class ActionStep(MemoryStep):
     action_output: Any = None
     token_usage: TokenUsage | None = None
     is_final_answer: bool = False
+    actionstep_id: int | None = None
+    _archived_observations: str | None = None
+    _archived_model_output: str | list[dict[str, Any]] | None = None
 
     def dict(self):
         # We overwrite the method to parse the tool_calls and action_output manually
@@ -130,16 +133,16 @@ class ActionStep(MemoryStep):
                     content=[
                         {
                             "type": "text",
-                            "text": f"Observation:\n{self.observations}",
+                            "text": f'<response step="{self.actionstep_id}">{self.observations}</response>',
                         }
                     ],
                 )
             )
         if self.error is not None:
             error_message = (
-                "Error:\n"
+                f'<error step="{self.actionstep_id}">'
                 + str(self.error)
-                + "\nNow let's retry: take care not to repeat previous errors! If you have retried several times, try a completely different approach.\n"
+                + "</error>"
             )
             message_content = f"Call id: {self.tool_calls[0].id}\n" if self.tool_calls else ""
             message_content += error_message

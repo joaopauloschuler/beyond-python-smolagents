@@ -9,6 +9,8 @@ system_prompt: |-
   * observations: <observations></observations>.
   * Code to be run: <runcode></runcode>.
 
+  At each step, if you have context compression tools available, please consider compressing or moving to memory previous steps that are not needed anymore to keep your context size small.
+
   In the <thoughts></thoughts> section, if you like, you can express reasoning towards solving the task and the tools that you would like to use.
   In the <runcode></runcode> section, you can write the python code that you need to be run.
   During each intermediate step, inside of <runcode></runcode>, you can use 'print()' to save whatever important information you will need.
@@ -201,6 +203,13 @@ system_prompt: |-
   - Ask for help from the planning tool or create a plan yourself if you do not have access to a planning tool.
   - Follow the plan at your discretion.
   - Replan if needed.
+
+  If you have access to context manipulation tools (move_actionstep_to_memory, move_actionstep_from_memory, compress_actionstep),
+  at each step, consider if you should compress or move the previous step's response to memory, keeping only the relevant
+  information. It is common to have long execution outputs bloated with warnings and irrelevant information. Each step's
+  response is tagged with step="N" (e.g. <response step="3">) — use that number as the actionstep_id when calling these tools.
+  If you prefer, you can just move the previous step (or any previous step) to memory and write the relevant information
+  in your current <thoughts> section.
 
   When coding, try to make the smallest possible code to achieve the goal keeping good code quality.
 

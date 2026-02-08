@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, CompressActionStep
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -341,6 +341,7 @@ class MultiStepAgent(ABC):
 
         self.max_steps = max_steps
         self.step_number = 0
+        self._next_actionstep_id = 1
         self.planning_interval = planning_interval
         self._last_plan_step = 0
         self.state: dict[str, Any] = {}
@@ -353,6 +354,7 @@ class MultiStepAgent(ABC):
         self._setup_managed_agents(managed_agents)
         self._setup_tools(tools, add_base_tools)
         self._bind_planning_tools()
+        self._bind_memory_tools()
         self._validate_tools_and_managed_agents(tools, managed_agents)
 
         self.task: str | None = None
@@ -428,6 +430,21 @@ class MultiStepAgent(ABC):
         """If planning is enabled, ensure a PlanningTool is present and bind it to this agent."""
         if self.planning_interval is not None:
             self.add_planning_tool()
+
+    def _bind_memory_tools(self):
+        """Add memory management tools (move, retrieve, compress)."""
+        if "move_actionstep_to_memory" not in self.tools:
+            tool = MoveActionStepToMemory()
+            tool.set_agent(self)
+            self.tools["move_actionstep_to_memory"] = tool
+        if "move_actionstep_from_memory" not in self.tools:
+            tool = RetrieveActionStepFromMemory()
+            tool.set_agent(self)
+            self.tools["move_actionstep_from_memory"] = tool
+        if "compress_actionstep" not in self.tools:
+            tool = CompressActionStep()
+            tool.set_agent(self)
+            self.tools["compress_actionstep"] = tool
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]
@@ -616,7 +633,9 @@ You have been provided with these additional arguments, that you can access dire
                 step_number=self.step_number,
                 timing=Timing(start_time=action_step_start_time),
                 observations_images=images,
+                actionstep_id=self._next_actionstep_id,
             )
+            self._next_actionstep_id += 1
             self.logger.log_rule(f"Step {self.step_number}", level=LogLevel.INFO)
             try:
                 for output in self._step_stream(action_step):
@@ -674,7 +693,9 @@ You have been provided with these additional arguments, that you can access dire
             error=AgentMaxStepsError("Reached max steps.", self.logger),
             timing=Timing(start_time=action_step_start_time, end_time=time.time()),
             token_usage=final_answer.token_usage,
+            actionstep_id=self._next_actionstep_id,
         )
+        self._next_actionstep_id += 1
         final_memory_step.action_output = final_answer.content
         self._finalize_step(final_memory_step)
         self.memory.steps.append(final_memory_step)

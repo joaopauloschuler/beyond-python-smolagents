@@ -226,19 +226,20 @@ def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
             if step.model_output:
                 # Truncate long outputs
                 output = str(step.model_output)
-                desc += f"\n  <model_output>{output}</model_output>"
+                desc += f"\n<model_output>{output}</model_output>"
             if step.observations:
                 obs = str(step.observations)
-                desc += f"\n  <observations>{obs}</observations>"
-            if step.code_action:
-                code = step.code_action
-                desc += f"\n  <code_action>{code}</code_action>"
-            step_descriptions.append(desc)
+                desc += f"\n<result>{obs}</result>"
+            # There is no point in compressing code action. It is already present in model_output.
+            #if step.code_action:
+            #    code = step.code_action
+            #    desc += f"\n  <code_action>{code}</code_action>"
+            step_descriptions.append('<step>'+desc+'</step>')
         elif isinstance(step, PlanningStep):
             plan = step.plan if step.plan else "No plan"
-            step_descriptions.append(f"Planning step:\n  <plan>{plan}</plan>")
+            step_descriptions.append('<step>'+f"<plan>{plan}</plan>"+'</step>')
 
-    steps_text = "\n\n".join(step_descriptions)
+    steps_text = "<\n>".join(step_descriptions)
 
     return f"""Summarize the following agent execution history into a concise summary that preserves:
 1. Key decisions and reasoning

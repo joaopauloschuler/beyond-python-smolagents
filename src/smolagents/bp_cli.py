@@ -216,14 +216,19 @@ def try_load_dotenv():
 def check_required_env():
     """Check all required env vars and report missing ones."""
     model_id = get_env("BPSA_MODEL_ID")
-    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+    server_model = get_env("BPSA_SERVER_MODEL", None)
 
     missing = []
+
+    supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+        
+    if server_model is None:
+        fail(f"BPSA_SERVER_MODEL is not set. Supported models: {supported}")
+
     if not model_id:
         missing.append("BPSA_MODEL_ID")
 
     if server_model not in MODEL_CLASS_MAP:
-        supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
         fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
 
     canonical_name = MODEL_CLASS_MAP[server_model]
@@ -254,13 +259,17 @@ def check_required_env():
 
 
 def build_model():
-    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+    server_model = get_env("BPSA_SERVER_MODEL", None)
     model_id = get_env("BPSA_MODEL_ID")
     api_key = get_env("BPSA_KEY_VALUE")
     api_endpoint = get_env("BPSA_API_ENDPOINT")
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+    
+    if server_model is None:
+        fail(f"BPSA_SERVER_MODEL is not set. Supported models: {supported}")
+    
     if server_model not in MODEL_CLASS_MAP:     
         fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
 
@@ -442,7 +451,7 @@ SLASH_COMMANDS = [
     "/compression-model", "/exit", "/file", "/help",
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
+    "/save-step", "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -466,6 +475,7 @@ def print_help():
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
+    table.add_row("/save-step <N> <file>", "Save full content of step N to a file")
     table.add_row("/show-compression-stats", "Show compression config and stats")
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
     table.add_row("/show-step <N>", "Show full content of a specific step")
@@ -971,12 +981,85 @@ def cmd_show_step(agent, args: str):
         console.print("[red]Invalid step number.[/]")
         return
 
-    # Use 1-based memory index (matches /show-steps output)
+    # Step 0 = system prompt; steps 1..N = memory steps
     steps = agent.memory.steps
-    if 1 <= step_num <= len(steps):
+    if step_num == 0:
+        if agent.memory.system_prompt:
+            _print_step_detail(agent.memory.system_prompt)
+        else:
+            console.print("[yellow]No system prompt stored.[/]")
+    elif 1 <= step_num <= len(steps):
         _print_step_detail(steps[step_num - 1])
     else:
-        console.print(f"[red]Step {step_num} not found (valid range: 1-{len(steps)}). Use /show-steps to list all.[/]")
+        console.print(f"[red]Step {step_num} not found (valid range: 0-{len(steps)}). Use /show-steps to list all.[/]")
+
+
+def cmd_save_step(agent, args: str):
+    """Save a specific step's full content to a file (no truncation)."""
+    from smolagents.bp_compression import CompressedHistoryStep
+    from smolagents.memory import ActionStep, PlanningStep, TaskStep, SystemPromptStep
+
+    parts = args.strip().split(None, 1)
+    if len(parts) < 2:
+        console.print("[yellow]Usage: /save-step <N> <filename>[/]")
+        return
+    try:
+        step_num = int(parts[0])
+    except ValueError:
+        console.print("[red]Invalid step number.[/]")
+        return
+    filename = parts[1]
+
+    # Resolve the step
+    steps = agent.memory.steps
+    if step_num == 0:
+        if agent.memory.system_prompt:
+            step = agent.memory.system_prompt
+        else:
+            console.print("[yellow]No system prompt stored.[/]")
+            return
+    elif 1 <= step_num <= len(steps):
+        step = steps[step_num - 1]
+    else:
+        console.print(f"[red]Step {step_num} not found (valid range: 0-{len(steps)}). Use /show-steps to list all.[/]")
+        return
+
+    # Build full text content
+    lines = [f"Step {step_num} — {type(step).__name__}", ""]
+    if isinstance(step, ActionStep):
+        if step.timing and step.timing.duration is not None:
+            lines.append(f"Duration: {step.timing.duration:.1f}s")
+        if step.token_usage:
+            lines.append(f"Tokens: in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
+        if step.error:
+            lines.append(f"Error: {step.error}")
+        if step.model_output:
+            lines += ["", "=== Model output ===", str(step.model_output)]
+        if step.code_action:
+            lines += ["", "=== Code action ===", str(step.code_action)]
+        if step.observations:
+            lines += ["", "=== Run output ===", str(step.observations)]
+    elif isinstance(step, CompressedHistoryStep):
+        lines.append(f"Original steps compressed: {step.original_step_count}")
+        lines.append(f"Step numbers: {step.compressed_step_numbers}")
+        if step.timing and step.timing.duration is not None:
+            lines.append(f"Compression duration: {step.timing.duration:.1f}s")
+        lines += ["", "=== Summary ===", step.summary]
+    elif isinstance(step, PlanningStep):
+        lines += ["=== Plan ===", step.plan or ""]
+    elif isinstance(step, TaskStep):
+        lines += ["=== Task ===", step.task or ""]
+    elif isinstance(step, SystemPromptStep):
+        lines += ["=== System prompt ===", step.system_prompt or ""]
+    else:
+        lines.append(str(step))
+
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        console.print(f"[green]Step {step_num} saved to {filename}[/]")
+    except OSError as e:
+        console.print(f"[red]Failed to write {filename}: {e}[/]")
 
 
 def _print_step_detail(step):
@@ -994,16 +1077,16 @@ def _print_step_detail(step):
             console.print(f"[bold]Tokens:[/] in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
         if step.error:
             console.print(f"[bold red]Error:[/] {step.error}")
-        if step.is_final_answer:
-            console.print("[bold green]Final answer[/]")
+        # if step.is_final_answer:
+        #    console.print("[bold green]Final answer[/]")
         if step.model_output:
             console.print(f"[bold]Model output:[/]")
             console.print(str(step.model_output)[:2000])
-        if step.code_action:
-            console.print(f"[bold]Code action:[/]")
-            console.print(step.code_action[:2000])
+        # if step.code_action:
+        #    console.print(f"[bold]Code action:[/]")
+        #    console.print(step.code_action[:2000])
         if step.observations:
-            console.print(f"[bold]Observations:[/]")
+            console.print(f"[bold]Run output:[/]")
             console.print(str(step.observations)[:2000])
     elif isinstance(step, CompressedHistoryStep):
         console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
@@ -1043,6 +1126,15 @@ def cmd_show_steps(agent):
     table.add_column("Size", justify="right")
     table.add_column("Preview")
 
+    if agent.memory.system_prompt:
+        sp = agent.memory.system_prompt
+        content = sp.system_prompt or ""
+        chars = len(content)
+        preview = content.replace("\n", " ").strip()
+        if len(preview) > 80:
+            preview = preview[:77] + "..."
+        table.add_row("0", "SystemPrompt", "[dim]no[/]", f"{chars:,} chars", preview)
+
     for i, step in enumerate(steps, 1):
         type_name = type(step).__name__
 
@@ -1050,9 +1142,9 @@ def cmd_show_steps(agent):
 
         # Get content and size
         if isinstance(step, ActionStep):
-            type_name = f"ActionStep(#{step.step_number})"
+            type_name = f"ActionStep(#{step.actionstep_id})"
             content = str(step.model_output or step.observations or "")
-            chars = len(str(step.model_output or "")) + len(str(step.observations or "")) + len(str(step.code_action or ""))
+            chars = len(str(step.model_output or "")) + len(str(step.observations or ""))
         elif isinstance(step, CompressedHistoryStep):
             type_name = f"Compressed({step.original_step_count})"
             content = step.summary
@@ -1389,6 +1481,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/compression-model":
                 cmd_compression_model(agent, cmd_args)
+                continue
+            elif cmd == "/save-step":
+                cmd_save_step(agent, cmd_args)
                 continue
             elif cmd == "/show-step":
                 cmd_show_step(agent, cmd_args)
