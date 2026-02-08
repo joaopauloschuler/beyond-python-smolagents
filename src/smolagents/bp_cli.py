@@ -216,14 +216,19 @@ def try_load_dotenv():
 def check_required_env():
     """Check all required env vars and report missing ones."""
     model_id = get_env("BPSA_MODEL_ID")
-    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+    server_model = get_env("BPSA_SERVER_MODEL", None)
 
     missing = []
+
+    supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+        
+    if server_model is None:
+        fail(f"BPSA_SERVER_MODEL is not set. Supported models: {supported}")
+
     if not model_id:
         missing.append("BPSA_MODEL_ID")
 
     if server_model not in MODEL_CLASS_MAP:
-        supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
         fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
 
     canonical_name = MODEL_CLASS_MAP[server_model]
@@ -254,13 +259,17 @@ def check_required_env():
 
 
 def build_model():
-    server_model = get_env("BPSA_SERVER_MODEL", "OpenAIServerModel")
+    server_model = get_env("BPSA_SERVER_MODEL", None)
     model_id = get_env("BPSA_MODEL_ID")
     api_key = get_env("BPSA_KEY_VALUE")
     api_endpoint = get_env("BPSA_API_ENDPOINT")
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
+    
+    if server_model is None:
+        fail(f"BPSA_SERVER_MODEL is not set. Supported models: {supported}")
+    
     if server_model not in MODEL_CLASS_MAP:     
         fail(f"Unsupported BPSA_SERVER_MODEL: {server_model}. Supported: {supported}")
 
