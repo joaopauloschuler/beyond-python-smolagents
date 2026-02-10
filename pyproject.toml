@@ -3,14 +3,25 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "smolagents"
+name = "bpsa"
 version = "1.23.0"
-description = "🤗 smolagents: a barebones library for agents. Agents write python code to call tools or orchestrate other agents."
+description = "Beyond Python SmolAgents (BPSA) — a multi-language, multi-agent framework forked from HuggingFace smolagents."
 authors = [
+  { name="Joao Paulo Schwarz Schuler" },
   { name="Aymeric Roucher", email="aymeric@hf.co" },
 ]
+license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "huggingface-hub>=0.31.2,<1.0.0",
   "requests>=2.32.3",
@@ -39,7 +50,7 @@ torch = [
 ]
 audio = [
   "soundfile",
-  "smolagents[torch]",
+  "bpsa[torch]",
 ]
 docker = [
   "docker>=7.1.0",
@@ -82,7 +93,7 @@ toolkit = [
 transformers = [
   "accelerate",
   "transformers>=4.0.0",
-  "smolagents[torch]",
+  "bpsa[torch]",
 ]
 browser = [
   "playwright>=1.40.0",
@@ -96,7 +107,7 @@ vllm = [
   "torch"
 ]
 all = [
-  "smolagents[audio,blaxel,docker,e2b,gradio,litellm,mcp,mlx-lm,modal,openai,telemetry,toolkit,transformers,vision,bedrock]",
+  "bpsa[audio,blaxel,docker,e2b,gradio,litellm,mcp,mlx-lm,modal,openai,telemetry,toolkit,transformers,vision,bedrock]",
 ]
 quality = [
   "ruff>=0.9.0",
@@ -108,15 +119,20 @@ test = [
   "pytest-datadir",
   "pytest-timeout",  # For test_all_docs: @pytest.mark.timeout
   "python-dotenv>=1.0.1", # For test_all_docs
-  "smolagents[all]",
+  "bpsa[all]",
   "rank-bm25", # For test_all_docs
   "Wikipedia-API>=0.8.1",
   "mlx[cpu]",  # GH-1588
 ]
 dev = [
-  "smolagents[quality,test]",
+  "bpsa[quality,test]",
   "sqlalchemy", # for ./examples
 ]
+
+[project.urls]
+Homepage = "https://github.com/joaopauloschuler/beyond-python-smolagents"
+Repository = "https://github.com/joaopauloschuler/beyond-python-smolagents"
+Issues = "https://github.com/joaopauloschuler/beyond-python-smolagents/issues"
 
 [tool.pytest.ini_options]
 # Add the specified `OPTS` to the set of command line arguments as if they had been specified by the user.
