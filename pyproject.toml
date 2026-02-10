@@ -136,7 +136,7 @@ lint.select = ["E", "F", "I", "W"]
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["smolagents"]
+known-first-party = ["smolagents", "bpsa"]
 lines-after-imports = 2
 
 [tool.setuptools.package-data]
