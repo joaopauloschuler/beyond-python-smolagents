@@ -450,6 +450,7 @@ SLASH_COMMANDS = [
     "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
     "/compression-model", "/exit", "/file", "/help",
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
+    "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
 ]
@@ -476,6 +477,8 @@ def print_help():
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/save-step <N> <file>", "Save full content of step N to a file")
+    table.add_row("/session-load <file>", "Load a session from a JSON file")
+    table.add_row("/session-save <file>", "Save entire session to a JSON file")
     table.add_row("/show-compression-stats", "Show compression config and stats")
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
     table.add_row("/show-step <N>", "Show full content of a specific step")
@@ -994,6 +997,46 @@ def cmd_show_step(agent, args: str):
         console.print(f"[red]Step {step_num} not found (valid range: 0-{len(steps)}). Use /show-steps to list all.[/]")
 
 
+def cmd_session_save(agent, session_stats: dict, args: str):
+    """Save entire session to a JSON file."""
+    from smolagents.bp_session import save_session
+
+    filename = args.strip()
+    if not filename:
+        console.print("[yellow]Usage: /session-save <filename>[/]")
+        return
+    if not filename.endswith(".json"):
+        filename += ".json"
+    try:
+        count = save_session(filename, agent, session_stats)
+        console.print(f"[green]Session saved to {filename} ({count} steps).[/]")
+    except Exception as e:
+        console.print(f"[red]Failed to save session: {e}[/]")
+
+
+def cmd_session_load(agent, args: str) -> dict | None:
+    """Load a session from a JSON file. Returns restored session_stats or None on failure."""
+    import os
+
+    from smolagents.bp_session import load_session
+
+    filename = args.strip()
+    if not filename:
+        console.print("[yellow]Usage: /session-load <filename>[/]")
+        return None
+    if not os.path.isfile(filename):
+        console.print(f"[red]File not found: {filename}[/]")
+        return None
+    try:
+        stats = load_session(filename, agent)
+        step_count = len(agent.memory.steps)
+        console.print(f"[green]Session loaded from {filename} ({step_count} steps).[/]")
+        return stats
+    except Exception as e:
+        console.print(f"[red]Failed to load session: {e}[/]")
+        return None
+
+
 def cmd_save_step(agent, args: str):
     """Save a specific step's full content to a file (no truncation)."""
     from smolagents.bp_compression import CompressedHistoryStep
@@ -1493,6 +1536,15 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/undo-steps":
                 cmd_undo(agent, cmd_args)
+                continue
+            elif cmd == "/session-save":
+                cmd_session_save(agent, session_stats, cmd_args)
+                continue
+            elif cmd == "/session-load":
+                result = cmd_session_load(agent, cmd_args)
+                if result is not None:
+                    session_stats = result
+                    first_turn = False
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()
