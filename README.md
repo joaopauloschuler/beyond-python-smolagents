@@ -72,7 +72,7 @@ $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
 ```
 
-The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
+The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts.
 
 
 ## CLI (`ad-infinitum`)

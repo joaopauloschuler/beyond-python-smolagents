@@ -133,6 +133,9 @@ Use `prompt_toolkit` for:
 | `/pwd` | Show current working directory |
 | `/run <script.py>` | Execute a Python script |
 | `/save <filename>` | Save the last answer to a file |
+| `/save-step <N> <file>` | Save full content of step N to a file |
+| `/session-load <file>` | Load a session from a JSON file |
+| `/session-save <file>` | Save entire session to a JSON file |
 | `/show-compression-stats` | Show compression config and stats |
 | `/show-memory-stats` | Show memory breakdown: steps, tokens, compressed vs uncompressed |
 | `/show-stats` | Show session statistics (token usage, time) |
@@ -140,6 +143,7 @@ Use `prompt_toolkit` for:
 | `/show-steps` | Show one-line summary of all memory steps |
 | `/steps <N>` | Change max_steps for the agent |
 | `/tools` | List all loaded tools |
+| `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
 
 ## Configuration Layering

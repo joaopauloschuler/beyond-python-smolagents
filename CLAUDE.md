@@ -61,6 +61,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
 - `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
 - `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files
+- `bp_session.py` - Session persistence: save/load agent memory, counters, and stats to/from JSON files
 - `bp_utils.py` - Utilities: code validation, tag fixing, file operations
 
 ### Agent Types
@@ -113,6 +114,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
 | Modify browser integration | `src/smolagents/bp_tools_browser.py` |
 | Modify ad-infinitum task cycling | `src/smolagents/bp_ad_infinitum.py` |
+| Modify session save/load | `src/smolagents/bp_session.py` |
 | Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) |
 
 ## Testing
@@ -120,6 +122,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 Tests are in `./tests/`. Key test files:
 - `test_agents.py` - Agent behavior tests
 - `test_bp_context_tools.py` - Beyond Python tools tests
+- `test_bp_session.py` - Session save/load tests
 - `test_compression.py` - Context compression tests
 - `test_local_python_executor.py` - Python execution tests
 - `test_models.py` - LLM integration tests

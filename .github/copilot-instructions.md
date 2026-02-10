@@ -6,7 +6,7 @@ Highlights
 
 - Big picture: this repo is an extended fork of HuggingFace's `smolagents`. Core logic lives under `src/smolagents/` (agents, tools, thinkers) and higher-level examples/tests live in `examples/` and `tests/`.
 
-- Read first (fast path): `src/smolagents/agents.py` (agent lifecycle, tools, memory), `src/smolagents/bp_thinkers.py` (multi-agent solvers: `evolutive_problem_solver` / `fast_solver`), `src/smolagents/bp_tools.py` (repo-specific tools and file/OS helpers), `src/smolagents/bp_cli.py` (interactive CLI `bpsa`: REPL, one-shot mode, slash commands, token tracking), `src/smolagents/cli.py` (original smolagents CLI).
+- Read first (fast path): `src/smolagents/agents.py` (agent lifecycle, tools, memory), `src/smolagents/bp_thinkers.py` (multi-agent solvers: `evolutive_problem_solver` / `fast_solver`), `src/smolagents/bp_tools.py` (repo-specific tools and file/OS helpers), `src/smolagents/bp_cli.py` (interactive CLI `bpsa`: REPL, one-shot mode, slash commands, token tracking), `src/smolagents/bp_session.py` (session save/load persistence), `src/smolagents/cli.py` (original smolagents CLI).
 
 Essential repo conventions (do not change without checking usage)
 
