@@ -20,12 +20,12 @@ limitations under the License.
 * 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
-* ⚡ Execute Python code **natively** via `exec` for unrestricted processing.
-* 🔄 Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
-* 🛠️ Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
-* 👥 Collaborate across multiple agents to solve complex problems.
-* 🔍 Tools that help agents to research and write technical documentation.
-* 📚 Generate and update documentation including READMEs for existing codebases.
+* ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
+* 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
+* 🛠️ **Developer tools:** Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
+* 👥 **Multi-agent collaboration:** Collaborate across multiple agents to solve complex problems.
+* 🔍 **Research tools:** Tools that help agents to research and write technical documentation.
+* 📚 **Documentation generation:** Generate and update documentation including READMEs for existing codebases.
 
 
 ## Installation
@@ -61,6 +61,7 @@ BPSA_KEY_VALUE=your_api_key
 BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
+
 ### BPSA CLI Usage
 
 ```bash
@@ -194,8 +195,8 @@ There are 2 main functions that you can easily call:
   [![Watch the video](docs/img/coding-example.jpg?raw=true)](https://youtu.be/0EronXSvJDs)
 * [In C++, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/cpp/cpp-single-file-01.ipynb)
 * [In PHP, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/php/php-single-file-01.ipynb)
-* [In java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
-* [In free pascal, code a task manager  - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
+* [In Java, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/java/java-single-file-01.ipynb)
+* [In Free Pascal, code a task manager - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/pascal/pascal-single-file-01.ipynb) 
 * [Create a readme - `evolutive_problem_solver`](https://colab.research.google.com/github/joaopauloschuler/beyond-python-smolagents/blob/v1.23-bp/bp-examples/writing/source_code_documentation_pascal.ipynb)
 
 ## Basic usage (single agent)
@@ -361,7 +362,7 @@ You are given the source code of the """+project_name+""" project in the tags <f
 This is the source code:"""+current_source+"""
 Your highly important and interesting task is producing a better version of the README.md file.
 You will save the updated versions of the README.md into new files as directed.
-The original version of the readme file is provided in the tag <file filename="README.md"><file>.
+The original version of the readme file is provided in the tag <file filename="README.md"></file>.
 When asked to test, given that this is a task regarding documentation, you should review the README file.
 When asked to code, you will produce documentation.
 
@@ -392,7 +393,7 @@ The source code above shows one of the core strengths of Beyond Python Smolagent
 
 For complex documentation tasks, such as generating a comprehensive README from a large project, you should leverage advanced techniques provided by `evolutive_problem_solver`.
 
-### Heavy thinking inner working
+### Heavy thinking inner workings
 
 **1. Overall Workflow:**
 
@@ -470,7 +471,7 @@ After the evolutionary loop completes (`steps` iterations), the function returns
 
 ## Available agent tools
 
-The `bp_tools.py` files provides a suite of functions and classes that can be used as tools by agents. This list details key tools and a brief description of their function:
+The `bp_tools.py` file provides a suite of functions and classes that can be used as tools by agents. This list details key tools and a brief description of their function:
 
 *   `run_os_command(str_command: string, timeout: integer)`: Executes an arbitrary command in the host operating system's shell (e.g., `ls`, `cd`, `mkdir`, `pip install <package>`, `apt-get update`). Returns the standard output from the command. Use with extreme caution due to security implications.
 *   `compile_and_run_pascal_code(pasfilename: string, timeout: integer)`: Compiles and executes a Free Pascal source file (`.pas`). Accepts standard Free Pascal compiler options via the `pasfilename` string. Returns the output of the compiled program.
