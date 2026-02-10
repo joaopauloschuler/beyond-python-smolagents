@@ -29,17 +29,11 @@ limitations under the License.
 
 
 ## Installation
-To get started with Beyond Python Smolagents, follow these steps:
+Install the project, including the CLI, OpenAI protocol and LiteLLM dependencies.
 
-1. **Clone the Repository:** Clone the `v1.23-bp` branch of the Beyond Python Smolagents repository.
-    ```bash
-    $ git clone -b v1.23-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
-    ```
-
-2.  **Install Beyond Python Smolagents:** Install the cloned project, including the CLI, OpenAI protocol and LiteLLM dependencies.
-    ```bash
-    $ pip install ./smolagents[browser,openai,litellm]
-    ```
+```bash
+$ pip install bpsa[browser,openai,litellm]
+```
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
 
