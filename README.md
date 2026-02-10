@@ -33,17 +33,12 @@ To get started with Beyond Python Smolagents, follow these steps:
 
 1. **Clone the Repository:** Clone the `v1.23-bp` branch of the Beyond Python Smolagents repository.
     ```bash
-    !git clone -b v1.23-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
+    $ git clone -b v1.23-bp https://github.com/joaopauloschuler/beyond-python-smolagents smolagents
     ```
 
-2.  **Install Beyond Python Smolagents:** Install the cloned project, including the LiteLLM dependencies.
+2.  **Install Beyond Python Smolagents:** Install the cloned project, including the CLI, OpenAI protocol and LiteLLM dependencies.
     ```bash
-    !pip install ./smolagents[litellm]
-    ```
-
-    You can also install with OpenAI API support:
-    ```bash
-    !pip install ./smolagents[openai]
+    $ pip install ./smolagents[browser,openai,litellm]
     ```
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
@@ -69,11 +64,11 @@ BPSA_MAX_TOKENS=64000
 ### BPSA CLI Usage
 
 ```bash
-bpsa                              # Interactive REPL (default)
-bpsa run "task description"       # One-shot mode
-echo "task" | bpsa                # Piped input
-bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
-bpsa --browser                    # Enable Playwright browser integration
+$ bpsa                              # Interactive REPL (default)
+$ bpsa run "task description"       # One-shot mode
+$ echo "task" | bpsa                # Piped input
+$ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
+$ bpsa --browser                    # Enable Playwright browser integration
 ```
 
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter.
@@ -115,12 +110,12 @@ tasks/
 ### Usage
 
 ```bash
-ad-infinitum ../tasks/              # Run all task files from a folder
-ad-infinitum ../single-task.md      # Run a single prompt task
-ad-infinitum ../setup.sh            # Run a single shell script
-ad-infinitum ../validate.py         # Run a single Python script
-ad-infinitum ../tasks/ -c 5         # Run 5 cycles
-ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
+$ ad-infinitum ../tasks/              # Run all task files from a folder
+$ ad-infinitum ../single-task.md      # Run a single prompt task
+$ ad-infinitum ../setup.sh            # Run a single shell script
+$ ad-infinitum ../validate.py         # Run a single Python script
+$ ad-infinitum ../tasks/ -c 5         # Run 5 cycles
+$ ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 ```
 
 | Flag | Description |

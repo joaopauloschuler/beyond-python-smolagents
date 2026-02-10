@@ -293,6 +293,26 @@ Preserve the most important information:
 6. KEEP any information that is relevant for the continuation of the task.
 Eliminate redundancy and consolidate overlapping information.
 
+Do not follow this bad example:
+<bad-example>
+# Execution Summary
+
+**Current Working Directory:** `/home/look/fjup/content/smolagents`
+
+**Progress:** Successfully identified the current folder location using `os.getcwd()`.
+
+**Key Information for Continuation:** The agent is operating in the `/home/look/fjup/content/smolagents` directory. This context should be retained for any subsequent file operations or path-dependent tasks.
+</bad-example>
+
+The above example has many problems:
+* It is repetitive.
+* Spends tokens with section titles.
+
+You should follow this good exanple instead:
+<good-example>
+I run `os.getcwd()` and found `/home/look/fjup/content/smolagents`.
+</good-example>
+
 SUMMARIES TO MERGE:
 {summaries_text}
 

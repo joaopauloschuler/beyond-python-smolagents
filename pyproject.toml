@@ -20,7 +20,8 @@ dependencies = [
   "python-dotenv",
   "ddgs>=9.0.0",  # DuckDuckGoSearchTool
   "markdownify>=0.14.1",  # VisitWebpageTool
-  "python-slugify"
+  "python-slugify",
+  "prompt_toolkit>=3.0.0", # CLI
 ]
 
 [project.optional-dependencies]
@@ -67,10 +68,6 @@ modal = [
 ]
 openai = [
   "openai>=1.58.1"
-]
-cli = [
-  "prompt_toolkit>=3.0.0",
-  "smolagents[litellm]",
 ]
 telemetry = [
   "arize-phoenix",
