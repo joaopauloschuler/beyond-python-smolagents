@@ -73,7 +73,7 @@ Tools are functions decorated with `@tool` or classes inheriting from `Tool`. Ke
 - Tools define input/output schemas via type hints
 - Sub-assistant classes (`Summarize`, `CoderSubassistant`, `InternetSearchSubassistant`) wrap agents as tools for delegation
 - `add_base_tools=True` gives agents default tools (web search, file ops, Python interpreter)
-- Context manipulation tools (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `CompressActionStep`) allow the agent to manually manage its own context by archiving, restoring, or LLM-compressing individual step content by `actionstep_id`
+- Context manipulation tools (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) allow the agent to manually manage its own context by archiving, restoring, or LLM-summarizing individual step content by `actionstep_id`
 
 ### Execution Model
 1. Agent receives task via `.run(task)`
@@ -113,7 +113,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
 | Modify browser integration | `src/smolagents/bp_tools_browser.py` |
 | Modify ad-infinitum task cycling | `src/smolagents/bp_ad_infinitum.py` |
-| Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `CompressActionStep`) |
+| Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) |
 
 ## Testing
 

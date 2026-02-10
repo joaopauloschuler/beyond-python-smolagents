@@ -204,8 +204,8 @@ system_prompt: |-
   - Follow the plan at your discretion.
   - Replan if needed.
 
-  If you have access to context manipulation tools (move_actionstep_to_memory, move_actionstep_from_memory, compress_actionstep),
-  at each step, consider if you should compress or move the previous step's response to memory, keeping only the relevant
+  If you have access to context manipulation tools (move_actionstep_to_memory, move_actionstep_from_memory, summarize_actionstep),
+  at each step, consider if you should summarize or move the previous step to memory, keeping only the relevant
   information. It is common to have long execution outputs bloated with warnings and irrelevant information. Each step's
   response is tagged with step="N" (e.g. <response step="3">) — use that number as the actionstep_id when calling these tools.
   If you prefer, you can just move the previous step (or any previous step) to memory and write the relevant information
