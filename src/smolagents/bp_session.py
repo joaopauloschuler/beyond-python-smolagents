@@ -123,18 +123,22 @@ def _deserialize_tool_call(data: dict) -> ToolCall:
     )
 
 
-def _serialize_chat_message(msg: ChatMessage | None) -> dict | None:
+def _serialize_chat_message(msg: ChatMessage | None) -> dict | str | None:
     if msg is None:
         return None
+    if isinstance(msg, str):
+        return msg
     d = make_json_serializable(get_dict_from_nested_dataclasses(msg))
     if isinstance(d, dict):
         d.pop("raw", None)
     return d
 
 
-def _deserialize_chat_message(data: dict | None) -> ChatMessage | None:
+def _deserialize_chat_message(data) -> ChatMessage | None:
     if data is None:
         return None
+    if not isinstance(data, dict):
+        return ChatMessage(role=MessageRole.ASSISTANT, content=str(data))
     data.pop("raw", None)
     token_usage_data = data.pop("token_usage", None)
     token_usage = _deserialize_token_usage(token_usage_data) if token_usage_data else None

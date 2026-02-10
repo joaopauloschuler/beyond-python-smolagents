@@ -429,6 +429,30 @@ class TestSerializeUnknownStepType:
             deserialize_step({"_step_type": "FutureStep"})
 
 
+class TestStringModelOutputMessage:
+    def test_string_model_output_message(self, tmp_path):
+        """ActionStep where model_output_message is a raw string (not ChatMessage)."""
+        filepath = str(tmp_path / "str_msg.json")
+        agent = FakeAgent()
+        step = ActionStep(
+            step_number=1,
+            timing=Timing(start_time=0.0, end_time=1.0),
+            model_output_message="I will help you",  # type: ignore[arg-type]
+            model_output="I will help you",
+        )
+        agent.memory.steps.append(step)
+        stats = {"turns": 1, "total_time": 1.0, "total_input_tokens": 10, "total_output_tokens": 5}
+
+        save_session(filepath, agent, stats)
+        agent2 = FakeAgent()
+        load_session(filepath, agent2)
+
+        loaded = agent2.memory.steps[0]
+        assert isinstance(loaded, ActionStep)
+        assert loaded.model_output_message is not None
+        assert loaded.model_output_message.content == "I will help you"
+
+
 class TestActionStepNoneFields:
     def test_minimal_action_step(self, tmp_path):
         """ActionStep with almost all fields None/default."""
