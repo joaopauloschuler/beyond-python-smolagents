@@ -448,8 +448,8 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
 SLASH_COMMANDS = [
     "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
-    "/compression-model", "/exit", "/file", "/help",
-    "/load-instructions", "/plan", "/pwd", "/repeat", "/repeat-prompt", "/run", "/save",
+    "/compression-model", "/exit", "/help",
+    "/load-instructions", "/plan", "/pwd", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/show-step", "/show-steps", "/show-tools", "/steps", "/undo-steps", "/verbose",
@@ -469,14 +469,14 @@ def print_help():
     table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row("/exit", "Exit the REPL")
-    table.add_row("/file <path>", "Load a file's content as the prompt")
     table.add_row("/help", "Show this help message")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
     table.add_row("/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/repeat <N> <prompt>", "Run the same prompt N times, each on a fresh agent with current context")
     table.add_row("/repeat-prompt <N> <path>", "Run a prompt file N times, each on a fresh agent with current context")
-    table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
+    table.add_row("/run-prompt <path>", "Load a file's content as the prompt")
+    table.add_row("/run-py <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/save-step <N> <file>", "Save full content of step N to a file")
     table.add_row("/session-load <file>", "Load a session from a JSON file")
@@ -618,7 +618,7 @@ def load_file_as_prompt(args: str) -> str | None:
     """Load a file's content to use as a prompt."""
     filepath = args.strip()
     if not filepath:
-        console.print("[yellow]Usage: /file <path>[/]")
+        console.print("[yellow]Usage: /run-prompt <path>[/]")
         return None
     filepath = os.path.expanduser(filepath)
     if not os.path.isabs(filepath):
@@ -658,7 +658,7 @@ def run_script(agent, args: str):
     """Execute a Python script in the agent's executor."""
     filepath = args.strip()
     if not filepath:
-        console.print("[yellow]Usage: /run <script.py>[/]")
+        console.print("[yellow]Usage: /run-py <script.py>[/]")
         return
     filepath = os.path.expanduser(filepath)
     if not os.path.isabs(filepath):
@@ -1514,7 +1514,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/show-stats":
                 print_stats(session_stats)
                 continue
-            elif cmd == "/file":
+            elif cmd == "/run-prompt":
                 file_content = load_file_as_prompt(cmd_args)
                 if file_content:
                     text = file_content
@@ -1524,7 +1524,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/steps":
                 change_steps(agent, cmd_args)
                 continue
-            elif cmd == "/run":
+            elif cmd == "/run-py":
                 run_script(agent, cmd_args)
                 continue
             elif cmd == "/cd":
