@@ -268,6 +268,78 @@ def deserialize_step(data: dict) -> MemoryStep:
 # ---------------------------------------------------------------------------
 
 
+def save_session_to_dict(agent, session_stats: dict) -> dict:
+    """Snapshot agent state to an in-memory dict.
+
+    Same serialization as save_session() but returns a dict instead of writing to a file.
+
+    Args:
+        agent: The CodeAgent instance whose state to save.
+        session_stats: Session statistics dict (turns, time, tokens).
+
+    Returns:
+        Serialized session payload as a dict.
+    """
+    steps = [serialize_step(step) for step in agent.memory.steps]
+
+    return {
+        "version": SESSION_VERSION,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "agent_state": {
+            "system_prompt": agent.memory.system_prompt.system_prompt,
+            "next_actionstep_id": agent._next_actionstep_id,
+            "last_plan_step": agent._last_plan_step,
+        },
+        "session_stats": dict(session_stats),
+        "monitor_state": {
+            "total_input_token_count": agent.monitor.total_input_token_count,
+            "total_output_token_count": agent.monitor.total_output_token_count,
+        },
+        "steps": steps,
+    }
+
+
+def load_session_from_dict(payload: dict, agent) -> dict:
+    """Restore agent state from an in-memory dict.
+
+    Same deserialization as load_session() but reads from a dict instead of a file.
+
+    Args:
+        payload: Serialized session payload (as returned by save_session_to_dict).
+        agent: The CodeAgent instance to restore into.
+
+    Returns:
+        Restored session_stats dict.
+
+    Raises:
+        ValueError: If the payload version is unsupported.
+    """
+    version = payload.get("version")
+    if version != SESSION_VERSION:
+        raise ValueError(f"Unsupported session version: {version} (expected {SESSION_VERSION})")
+
+    # Restore agent memory
+    agent_state = payload.get("agent_state", {})
+    agent.memory.system_prompt = SystemPromptStep(system_prompt=agent_state.get("system_prompt", ""))
+    agent.memory.steps = [deserialize_step(s) for s in payload.get("steps", [])]
+
+    # Restore agent counters
+    agent._next_actionstep_id = agent_state.get("next_actionstep_id", 1)
+    agent._last_plan_step = agent_state.get("last_plan_step", 0)
+
+    # Restore monitor token counts
+    monitor_state = payload.get("monitor_state", {})
+    agent.monitor.total_input_token_count = monitor_state.get("total_input_token_count", 0)
+    agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
+
+    return payload.get("session_stats", {
+        "turns": 0,
+        "total_time": 0.0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+    })
+
+
 def save_session(filepath: str, agent, session_stats: dict) -> int:
     """Save an entire agent session to a JSON file.
 

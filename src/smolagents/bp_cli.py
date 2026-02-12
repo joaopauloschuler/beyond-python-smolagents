@@ -449,7 +449,7 @@ SLASH_COMMANDS = [
     "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
     "/compression-model", "/exit", "/file", "/help",
-    "/load-instructions", "/plan", "/pwd", "/run", "/save",
+    "/load-instructions", "/plan", "/pwd", "/repeat", "/repeat-prompt", "/run", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/show-step", "/show-steps", "/show-tools", "/steps", "/undo-steps", "/verbose",
@@ -474,6 +474,8 @@ def print_help():
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
     table.add_row("/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
+    table.add_row("/repeat <N> <prompt>", "Run the same prompt N times, each on a fresh agent with current context")
+    table.add_row("/repeat-prompt <N> <path>", "Run a prompt file N times, each on a fresh agent with current context")
     table.add_row("/run <script.py>", "Execute a Python script in the agent's executor")
     table.add_row("/save <filename>", "Save the last answer to a file")
     table.add_row("/save-step <N> <file>", "Save full content of step N to a file")
@@ -1273,6 +1275,64 @@ def cmd_undo(agent, args: str):
         console.print(f"[yellow]Only {actual} of {n} requested steps were removable (protected system prompt steps).[/]")
 
 
+def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instructions, first_turn, browser_enabled):
+    """Run a prompt N times, each on a fresh agent with snapshotted context."""
+    from smolagents.bp_session import load_session_from_dict, save_session_to_dict
+    from smolagents.monitoring import LogLevel
+
+    # Snapshot current agent state (in-memory, not to file)
+    snapshot = save_session_to_dict(agent, session_stats)
+
+    # Save current working directory
+    original_folder = os.getcwd()
+
+    completed = 0
+    errors = 0
+
+    for i in range(1, n + 1):
+        console.print(Rule(f"[bold cyan] Cycle {i}/{n} [/]", style="cyan"))
+        try:
+            # Restore working directory
+            os.chdir(original_folder)
+
+            # Create fresh agent and restore snapshot
+            cycle_agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
+            load_session_from_dict(snapshot, cycle_agent)
+
+            # Prepare prompt (prepend instructions on first_turn only)
+            task_text = prepend_instructions(prompt_text, instructions) if first_turn else prompt_text
+
+            # Run
+            _spinner.start()
+            start_time = time.time()
+            if verbose:
+                cycle_agent.logger.level = LogLevel.INFO
+            else:
+                cycle_agent.logger.level = LogLevel.ERROR
+            result = cycle_agent.run(task_text, reset=False)
+            _spinner.stop()
+            elapsed = time.time() - start_time
+
+            completed += 1
+            console.print()
+            console.print(Markdown(str(result)))
+            console.print()
+            console.print(f"[dim]Cycle {i}/{n} completed in {elapsed:.1f}s[/]")
+
+        except KeyboardInterrupt:
+            _spinner.stop()
+            console.print(f"\n[yellow]Interrupted at cycle {i}/{n}.[/]")
+            break
+        except Exception as e:
+            _spinner.stop()
+            errors += 1
+            console.print(f"\n[bold red]Cycle {i}/{n} error:[/] {e}")
+
+    # Summary
+    console.print(Rule(style="cyan"))
+    console.print(f"[bold]Repeat summary:[/] {completed} completed, {errors} errors out of {n} cycles")
+
+
 def _shutdown_browser(agent):
     """Shut down the browser manager if one exists on the agent."""
     manager = getattr(agent, "_browser_manager", None)
@@ -1536,6 +1596,37 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/undo-steps":
                 cmd_undo(agent, cmd_args)
+                continue
+            elif cmd == "/repeat":
+                parts = cmd_args.strip().split(None, 1)
+                if len(parts) < 2:
+                    console.print("[yellow]Usage: /repeat <N> <prompt>[/]")
+                    continue
+                try:
+                    repeat_n = int(parts[0])
+                    if repeat_n < 1:
+                        raise ValueError
+                except ValueError:
+                    console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
+                    continue
+                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled)
+                continue
+            elif cmd == "/repeat-prompt":
+                parts = cmd_args.strip().split(None, 1)
+                if len(parts) < 2:
+                    console.print("[yellow]Usage: /repeat-prompt <N> <path>[/]")
+                    continue
+                try:
+                    repeat_n = int(parts[0])
+                    if repeat_n < 1:
+                        raise ValueError
+                except ValueError:
+                    console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
+                    continue
+                file_content = load_file_as_prompt(parts[1])
+                if file_content is None:
+                    continue
+                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled)
                 continue
             elif cmd == "/session-save":
                 cmd_session_save(agent, session_stats, cmd_args)

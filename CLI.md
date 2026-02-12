@@ -131,6 +131,8 @@ Use `prompt_toolkit` for:
 | `/load-instructions` | Load agent instruction files into next prompt |
 | `/plan [on\|off\|N]` | Toggle or set planning interval (default: 22) |
 | `/pwd` | Show current working directory |
+| `/repeat <N> <prompt>` | Run the same prompt N times, each on a fresh agent with current context |
+| `/repeat-prompt <N> <path>` | Run a prompt file N times, each on a fresh agent with current context |
 | `/run <script.py>` | Execute a Python script |
 | `/save <filename>` | Save the last answer to a file |
 | `/save-step <N> <file>` | Save full content of step N to a file |
