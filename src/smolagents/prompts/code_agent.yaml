@@ -151,6 +151,8 @@ system_prompt: |-
   17. In python, do not use global nor globals() as they are not available in this environment.
   18. Do not use the assertion command for testing. Print the result instead of raising an exception.
   19. When reading files, try to not read more than 50 lines at once, unless strictly necessary. This is to avoid overloading your context window.
+  20. When making git commits (via run_os_command or any other means), always include the following co-authorship trailer at the end of the commit message:
+      Co-Authored-By: BPSA using {{model_id}} <bpsa@noreply>
 
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
 

@@ -1431,6 +1431,7 @@ class ToolCallingAgent(MultiStepAgent):
                 "tools": self.tools,
                 "managed_agents": self.managed_agents,
                 "custom_instructions": self.instructions,
+                "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
             },
         )
         return system_prompt
@@ -1810,6 +1811,7 @@ class CodeAgent(MultiStepAgent):
                 "custom_instructions": self.instructions,
                 "code_block_opening_tag": self.code_block_tags[0],
                 "code_block_closing_tag": self.code_block_tags[1],
+                "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
             },
         )
         return system_prompt
