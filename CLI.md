@@ -142,7 +142,7 @@ Use `prompt_toolkit` for:
 | `/show-step <N>` | Show full content of a specific step |
 | `/show-steps` | Show one-line summary of all memory steps |
 | `/steps <N>` | Change max_steps for the agent |
-| `/tools` | List all loaded tools |
+| `/show-tools` | List all loaded tools |
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
 

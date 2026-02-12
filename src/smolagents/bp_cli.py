@@ -452,7 +452,7 @@ SLASH_COMMANDS = [
     "/load-instructions", "/plan", "/pwd", "/run", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/save-step", "/show-step", "/show-steps", "/steps", "/tools", "/undo-steps", "/verbose",
+    "/save-step", "/show-step", "/show-steps", "/show-tools", "/steps", "/undo-steps", "/verbose",
 ]
 
 
@@ -485,7 +485,7 @@ def print_help():
     table.add_row("/show-steps", "Show one-line summary of all memory steps")
     table.add_row("/show-stats", "Show session statistics")
     table.add_row("/steps <N>", "Change max_steps for the agent")
-    table.add_row("/tools", "List all loaded tools")
+    table.add_row("/show-tools", "List all loaded tools")
     table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
     console.print(table)
@@ -1440,7 +1440,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 console.clear()
                 print_banner(model_id, server_model, count_tools(agent))
                 continue
-            elif cmd == "/tools":
+            elif cmd == "/show-tools":
                 print_tools(agent)
                 continue
             elif cmd == "/verbose":
