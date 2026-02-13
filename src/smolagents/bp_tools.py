@@ -1678,8 +1678,13 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
     return "\n".join(lines)
 
 
+@tool
 def inject_tree(folder: str) -> str:
-    """Generate directory tree string with function signatures to append to task prompts."""
+    """Generate directory tree string with function signatures to append to task prompts.
+
+    Args:
+        folder: path to the folder to generate the tree from.
+    """
     tree = list_directory_tree(folder_path=folder, add_function_signatures=True)
     return (
         "\nThis is the result of list_directory_tree:\n<directory_tree>\n"

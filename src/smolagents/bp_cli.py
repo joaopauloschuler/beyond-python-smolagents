@@ -460,6 +460,7 @@ def print_help():
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
     table.add_column("Command", style="bold cyan")
     table.add_column("Description")
+    table.add_row("!<command>", "Run an OS command directly (agent does not see the output)")
     table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
@@ -1483,6 +1484,16 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
 
         text = user_input.strip()
         if not text:
+            continue
+
+        # Handle ! shell escape: run OS command directly (agent doesn't see it)
+        if text.startswith("!"):
+            shell_cmd = text[1:].strip()
+            if shell_cmd:
+                try:
+                    subprocess.run(shell_cmd, shell=True)
+                except KeyboardInterrupt:
+                    console.print("\n[dim]Command interrupted.[/]")
             continue
 
         # Handle slash commands
