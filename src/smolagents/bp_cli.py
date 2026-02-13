@@ -24,6 +24,7 @@ import sys
 import time
 
 from dotenv import load_dotenv
+from smolagents.utils import truncate_content
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -461,6 +462,7 @@ def print_help():
     table.add_column("Command", style="bold cyan")
     table.add_column("Description")
     table.add_row("!<command>", "Run an OS command directly (agent does not see the output)")
+    table.add_row("!!<command>", "Run an OS command; output is appended to the next prompt sent to the agent")
     table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
@@ -1467,6 +1469,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 return ""
 
     last_answer = None
+    pending_shell_outputs = []
     session_stats = {
         "turns": 0,
         "total_time": 0.0,
@@ -1484,6 +1487,20 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
 
         text = user_input.strip()
         if not text:
+            continue
+
+        # Handle !! shell escape: run OS command, output appended to next prompt
+        if text.startswith("!!"):
+            shell_cmd = text[2:].strip()
+            if shell_cmd:
+                try:
+                    proc = subprocess.run(shell_cmd, shell=True, capture_output=True, text=True)
+                    output = (proc.stdout or "") + (proc.stderr or "")
+                    if output:
+                        console.print(output, end="" if output.endswith("\n") else "\n")
+                    pending_shell_outputs.append((shell_cmd, truncate_content(output)))
+                except KeyboardInterrupt:
+                    console.print("\n[dim]Command interrupted.[/]")
             continue
 
         # Handle ! shell escape: run OS command directly (agent doesn't see it)
@@ -1699,6 +1716,13 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             _spinner.start()
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
+            if pending_shell_outputs:
+                shell_context = "\n".join(
+                    f"<shell>\n<cmd>{cmd}</cmd>\n<output>\n{out}</output>\n</shell>"
+                    for cmd, out in pending_shell_outputs
+                )
+                task_text = task_text + "\n" + shell_context
+                pending_shell_outputs.clear()
             result = agent.run(task_text, reset=False)
             _spinner.stop()
             elapsed = time.time() - start_time
