@@ -446,11 +446,51 @@ def print_banner(model_id: str, server_model: str, tool_count: int):
     console.print("[dim]Type /help for commands, /verbose to toggle verbosity, /exit to quit.[/]\n")
 
 
+def _run_shell_streaming(shell_cmd: str) -> str:
+    """Run a shell command, streaming output to the terminal and returning the full output."""
+    output_lines = []
+    try:
+        proc = subprocess.Popen(shell_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in proc.stdout:
+            print(line, end="")
+            output_lines.append(line)
+        proc.wait()
+    except KeyboardInterrupt:
+        proc.kill()
+        proc.wait()
+        console.print("\n[dim]Command interrupted.[/]")
+    return "".join(output_lines)
+
+
+ALIASES_FILE = os.path.expanduser("~/.bpsa_aliases")
+
+
+def _load_aliases() -> dict:
+    """Load aliases from ~/.bpsa_aliases."""
+    aliases = {}
+    if os.path.isfile(ALIASES_FILE):
+        with open(ALIASES_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    parts = line.split(None, 1)
+                    if len(parts) == 2:
+                        aliases[parts[0]] = parts[1]
+    return aliases
+
+
+def _save_aliases(aliases: dict):
+    """Save aliases to ~/.bpsa_aliases."""
+    with open(ALIASES_FILE, "w") as f:
+        for name, value in sorted(aliases.items()):
+            f.write(f"{name} {value}\n")
+
+
 SLASH_COMMANDS = [
-    "/auto-approve", "/cd", "/clear", "/compress", "/compression",
+    "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
     "/compression-model", "/exit", "/help",
-    "/load-instructions", "/plan", "/pwd", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
+    "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/show-step", "/show-steps", "/show-tools", "/steps", "/undo-steps", "/verbose",
@@ -463,6 +503,8 @@ def print_help():
     table.add_column("Description")
     table.add_row("!<command>", "Run an OS command directly (agent does not see the output)")
     table.add_row("!!<command>", "Run an OS command; output is appended to the next prompt sent to the agent")
+    table.add_row("!!?<command>", "Run an OS command and immediately send the output to the agent for analysis")
+    table.add_row("/alias <name> <value>", "Define alias (saved to ~/.bpsa_aliases). No args=list, -d <name>=delete")
     table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
@@ -476,6 +518,7 @@ def print_help():
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
     table.add_row("/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
+    table.add_row("/redo", "Re-run the last prompt (undo last steps and run again)")
     table.add_row("/repeat <N> <prompt>", "Run the same prompt N times, each on a fresh agent with current context")
     table.add_row("/repeat-prompt <N> <path>", "Run a prompt file N times, each on a fresh agent with current context")
     table.add_row("/run-prompt <path>", "Load a file's content as the prompt")
@@ -1469,7 +1512,11 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 return ""
 
     last_answer = None
+    last_prompt = None
     pending_shell_outputs = []
+    aliases = _load_aliases()
+    autosave_interval = int(get_env("BPSA_AUTOSAVE_INTERVAL", default="5"))
+    autosave_file = os.path.expanduser("~/.bpsa_autosave.json")
     session_stats = {
         "turns": 0,
         "total_time": 0.0,
@@ -1489,18 +1536,29 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         if not text:
             continue
 
+        # Expand aliases: check if first word matches an alias
+        first_word = text.split(None, 1)[0] if text else ""
+        if first_word in aliases:
+            rest = text[len(first_word):].lstrip()
+            text = aliases[first_word] + (" " + rest if rest else "")
+
+        # Handle !!? shell escape: run OS command and immediately send to agent
+        if text.startswith("!!?"):
+            shell_cmd = text[3:].strip()
+            if shell_cmd:
+                output = _run_shell_streaming(shell_cmd)
+                shell_context = f"<shell>\n<cmd>{shell_cmd}</cmd>\n<output>\n{truncate_content(output)}</output>\n</shell>"
+                text = f"Analyze the output of the command above.\n{shell_context}"
+                # Fall through to agent run below
+            else:
+                continue
+
         # Handle !! shell escape: run OS command, output appended to next prompt
-        if text.startswith("!!"):
+        elif text.startswith("!!"):
             shell_cmd = text[2:].strip()
             if shell_cmd:
-                try:
-                    proc = subprocess.run(shell_cmd, shell=True, capture_output=True, text=True)
-                    output = (proc.stdout or "") + (proc.stderr or "")
-                    if output:
-                        console.print(output, end="" if output.endswith("\n") else "\n")
-                    pending_shell_outputs.append((shell_cmd, truncate_content(output)))
-                except KeyboardInterrupt:
-                    console.print("\n[dim]Command interrupted.[/]")
+                output = _run_shell_streaming(shell_cmd)
+                pending_shell_outputs.append((shell_cmd, truncate_content(output)))
             continue
 
         # Handle ! shell escape: run OS command directly (agent doesn't see it)
@@ -1529,6 +1587,39 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/help":
                 print_help()
                 continue
+            elif cmd == "/alias":
+                args = cmd_args.strip()
+                if not args:
+                    if aliases:
+                        for name, value in sorted(aliases.items()):
+                            console.print(f"  [cyan]{name}[/] = {value}")
+                    else:
+                        console.print("[dim]No aliases defined. Usage: /alias <name> <value>[/]")
+                elif args.startswith("-d "):
+                    alias_name = args[3:].strip()
+                    if alias_name in aliases:
+                        del aliases[alias_name]
+                        _save_aliases(aliases)
+                        console.print(f"[cyan]Alias '{alias_name}' deleted.[/]")
+                    else:
+                        console.print(f"[yellow]Alias '{alias_name}' not found.[/]")
+                else:
+                    parts = args.split(None, 1)
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
+                    else:
+                        aliases[parts[0]] = parts[1]
+                        _save_aliases(aliases)
+                        console.print(f"[cyan]{parts[0]}[/] = {parts[1]}")
+                continue
+            elif cmd == "/redo":
+                if last_prompt is None:
+                    console.print("[yellow]No previous prompt to redo.[/]")
+                    continue
+                # Undo the steps from the last turn, then re-run
+                cmd_undo(agent, "")
+                text = last_prompt
+                # Fall through to agent run below
             elif cmd == "/clear":
                 _shutdown_browser(agent)
                 agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
@@ -1714,6 +1805,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             else:
                 agent.logger.level = LogLevel.ERROR
             _spinner.start()
+            last_prompt = text
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
             if pending_shell_outputs:
@@ -1745,6 +1837,15 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             # Per-turn summary line
             print_turn_summary(turn_num, elapsed, turn_input, turn_output, agent)
             console.print()
+
+            # Auto-save session periodically
+            if autosave_interval > 0 and session_stats["turns"] % autosave_interval == 0:
+                try:
+                    from smolagents.bp_session import save_session
+                    save_session(autosave_file, agent, session_stats)
+                    console.print(f"[dim]Auto-saved session to {autosave_file}[/]")
+                except Exception:
+                    pass
 
         except KeyboardInterrupt:
             _spinner.stop()
