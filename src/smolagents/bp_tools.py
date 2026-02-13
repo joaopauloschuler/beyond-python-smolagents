@@ -1677,6 +1677,22 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
 
     return "\n".join(lines)
 
+
+def inject_tree(folder: str) -> str:
+    """Generate directory tree string with function signatures to append to task prompts."""
+    tree = list_directory_tree(folder_path=folder, add_function_signatures=True)
+    return (
+        "\nThis is the result of list_directory_tree:\n<directory_tree>\n"
+        + tree
+        + "\n</directory_tree>\n"
+        "The contents of <directory_tree></directory_tree> is VERY important to you. "
+        "From <directory_tree></directory_tree>, you can get a general view/current state of the project:\n"
+        "* From the md files, if they exist, you can find the existing section titles "
+        "and have a general idea of the md file contents.\n"
+        "* For source code files, if they exist, you can find class and method names "
+        "so you can also develop a general idea of their contents.\n"
+    )
+
 @tool
 def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
                     case_sensitive: bool = False, max_results: int = 50) -> str:

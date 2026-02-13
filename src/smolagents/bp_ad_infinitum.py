@@ -29,7 +29,7 @@ Environment variables (same BPSA_* as bpsa, plus):
     BPSA_PLAN_INTERVAL  - Planning interval (default: None = off)
     BPSA_MAX_STEPS      - Max steps per agent run (default: 200)
     BPSA_COOLDOWN       - Seconds to wait between cycles (default: 0)
-    BPSA_INJECT_FOLDER  - Inject directory tree (default: false, true = cwd, or a path)
+    BPSA_INJECT_FOLDER  - Inject directory tree (default: true = cwd, false = off, or a path)
 """
 
 import glob
@@ -177,19 +177,8 @@ def get_int_env(name: str, default: int) -> int:
 
 def inject_tree(folder: str) -> str:
     """Generate directory tree string to append to task prompts."""
-    from smolagents.bp_tools import list_directory_tree
-    tree = list_directory_tree(folder_path=folder, add_function_signatures=True)
-    return (
-        "\nThis is the result of list_directory_tree:\n<directory_tree>\n"
-        + tree
-        + "\n</directory_tree>\n"
-        "The contents of <directory_tree></directory_tree> is VERY important to you. "
-        "From <directory_tree></directory_tree>, you can get a general view/current state of the project:\n"
-        "* From the md files, if they exist, you can find the existing section titles "
-        "and have a general idea of the md file contents.\n"
-        "* For source code files, if they exist, you can find class and method names "
-        "so you can also develop a general idea of their contents.\n"
-    )
+    from smolagents.bp_tools import inject_tree as _inject_tree
+    return _inject_tree(folder)
 
 
 def run_script(task: TaskItem) -> subprocess.CompletedProcess:
@@ -368,9 +357,9 @@ def main():
     max_steps = get_int_env("BPSA_MAX_STEPS", 200)
     cooldown = get_int_env("BPSA_COOLDOWN", 0)
     tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
-    if tree_folder_raw is None or tree_folder_raw.lower() == "false":
+    if tree_folder_raw is not None and tree_folder_raw.lower() == "false":
         tree_folder = None
-    elif tree_folder_raw.lower() == "true":
+    elif tree_folder_raw is None or tree_folder_raw.lower() == "true":
         tree_folder = os.getcwd()
     else:
         tree_folder = tree_folder_raw

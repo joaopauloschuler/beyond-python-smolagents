@@ -28,7 +28,7 @@ DEFAULT_THINKER_TOOLS = [
   source_code_to_string, string_to_source_code,
   run_os_command, replace_on_file, replace_on_file_with_files,
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
-  list_directory_tree, search_in_files, get_file_info, list_directory,
+  list_directory_tree, inject_tree, search_in_files, get_file_info, list_directory,
   extract_function_signatures, compare_files, count_lines_of_code,
   mkdir, delete_file, delete_directory, compare_folders,
   read_first_n_lines, read_last_n_lines, delete_lines_from_file]
@@ -1062,14 +1062,7 @@ def run_agent_cycles(
       try:
         local_prompt = task_str
         if list_directory_tree_in_folder is not None:
-            local_prompt += "\nThis is the result of list_directory_tree:\n<directory_tree>\n" + \
-              list_directory_tree(folder_path=list_directory_tree_in_folder, add_function_signatures=add_function_signatures) + \
-              "\n</directory_tree>\n" + \
-"""
-The contents of <directory_tree></directory_tree> is VERY important to you. From <directory_tree></directory_tree>, you can get a general view/current state of the project:
-* From the md files, if they exist, you can find the existing section titles and have a general idea of the md file contets.
-* For source code files, if they exist, you can find class and method names so you can also develop a general idea of their contents.
-"""
+            local_prompt += inject_tree(list_directory_tree_in_folder)
         # restore the original folder
         os.chdir(original_folder)
         local_agent = get_default_thinker_agent(

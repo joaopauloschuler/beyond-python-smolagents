@@ -1280,11 +1280,22 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
     from smolagents.bp_session import load_session_from_dict, save_session_to_dict
     from smolagents.monitoring import LogLevel
 
+    from smolagents.bp_tools import inject_tree
+
     # Snapshot current agent state (in-memory, not to file)
     snapshot = save_session_to_dict(agent, session_stats)
 
     # Save current working directory
     original_folder = os.getcwd()
+
+    # Resolve BPSA_INJECT_FOLDER (default: true = cwd)
+    tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
+    if tree_folder_raw is not None and tree_folder_raw.lower() == "false":
+        tree_folder = None
+    elif tree_folder_raw is None or tree_folder_raw.lower() == "true":
+        tree_folder = original_folder
+    else:
+        tree_folder = tree_folder_raw
 
     completed = 0
     errors = 0
@@ -1301,6 +1312,10 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
 
             # Prepare prompt (prepend instructions on first_turn only)
             task_text = prepend_instructions(prompt_text, instructions) if first_turn else prompt_text
+
+            # Inject directory tree with function signatures if configured
+            if tree_folder:
+                task_text += inject_tree(tree_folder)
 
             # Run
             _spinner.start()
