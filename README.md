@@ -66,7 +66,23 @@ $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
 ```
 
-The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. You can also run OS commands directly from the REPL with `!<command>` (agent does not see the output) or `!!<command>` (output is appended to the next prompt sent to the agent). Type `/help` to see all available commands. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`.
+The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.
+
+#### Shell commands from the REPL
+
+| Prefix | Description |
+|--------|-------------|
+| `!<command>` | Run an OS command directly (agent does not see the output) |
+| `!!<command>` | Run an OS command with streaming output; output is appended to the next prompt sent to the agent |
+| `!!?<command>` | Run an OS command and immediately send the output to the agent for analysis |
+
+#### Aliases
+
+Define command aliases with `/alias <name> <value>` (e.g., `/alias gs !!git status`). Aliases are saved to `~/.bpsa_aliases` and persist across sessions. Use `/alias` to list all and `/alias -d <name>` to delete.
+
+#### Auto-save
+
+Sessions are automatically saved every 5 turns to `~/.bpsa_autosave.json`. Configure the interval with the `BPSA_AUTOSAVE_INTERVAL` environment variable (set to 0 to disable).
 
 
 ## CLI (`ad-infinitum`)
