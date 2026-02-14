@@ -493,7 +493,7 @@ SLASH_COMMANDS = [
     "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/save-step", "/show-step", "/show-steps", "/show-tools", "/steps", "/undo-steps", "/verbose",
+    "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -532,7 +532,7 @@ def print_help():
     table.add_row("/show-step <N>", "Show full content of a specific step")
     table.add_row("/show-steps", "Show one-line summary of all memory steps")
     table.add_row("/show-stats", "Show session statistics")
-    table.add_row("/steps <N>", "Change max_steps for the agent")
+    table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-tools", "List all loaded tools")
     table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
@@ -687,7 +687,7 @@ def change_steps(agent, args: str):
     args = args.strip()
     if not args:
         console.print(f"[cyan]Current max_steps: {agent.max_steps}[/]")
-        console.print("[dim]Usage: /steps <N>[/]")
+        console.print("[dim]Usage: /set-max-steps <N>[/]")
         return
     try:
         n = int(args)
@@ -697,7 +697,7 @@ def change_steps(agent, args: str):
         agent.max_steps = n
         console.print(f"[green]max_steps set to {n}[/]")
     except ValueError:
-        console.print("[red]Invalid number. Usage: /steps <N>[/]")
+        console.print("[red]Invalid number. Usage: /set-max-steps <N>[/]")
 
 
 def run_script(agent, args: str):
@@ -1655,7 +1655,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     # Fall through to agent run
                 else:
                     continue
-            elif cmd == "/steps":
+            elif cmd == "/set-max-steps":
                 change_steps(agent, cmd_args)
                 continue
             elif cmd == "/run-py":

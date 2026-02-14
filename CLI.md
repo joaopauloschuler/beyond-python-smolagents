@@ -108,6 +108,14 @@ Use `prompt_toolkit` for:
 - Ctrl+C handling (cancel current input, not exit)
 - Autocomplete (slash commands)
 
+### Shell Escapes
+
+| Command | Description |
+|---------|-------------|
+| `!<command>` | Run an OS command directly (agent does not see the output) |
+| `!!<command>` | Run an OS command; output is appended to the next prompt sent to the agent |
+| `!!!<command>` | Run an OS command and immediately send the output to the agent for analysis |
+
 ### Step Display
 
 - Show intermediate code/thoughts as they happen (streaming)
@@ -143,7 +151,7 @@ Use `prompt_toolkit` for:
 | `/show-stats` | Show session statistics (token usage, time) |
 | `/show-step <N>` | Show full content of a specific step |
 | `/show-steps` | Show one-line summary of all memory steps |
-| `/steps <N>` | Change max_steps for the agent |
+| `/set-max-steps <N>` | Change max_steps for the agent |
 | `/show-tools` | List all loaded tools |
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
