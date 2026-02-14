@@ -687,19 +687,23 @@ You have been provided with these additional arguments, that you can access dire
 
     def _handle_max_steps_reached(self, task: str) -> Any:
         action_step_start_time = time.time()
-        final_answer = self.provide_final_answer(task)
+        # BP: replaced forced LLM final answer with a static message to save tokens
+        # final_answer = self.provide_final_answer(task)
+        message = f"Max steps reached ({self.max_steps}/{self.max_steps}) - should I continue?"
         final_memory_step = ActionStep(
             step_number=self.step_number,
             error=AgentMaxStepsError("Reached max steps.", self.logger),
             timing=Timing(start_time=action_step_start_time, end_time=time.time()),
-            token_usage=final_answer.token_usage,
+            # token_usage=final_answer.token_usage,
             actionstep_id=self._next_actionstep_id,
         )
         self._next_actionstep_id += 1
-        final_memory_step.action_output = final_answer.content
+        # final_memory_step.action_output = final_answer.content
+        final_memory_step.action_output = message
         self._finalize_step(final_memory_step)
         self.memory.steps.append(final_memory_step)
-        return final_answer.content
+        # return final_answer.content
+        return message
 
     def _generate_planning_step(
         self, task, is_first_step: bool, step: int
