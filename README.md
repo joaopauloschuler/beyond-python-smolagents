@@ -74,7 +74,7 @@ The REPL supports command history, tab completion for slash commands, and multi-
 |--------|-------------|
 | `!<command>` | Run an OS command directly (agent does not see the output) |
 | `!!<command>` | Run an OS command with streaming output; output is appended to the next prompt sent to the agent |
-| `!!?<command>` | Run an OS command and immediately send the output to the agent for analysis |
+| `!!!<command>` | Run an OS command and immediately send the output to the agent for analysis |
 
 #### Aliases
 

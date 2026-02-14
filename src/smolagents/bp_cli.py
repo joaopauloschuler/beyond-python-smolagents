@@ -503,7 +503,7 @@ def print_help():
     table.add_column("Description")
     table.add_row("!<command>", "Run an OS command directly (agent does not see the output)")
     table.add_row("!!<command>", "Run an OS command; output is appended to the next prompt sent to the agent")
-    table.add_row("!!?<command>", "Run an OS command and immediately send the output to the agent for analysis")
+    table.add_row("!!!<command>", "Run an OS command and immediately send the output to the agent for analysis")
     table.add_row("/alias <name> <value>", "Define alias (saved to ~/.bpsa_aliases). No args=list, -d <name>=delete")
     table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
@@ -1542,8 +1542,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             rest = text[len(first_word):].lstrip()
             text = aliases[first_word] + (" " + rest if rest else "")
 
-        # Handle !!? shell escape: run OS command and immediately send to agent
-        if text.startswith("!!?"):
+        # Handle !!! shell escape: run OS command and immediately send to agent
+        if text.startswith("!!!"):
             shell_cmd = text[3:].strip()
             if shell_cmd:
                 output = _run_shell_streaming(shell_cmd)
