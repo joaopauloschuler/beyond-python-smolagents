@@ -13,6 +13,7 @@ import textwrap
 from slugify import slugify
 
 _HAS_PRLIMIT = shutil.which("prlimit") is not None
+_HAS_TIMEOUT = shutil.which("timeout") is not None
 
 RESTART_CHAT_TXT = """Use this sub assistant as much as you can with the goal to save your own context.
 You can restart the chat by setting restart_chat to True.
@@ -284,17 +285,18 @@ As you can see in the above command, you can use any computer language that is a
       timeout: int seconds
       max_memory: int bytes
     """
+    command = str_command
     if max_memory > 0 and _HAS_PRLIMIT:
-        command = "prlimit --as=" + str(max_memory) + " " + str_command
-    else:
-        command = str_command
+        command = "prlimit --as=" + str(max_memory) + " " + command
+    if timeout > 0 and _HAS_TIMEOUT:
+        command = "timeout --kill-after=5 " + str(timeout) + " " + command
     result = ""
     outs = None
     errs = None
     try:
         proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         try:
-            outs, errs = proc.communicate(timeout=timeout)
+            outs, errs = proc.communicate(timeout=timeout + 10 if timeout > 0 else None)
         except subprocess.TimeoutExpired:
             result += "ERROR: timeout has expired. "
             proc.kill()
