@@ -60,6 +60,10 @@ class CompressionConfig:
             but for the merge phase. When set, the N most recent CompressedHistoryStep instances
             are preserved and only the older ones are merged together. This helps retain higher
             fidelity in recent compressed summaries.
+        min_compression_chars: Minimum total character count of steps-to-compress before an LLM
+            compression call is made (default 4096). If the content to compress is smaller than
+            this threshold, the compression or merge is skipped to avoid wasting an LLM call on
+            already-concise content. Set to 0 to disable.
     """
 
     enabled: bool = True
@@ -72,6 +76,7 @@ class CompressionConfig:
     preserve_final_answer_steps: bool = True
     max_compressed_steps: int = 32
     keep_compressed_steps: int = 22
+    min_compression_chars: int = 4096
 
 
 @dataclass
@@ -440,6 +445,18 @@ class ContextCompressor:
             for step in steps_to_compress
         )
 
+        # Skip compression if content is too small to be worth an LLM call
+        if self.config.min_compression_chars > 0 and original_chars < self.config.min_compression_chars:
+            if self.agent_logger:
+                self.agent_logger.log_markdown(
+                    content=f"Compression skipped: content ({original_chars:,} chars) is below minimum threshold ({self.config.min_compression_chars:,} chars)",
+                    title="Context Compression Skipped",
+                    level=LogLevel.INFO,
+                )
+            else:
+                logger.info(f"Compression skipped: content ({original_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
+            return steps
+
         # Generate summary using LLM
         compression_prompt = create_compression_prompt(steps_to_compress)
 
@@ -594,6 +611,19 @@ class ContextCompressor:
 
         if len(steps_to_merge) <= 1:
             return steps  # Not enough to merge
+
+        # Skip merge if combined content is too small to be worth an LLM call
+        pre_merge_chars = sum(len(step.summary) for step in steps_to_merge)
+        if self.config.min_compression_chars > 0 and pre_merge_chars < self.config.min_compression_chars:
+            if self.agent_logger:
+                self.agent_logger.log_markdown(
+                    content=f"Merge skipped: combined summaries ({pre_merge_chars:,} chars) is below minimum threshold ({self.config.min_compression_chars:,} chars)",
+                    title="Compressed Step Merge Skipped",
+                    level=LogLevel.INFO,
+                )
+            else:
+                logger.info(f"Merge skipped: combined summaries ({pre_merge_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
+            return steps
 
         # Build merge prompt and call LLM
         merge_prompt = create_merge_prompt(steps_to_merge)
