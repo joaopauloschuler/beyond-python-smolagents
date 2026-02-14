@@ -94,6 +94,7 @@ config = CompressionConfig(
     max_compressed_steps=32,   # Merge compressed summaries when count exceeds this (0=disabled)
     keep_compressed_steps=22,  # Keep last N compressed summaries during merge
     compression_model=None,    # Optional: use cheaper model for compression
+    min_compression_chars=4096,# Skip compression if content is below this (0=disabled)
 )
 
 agent = CodeAgent(tools=[...], model=model, compression_config=config)

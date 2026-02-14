@@ -56,6 +56,14 @@ BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
 
+#### `BPSA_INJECT_FOLDER`
+
+| Variable | Default | Description |
+|---|---|---|
+| `BPSA_INJECT_FOLDER` | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
+
+When `BPSA_INJECT_FOLDER` is set to `true` (the default), a fresh `list_directory_tree` snapshot of the current working directory is appended to the prompt task, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`, or set to `false` to disable. This variable is shared with `ad-infinitum`.
+
 ### BPSA CLI Usage
 
 ```bash
@@ -143,9 +151,7 @@ $ ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 | `BPSA_MAX_STEPS` | `200` | Max steps per agent run |
 | `BPSA_PLAN_INTERVAL` | off | Planning interval (e.g., `22`) |
 | `BPSA_COOLDOWN` | `0` | Seconds to wait between cycles |
-| `BPSA_INJECT_FOLDER` | `false` | Inject directory tree (`false`, `true` = cwd, or a path) |
-
-When `BPSA_INJECT_FOLDER` is set to `true`, a fresh `list_directory_tree` snapshot of the current working directory is appended to each prompt task, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`. This only applies to `.md` prompt tasks; script tasks are unaffected.
+| `BPSA_INJECT_FOLDER` | `true` | Inject directory tree (see `bpsa` section above). Only applies to `.md` prompt tasks. |
 
 Example `.env` file:
 ```
@@ -302,6 +308,7 @@ agent = CodeAgent(
 | `compression_model` | `None` | Optional separate model for compression |
 | `preserve_error_steps` | `False` | Always keep steps with errors |
 | `preserve_final_answer_steps` | `True` | Always keep final answer steps |
+| `min_compression_chars` | `4096` | Minimum chars before compression LLM call is made (0 = disabled) |
 
 
 ### What Gets Preserved

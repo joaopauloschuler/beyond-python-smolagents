@@ -59,6 +59,7 @@ All prefixed with `BPSA_`:
 | `BPSA_GLOBAL_EXECUTOR` | No | `exec` | Executor type (`exec`, `local`, `e2b`, etc.) |
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
+| `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 
 ### Supported Model Classes (`BPSA_SERVER_MODEL`)
 
