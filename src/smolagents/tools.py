@@ -1038,7 +1038,7 @@ class ToolCollection:
             from mcpadapt.smolagents_adapter import SmolAgentsAdapter
         except ImportError:
             raise ImportError(
-                """Please install 'mcp' extra to use ToolCollection.from_mcp: `pip install 'smolagents[mcp]'`."""
+                """Please install 'mcp' extra to use ToolCollection.from_mcp: `pip install 'bpsa[mcp]'`."""
             )
         if isinstance(server_parameters, dict):
             transport = server_parameters.get("transport")
@@ -1229,7 +1229,7 @@ class PipelineTool(Tool):
     ):
         if not _is_package_available("accelerate") or not _is_package_available("torch"):
             raise ModuleNotFoundError(
-                "Please install 'transformers' extra to use a PipelineTool: `pip install 'smolagents[transformers]'`"
+                "Please install 'transformers' extra to use a PipelineTool: `pip install 'bpsa[transformers]'`"
             )
 
         if model is None:

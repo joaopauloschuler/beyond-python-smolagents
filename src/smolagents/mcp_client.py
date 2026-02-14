@@ -104,7 +104,7 @@ class MCPClient:
             from mcpadapt.core import MCPAdapt
             from mcpadapt.smolagents_adapter import SmolAgentsAdapter
         except ModuleNotFoundError:
-            raise ModuleNotFoundError("Please install 'mcp' extra to use MCPClient: `pip install 'smolagents[mcp]'`")
+            raise ModuleNotFoundError("Please install 'mcp' extra to use MCPClient: `pip install 'bpsa[mcp]'`")
         if isinstance(server_parameters, dict):
             transport = server_parameters.get("transport")
             if transport is None:

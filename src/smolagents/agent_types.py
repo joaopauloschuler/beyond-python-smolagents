@@ -181,7 +181,7 @@ class AgentAudio(AgentType, str):
     def __init__(self, value, samplerate=16_000):
         if not _is_package_available("soundfile") or not _is_package_available("torch"):
             raise ModuleNotFoundError(
-                "Please install 'audio' extra to use AgentAudio: `pip install 'smolagents[audio]'`"
+                "Please install 'audio' extra to use AgentAudio: `pip install 'bpsa[audio]'`"
             )
         import numpy as np
         import torch

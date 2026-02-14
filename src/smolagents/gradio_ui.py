@@ -233,7 +233,7 @@ def pull_messages_from_step(step_log: ActionStep | PlanningStep | FinalAnswerSte
     """
     if not _is_package_available("gradio"):
         raise ModuleNotFoundError(
-            "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
+            "Please install 'gradio' extra to use the GradioUI: `pip install 'bpsa[gradio]'`"
         )
     if isinstance(step_log, ActionStep):
         yield from _process_action_step(step_log, skip_model_outputs)
@@ -256,7 +256,7 @@ def stream_to_gradio(
 
     if not _is_package_available("gradio"):
         raise ModuleNotFoundError(
-            "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
+            "Please install 'gradio' extra to use the GradioUI: `pip install 'bpsa[gradio]'`"
         )
     accumulated_events: list[ChatMessageStreamDelta] = []
     for event in agent.run(
@@ -284,7 +284,7 @@ class GradioUI:
     It  can reset the agent's memory at the start of each interaction if desired.
     It supports file uploads, which are saved to a specified folder.
     It uses the [`gradio.Chatbot`] component to display the conversation history.
-    This class requires the `gradio` extra to be installed: `pip install 'smolagents[gradio]'`.
+    This class requires the `gradio` extra to be installed: `pip install 'bpsa[gradio]'`.
 
     Args:
         agent ([`MultiStepAgent`]): The agent to interact with.
@@ -310,7 +310,7 @@ class GradioUI:
     def __init__(self, agent: MultiStepAgent, file_upload_folder: str | None = None, reset_agent_memory: bool = False):
         if not _is_package_available("gradio"):
             raise ModuleNotFoundError(
-                "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
+                "Please install 'gradio' extra to use the GradioUI: `pip install 'bpsa[gradio]'`"
             )
         self.agent = agent
         self.file_upload_folder = Path(file_upload_folder) if file_upload_folder is not None else None

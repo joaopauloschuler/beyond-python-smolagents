@@ -626,7 +626,7 @@ class VLLMModel(Model):
         **kwargs,
     ):
         if not _is_package_available("vllm"):
-            raise ModuleNotFoundError("Please install 'vllm' extra to use VLLMModel: `pip install 'smolagents[vllm]'`")
+            raise ModuleNotFoundError("Please install 'vllm' extra to use VLLMModel: `pip install 'bpsa[vllm]'`")
 
         from vllm import LLM  # type: ignore
         from vllm.transformers_utils.tokenizer import get_tokenizer  # type: ignore
@@ -723,7 +723,7 @@ class MLXModel(Model):
     """A class to interact with models loaded using MLX on Apple silicon.
 
     > [!TIP]
-    > You must have `mlx-lm` installed on your machine. Please run `pip install 'smolagents[mlx-lm]'` if it's not the case.
+    > You must have `mlx-lm` installed on your machine. Please run `pip install 'bpsa[mlx-lm]'` if it's not the case.
 
     Parameters:
         model_id (str):
@@ -769,7 +769,7 @@ class MLXModel(Model):
     ):
         if not _is_package_available("mlx_lm"):
             raise ModuleNotFoundError(
-                "Please install 'mlx-lm' extra to use 'MLXModel': `pip install 'smolagents[mlx-lm]'`"
+                "Please install 'mlx-lm' extra to use 'MLXModel': `pip install 'bpsa[mlx-lm]'`"
             )
         import mlx_lm
 
@@ -834,7 +834,7 @@ class TransformersModel(Model):
     This model allows you to load and use Hugging Face's models locally using the Transformers library. It supports features like stop sequences and grammar customization.
 
     > [!TIP]
-    > You must have `transformers` and `torch` installed on your machine. Please run `pip install 'smolagents[transformers]'` if it's not the case.
+    > You must have `transformers` and `torch` installed on your machine. Please run `pip install 'bpsa[transformers]'` if it's not the case.
 
     Parameters:
         model_id (`str`):
@@ -894,7 +894,7 @@ class TransformersModel(Model):
             )
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                "Please install 'transformers' extra to use 'TransformersModel': `pip install 'smolagents[transformers]'`"
+                "Please install 'transformers' extra to use 'TransformersModel': `pip install 'bpsa[transformers]'`"
             )
 
         if not model_id:
@@ -1224,7 +1224,7 @@ class LiteLLMModel(ApiModel):
             import litellm
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
-                "Please install 'litellm' extra to use LiteLLMModel: `pip install 'smolagents[litellm]'`"
+                "Please install 'litellm' extra to use LiteLLMModel: `pip install 'bpsa[litellm]'`"
             ) from e
 
         return litellm
@@ -1414,7 +1414,7 @@ class LiteLLMRouterModel(LiteLLMModel):
             from litellm.router import Router
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
-                "Please install 'litellm' extra to use LiteLLMRouterModel: `pip install 'smolagents[litellm]'`"
+                "Please install 'litellm' extra to use LiteLLMRouterModel: `pip install 'bpsa[litellm]'`"
             ) from e
         return Router(**self.client_kwargs)
 
@@ -1665,7 +1665,7 @@ class OpenAIModel(ApiModel):
             import openai
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
-                "Please install 'openai' extra to use OpenAIModel: `pip install 'smolagents[openai]'`"
+                "Please install 'openai' extra to use OpenAIModel: `pip install 'bpsa[openai]'`"
             ) from e
 
         return openai.OpenAI(**self.client_kwargs)
@@ -1813,7 +1813,7 @@ class AzureOpenAIModel(OpenAIModel):
             import openai
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
-                "Please install 'openai' extra to use AzureOpenAIModel: `pip install 'smolagents[openai]'`"
+                "Please install 'openai' extra to use AzureOpenAIModel: `pip install 'bpsa[openai]'`"
             ) from e
 
         return openai.AzureOpenAI(**self.client_kwargs)
@@ -1978,7 +1978,7 @@ class AmazonBedrockModel(ApiModel):
             import boto3  # type: ignore
         except ModuleNotFoundError as e:
             raise ModuleNotFoundError(
-                "Please install 'bedrock' extra to use AmazonBedrockServerModel: `pip install 'smolagents[bedrock]'`"
+                "Please install 'bedrock' extra to use AmazonBedrockServerModel: `pip install 'bpsa[bedrock]'`"
             ) from e
 
         return boto3.client("bedrock-runtime", **self.client_kwargs)

@@ -179,7 +179,7 @@ class E2BExecutor(RemotePythonExecutor):
             from e2b_code_interpreter import Sandbox
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                """Please install 'e2b' extra to use E2BExecutor: `pip install 'smolagents[e2b]'`"""
+                """Please install 'e2b' extra to use E2BExecutor: `pip install 'bpsa[e2b]'`"""
             )
         # Support both e2b v1 and v2 constructors
         # v2 exposes Sandbox.create(...), while v1 uses Sandbox(...)
@@ -380,7 +380,7 @@ class DockerExecutor(RemotePythonExecutor):
             import docker
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                "Please install 'docker' extra to use DockerExecutor: `pip install 'smolagents[docker]'`"
+                "Please install 'docker' extra to use DockerExecutor: `pip install 'bpsa[docker]'`"
             )
         self.host = host
         self.port = port
@@ -530,7 +530,7 @@ class ModalExecutor(RemotePythonExecutor):
             import modal
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                """Please install 'modal' extra to use ModalExecutor: `pip install 'smolagents[modal]'`"""
+                """Please install 'modal' extra to use ModalExecutor: `pip install 'bpsa[modal]'`"""
             )
 
         if create_kwargs is None:
@@ -650,7 +650,7 @@ class BlaxelExecutor(RemotePythonExecutor):
             import blaxel  # noqa: F401
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
-                "Please install 'blaxel' extra to use BlaxelExecutor: `pip install 'smolagents[blaxel]'`"
+                "Please install 'blaxel' extra to use BlaxelExecutor: `pip install 'bpsa[blaxel]'`"
             )
 
         self.sandbox_name = sandbox_name or f"smolagent-executor-{uuid.uuid4().hex[:8]}"
