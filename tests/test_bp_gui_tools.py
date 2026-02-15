@@ -25,6 +25,7 @@ from smolagents.bp_tools_gui import (
     GuiCloseTool,
     gui_screenshot_callback,
     create_gui_tools,
+    _check_gui_dependencies,
 )
 
 
@@ -337,12 +338,44 @@ class TestGuiTools:
 
 class TestCreateGuiTools:
 
-    def test_shape(self):
+    @patch("smolagents.bp_tools_gui._check_gui_dependencies")
+    def test_shape(self, mock_check):
         manager, tools = create_gui_tools()
         assert isinstance(manager, GuiManager)
         assert len(tools) == 6
         names = {t.name for t in tools}
         assert names == {"gui_launch", "gui_screenshot", "gui_click", "gui_type", "gui_key", "gui_close"}
+        mock_check.assert_called_once()
+
+
+# ======================================================================
+# Dependency checks
+# ======================================================================
+
+class TestDependencyCheck:
+
+    @patch("smolagents.bp_tools_gui.shutil.which", return_value="/usr/bin/stub")
+    @patch.dict(os.environ, {"DISPLAY": ":0"})
+    def test_all_present(self, mock_which):
+        _check_gui_dependencies()  # should not raise
+
+    @patch("smolagents.bp_tools_gui.shutil.which", return_value=None)
+    @patch.dict(os.environ, {"DISPLAY": ":0"})
+    def test_missing_xdotool_and_imagemagick(self, mock_which):
+        with pytest.raises(EnvironmentError, match="xdotool"):
+            _check_gui_dependencies()
+
+    @patch("smolagents.bp_tools_gui.shutil.which", side_effect=lambda cmd: "/usr/bin/xdotool" if cmd == "xdotool" else None)
+    @patch.dict(os.environ, {"DISPLAY": ":0"})
+    def test_missing_imagemagick_only(self, mock_which):
+        with pytest.raises(EnvironmentError, match="imagemagick"):
+            _check_gui_dependencies()
+
+    @patch("smolagents.bp_tools_gui.shutil.which", return_value="/usr/bin/stub")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_missing_display(self, mock_which):
+        with pytest.raises(EnvironmentError, match="DISPLAY"):
+            _check_gui_dependencies()
 
 
 # ======================================================================

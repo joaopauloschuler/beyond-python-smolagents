@@ -9,6 +9,7 @@ System dependencies: xdotool, imagemagick, a running X11 display ($DISPLAY).
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -375,8 +376,30 @@ def gui_screenshot_callback(memory_step, agent=None):
 # ======================================================================
 
 
+def _check_gui_dependencies():
+    """Verify that required system tools and X11 display are available."""
+    missing = []
+    if not shutil.which("xdotool"):
+        missing.append("xdotool")
+    if not shutil.which("import"):
+        missing.append("imagemagick (provides the 'import' command)")
+    if missing:
+        raise EnvironmentError(
+            "Missing system dependencies for --gui: {deps}. "
+            "Install with: sudo apt install xdotool imagemagick".format(
+                deps=", ".join(missing)
+            )
+        )
+    if not os.environ.get("DISPLAY"):
+        raise EnvironmentError(
+            "No X11 display found ($DISPLAY is not set). "
+            "The --gui flag requires a running X11 display."
+        )
+
+
 def create_gui_tools() -> tuple[GuiManager, list[Tool]]:
     """Create a GuiManager and return ``(manager, list_of_tools)``."""
+    _check_gui_dependencies()
     manager = GuiManager()
     tools = [
         GuiLaunchTool(manager),
