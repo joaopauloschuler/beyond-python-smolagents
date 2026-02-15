@@ -46,7 +46,14 @@ class GuiManager:
                 "Close it first with gui_close.".format(pid=self._process.pid)
             )
 
-        cmd = [binary_path] + (args or [])
+        # Resolve relative binary paths against working_dir (Popen's cwd
+        # only affects the child process, not executable lookup).
+        resolved_path = binary_path
+        if working_dir and not os.path.isabs(binary_path):
+            candidate = os.path.join(working_dir, binary_path)
+            if os.path.isfile(candidate):
+                resolved_path = candidate
+        cmd = [resolved_path] + (args or [])
         self._process = subprocess.Popen(
             cmd,
             cwd=working_dir or None,

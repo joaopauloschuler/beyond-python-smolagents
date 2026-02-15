@@ -310,6 +310,49 @@ class TestGuiTools:
         popen_kwargs = mock_popen.call_args[1]
         assert popen_kwargs.get("cwd") is None
 
+    @patch("smolagents.bp_tools_gui.subprocess.Popen")
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_launch_relative_path_resolved(self, mock_run, mock_popen, tmp_path):
+        """Relative binary path is resolved against working_dir before Popen."""
+        # Create a fake binary file so os.path.isfile returns True
+        fake_bin = tmp_path / "myapp"
+        fake_bin.touch()
+
+        proc = MagicMock()
+        proc.pid = 70
+        proc.poll.return_value = None
+        mock_popen.return_value = proc
+        mock_run.return_value = MagicMock(stdout="777\n", returncode=0)
+
+        mgr = GuiManager()
+        tool = GuiLaunchTool(mgr)
+        result = tool.forward("myapp", working_dir=str(tmp_path))
+
+        assert "PID=70" in result
+        # The resolved path should be the joined absolute path
+        popen_cmd = mock_popen.call_args[0][0]
+        assert popen_cmd[0] == str(tmp_path / "myapp")
+
+    @patch("smolagents.bp_tools_gui.subprocess.Popen")
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_launch_relative_path_not_found_keeps_original(self, mock_run, mock_popen, tmp_path):
+        """If relative path doesn't exist under working_dir, keep original."""
+        proc = MagicMock()
+        proc.pid = 71
+        proc.poll.return_value = None
+        mock_popen.return_value = proc
+        mock_run.return_value = MagicMock(stdout="778\n", returncode=0)
+
+        mgr = GuiManager()
+        tool = GuiLaunchTool(mgr)
+        # "nonexistent_app" doesn't exist in tmp_path
+        result = tool.forward("nonexistent_app", working_dir=str(tmp_path))
+
+        assert "PID=71" in result
+        # Original path kept since file not found at working_dir/nonexistent_app
+        popen_cmd = mock_popen.call_args[0][0]
+        assert popen_cmd[0] == "nonexistent_app"
+
     def test_screenshot_tool_sets_flag(self):
         mgr = self._make_ready_manager()
         tool = GuiScreenshotTool(mgr)
