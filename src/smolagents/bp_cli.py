@@ -308,7 +308,7 @@ def build_model():
     return model
 
 
-def build_agent(model, approval_callback=None, browser_enabled=False):
+def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -319,11 +319,22 @@ def build_agent(model, approval_callback=None, browser_enabled=False):
 
     tools = list(DEFAULT_THINKER_TOOLS)
     browser_manager = None
+    gui_manager = None
 
     if browser_enabled:
         from smolagents.bp_tools_browser import create_browser_tools
         browser_manager, browser_tools = create_browser_tools()
         tools.extend(browser_tools)
+
+    if gui_enabled:
+        from smolagents.bp_tools_gui import create_gui_tools
+        gui_manager, gui_tools = create_gui_tools()
+        tools.extend(gui_tools)
+
+    step_cbs = [_compact_step_callback]
+    if gui_manager:
+        from smolagents.bp_tools_gui import gui_screenshot_callback
+        step_cbs.append(gui_screenshot_callback)
 
     agent = CodeAgent(
         tools=tools,
@@ -334,13 +345,16 @@ def build_agent(model, approval_callback=None, browser_enabled=False):
         executor_type=executor_type,
         compression_config=DEFAULT_THINKER_COMPRESSION,
         planning_interval=None,
-        step_callbacks=[_compact_step_callback],
+        step_callbacks=step_cbs,
         approval_callback=approval_callback,
     )
     agent.add_planning_tool()
 
     if browser_manager:
         agent._browser_manager = browser_manager
+
+    if gui_manager:
+        agent._gui_manager = gui_manager
 
     return agent
 
@@ -1321,7 +1335,7 @@ def cmd_undo(agent, args: str):
         console.print(f"[yellow]Only {actual} of {n} requested steps were removable (protected system prompt steps).[/]")
 
 
-def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instructions, first_turn, browser_enabled):
+def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=False):
     """Run a prompt N times, each on a fresh agent with snapshotted context."""
     from smolagents.bp_session import load_session_from_dict, save_session_to_dict
     from smolagents.monitoring import LogLevel
@@ -1353,7 +1367,7 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
             os.chdir(original_folder)
 
             # Create fresh agent and restore snapshot
-            cycle_agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
+            cycle_agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
             load_session_from_dict(snapshot, cycle_agent)
 
             # Prepare prompt (prepend instructions on first_turn only)
@@ -1401,6 +1415,13 @@ def _shutdown_browser(agent):
         manager.shutdown()
 
 
+def _shutdown_gui(agent):
+    """Shut down the GUI manager if one exists on the agent."""
+    manager = getattr(agent, "_gui_manager", None)
+    if manager:
+        manager.shutdown()
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -1409,13 +1430,13 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -1436,16 +1457,17 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         manager = getattr(agent, "_browser_manager", None)
         if manager:
             manager.shutdown()
+        _shutdown_gui(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -1529,6 +1551,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         user_input = get_input()
         if user_input is None:
             _shutdown_browser(agent)
+            _shutdown_gui(agent)
             console.print("[dim]Goodbye![/]")
             break
 
@@ -1582,6 +1605,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     console.print()
                     print_stats(session_stats)
                 _shutdown_browser(agent)
+                _shutdown_gui(agent)
                 console.print("[dim]Goodbye![/]")
                 break
             elif cmd == "/help":
@@ -1622,7 +1646,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 # Fall through to agent run below
             elif cmd == "/clear":
                 _shutdown_browser(agent)
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled)
+                _shutdown_gui(agent)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -1743,7 +1768,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 except ValueError:
                     console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
                     continue
-                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled)
+                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled)
                 continue
             elif cmd == "/repeat-prompt":
                 parts = cmd_args.strip().split(None, 1)
@@ -1760,7 +1785,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 file_content = load_file_as_prompt(parts[1])
                 if file_content is None:
                     continue
-                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled)
+                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled)
                 continue
             elif cmd == "/session-save":
                 cmd_session_save(agent, session_stats, cmd_args)
@@ -1878,6 +1903,10 @@ def main():
         "--browser", action="store_true",
         help="Enable Playwright browser integration (navigate, click, type_text, etc. in runcode blocks)",
     )
+    parser.add_argument(
+        "--gui", action="store_true",
+        help="Enable native GUI interaction tools (screenshot, click, type, key via xdotool/ImageMagick on X11)",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
@@ -1887,20 +1916,21 @@ def main():
     skip_instructions = not args.load_instructions
     auto_approve = args.auto_approve == "on"
     browser_enabled = args.browser
+    gui_enabled = args.gui
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
 
 
 if __name__ == "__main__":
