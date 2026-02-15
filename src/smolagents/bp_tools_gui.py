@@ -49,7 +49,7 @@ class GuiManager:
         cmd = [binary_path] + (args or [])
         self._process = subprocess.Popen(
             cmd,
-            cwd=working_dir,
+            cwd=working_dir or None,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -208,8 +208,8 @@ class GuiLaunchTool(Tool):
         super().__init__()
 
     def forward(self, binary_path: str, args: str | None = None, working_dir: str | None = None) -> str:
-        arg_list = args.split() if args else None
-        info = self.gui_manager.launch(binary_path, args=arg_list, working_dir=working_dir)
+        arg_list = args.split() if args and args.strip() else None
+        info = self.gui_manager.launch(binary_path, args=arg_list, working_dir=working_dir or None)
         return f"Launched GUI: PID={info['pid']}, window_id={info['window_id']}"
 
 

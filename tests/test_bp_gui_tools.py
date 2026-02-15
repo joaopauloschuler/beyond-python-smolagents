@@ -289,6 +289,25 @@ class TestGuiTools:
         assert "PID=50" in result
         assert "999" in result
 
+    @patch("smolagents.bp_tools_gui.subprocess.Popen")
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_launch_tool_empty_strings(self, mock_run, mock_popen):
+        """LLMs often pass empty strings instead of None for optional params."""
+        proc = MagicMock()
+        proc.pid = 60
+        proc.poll.return_value = None
+        mock_popen.return_value = proc
+        mock_run.return_value = MagicMock(stdout="888\n", returncode=0)
+
+        mgr = GuiManager()
+        tool = GuiLaunchTool(mgr)
+        result = tool.forward("/tmp/myapp", args="", working_dir="")
+
+        assert "PID=60" in result
+        # working_dir="" should become None, not be passed to Popen
+        popen_kwargs = mock_popen.call_args[1]
+        assert popen_kwargs.get("cwd") is None
+
     def test_screenshot_tool_sets_flag(self):
         mgr = self._make_ready_manager()
         tool = GuiScreenshotTool(mgr)
