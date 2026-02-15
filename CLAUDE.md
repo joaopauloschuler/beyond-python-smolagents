@@ -62,6 +62,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
 - `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
 - `bp_tools_gui.py` - Native GUI interaction: `GuiManager`, `gui_launch`, `gui_screenshot`, `gui_click`, `gui_type`, `gui_key`, `gui_close` (xdotool/ImageMagick on X11)
+- `bp_tools_image.py` - Image analysis/drawing: `diff_images`, `screen_ocr`, `canvas_create`, `canvas_draw`
 - `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files
 - `bp_session.py` - Session persistence: save/load agent memory, counters, and stats to/from JSON files
 - `bp_utils.py` - Utilities: code validation, tag fixing, file operations
@@ -78,6 +79,7 @@ Tools are functions decorated with `@tool` or classes inheriting from `Tool`. Ke
 - `add_base_tools=True` gives agents default tools (web search, file ops, Python interpreter)
 - Context manipulation tools (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) allow the agent to manually manage its own context by archiving, restoring, or LLM-summarizing individual step content by `actionstep_id`
 - Image loading: `LoadImageTool` loads image files into the agent's visual context (always available, no flags needed)
+- Image tools: Visual diffing (`diff_images`), OCR text extraction (`screen_ocr`), and canvas drawing (`canvas_create`, `canvas_draw`) — always available
 
 ### Execution Model
 1. Agent receives task via `.run(task)`
@@ -118,6 +120,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
 | Modify browser integration | `src/smolagents/bp_tools_browser.py` |
 | Modify GUI interaction tools | `src/smolagents/bp_tools_gui.py` |
+| Modify image analysis/drawing tools | `src/smolagents/bp_tools_image.py` |
 | Modify ad-infinitum task cycling | `src/smolagents/bp_ad_infinitum.py` |
 | Modify session save/load | `src/smolagents/bp_session.py` |
 | Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) |
@@ -130,6 +133,7 @@ Tests are in `./tests/`. Key test files:
 - `test_bp_context_tools.py` - Beyond Python tools tests
 - `test_bp_gui_tools.py` - GUI interaction tools tests
 - `test_bp_load_image.py` - Image loading tool tests
+- `test_bp_image_tools.py` - Image analysis/drawing tools tests
 - `test_bp_session.py` - Session save/load tests
 - `test_compression.py` - Context compression tests
 - `test_local_python_executor.py` - Python execution tests

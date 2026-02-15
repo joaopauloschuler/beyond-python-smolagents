@@ -22,6 +22,7 @@ limitations under the License.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui` flag).
 * 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
+* 🎨 **Image tools:** Visual image diffing (`diff_images`), OCR text extraction from images (`screen_ocr`), and a canvas for drawing shapes, text, and annotations (`canvas_create`, `canvas_draw`) — always available.
 * ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
 * 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
 * 🛠️ **Developer tools:** Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
@@ -535,6 +536,10 @@ The `bp_tools.py` file provides a suite of functions and classes that can be use
 *   `read_last_n_lines(filename: string, n: integer)`: Reads the last `n` lines of a file. Useful for reading log files or checking the end of large files. Returns the last `n` lines as a string.
 *   `delete_lines_from_file(filename: string, start_line: integer, end_line: integer = None)`: Deletes specific lines from a file. If `end_line` is `None`, only deletes the `start_line`. Both `start_line` and `end_line` are 1-based indices (inclusive). Returns the updated file content as a string.
 *   `load_image(filepath: string)`: Loads an image file (PNG, JPG, BMP, GIF, etc.) into the agent's visual context. The image appears in the next turn so the agent can reason about its contents. Supports multiple images per step. Always available (no flags needed). Useful for inspecting matplotlib plots, generated diagrams, screenshots, or any visual output.
+*   `diff_images(image1_path: string, image2_path: string, output_path: string = None, mode: string = "highlight")`: Visually compares two images and produces a diff image highlighting the differences. Modes: `highlight` (red overlay on changed pixels) or `side_by_side` (before/diff/after). Returns the diff image path and a percentage of changed pixels. Use `load_image` on the result to view.
+*   `screen_ocr(image_path: string, region: string = None, language: string = "eng")`: Extracts text from an image using OCR (Tesseract). Optionally crop to a region (`x,y,width,height`) before OCR. Requires `tesseract-ocr` to be installed (`sudo apt install tesseract-ocr`).
+*   `canvas_create(width: integer, height: integer, output_path: string, bg_color: string = "white")`: Creates a blank canvas image of the specified size and background color. Use `canvas_draw` to add shapes and `load_image` to view.
+*   `canvas_draw(image_path: string, shape: string, coords: string, color: string = "red", fill: string = None, line_width: integer = 2, text: string = None, font_size: integer = 16)`: Draws shapes and text on any image file. Supported shapes: `rect`, `circle`, `ellipse`, `line`, `arrow`, `text`. Works on canvases, screenshots, photos — any image. Call multiple times to build up a drawing.
 
 ### Sub-assistant Tool Classes
 

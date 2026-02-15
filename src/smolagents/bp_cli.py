@@ -321,10 +321,13 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     browser_manager = None
     gui_manager = None
 
-    # LoadImageTool — always available (no system dependencies)
+    # Image tools — always available (Pillow only; tesseract optional for OCR)
     from smolagents.bp_tools import LoadImageTool, load_image_callback
     load_image_tool = LoadImageTool()
     tools.append(load_image_tool)
+
+    from smolagents.bp_tools_image import create_image_tools
+    tools.extend(create_image_tools())
 
     if browser_enabled:
         from smolagents.bp_tools_browser import create_browser_tools
