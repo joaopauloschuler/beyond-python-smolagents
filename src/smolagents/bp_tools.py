@@ -2861,3 +2861,84 @@ SUMMARY:"""
             return f"Nothing to summarize for actionstep_id={actionstep_id}."
 
         return f"Summarized {', '.join(summarized)} for actionstep_id={actionstep_id}. Original archived."
+
+
+# ======================================================================
+# LoadImageTool — load an image file into the agent's visual context
+# ======================================================================
+
+
+class LoadImageTool(Tool):
+    """Load an image file so the agent can see it in the next turn."""
+
+    name = "load_image"
+    description = (
+        "Load an image file (PNG, JPG, BMP, GIF, etc.) into the agent's visual context. "
+        "The image will appear in the next turn so you can reason about its contents. "
+        "You can call this multiple times in one step to load several images."
+    )
+    inputs = {
+        "filepath": {"type": "string", "description": "Path to the image file to load"},
+    }
+    output_type = "string"
+
+    def __init__(self):
+        self._pending_images: list[str] = []
+        super().__init__()
+
+    def forward(self, filepath: str) -> str:
+        filepath = os.path.expanduser(filepath)
+        if not os.path.isfile(filepath):
+            return f"Error: File not found: {filepath}"
+        self._pending_images.append(filepath)
+        return (
+            f"Image queued: {filepath} — it will be visible in the next turn. "
+            f"({len(self._pending_images)} image(s) pending)"
+        )
+
+
+def load_image_callback(memory_step, agent=None):
+    """Step callback: load pending images into the agent's visual context.
+
+    Works with :class:`LoadImageTool` — the tool queues file paths and this
+    callback loads them into ``memory_step.observations_images`` after the
+    step completes.
+    """
+    from .memory import ActionStep
+
+    if agent is None:
+        return
+    load_tool = getattr(agent, "_load_image_tool", None)
+    if load_tool is None or not load_tool._pending_images:
+        return
+
+    import PIL.Image
+
+    pending = list(load_tool._pending_images)
+    load_tool._pending_images.clear()
+
+    # Clear screenshots from older steps to keep context lean
+    current_step = memory_step.step_number
+    for previous_step in agent.memory.steps:
+        if isinstance(previous_step, ActionStep) and previous_step.step_number <= current_step - 2:
+            previous_step.observations_images = None
+
+    images = []
+    info_parts = []
+    for path in pending:
+        try:
+            img = PIL.Image.open(path)
+            img = img.copy()  # detach from file handle
+            images.append(img)
+            info_parts.append(f"{os.path.basename(path)} ({img.size[0]}x{img.size[1]})")
+        except Exception as e:
+            info_parts.append(f"{os.path.basename(path)} (failed: {e})")
+
+    if images:
+        existing = memory_step.observations_images or []
+        memory_step.observations_images = existing + images
+
+    info = "\n[Loaded images: " + ", ".join(info_parts) + "]"
+    memory_step.observations = (
+        info if memory_step.observations is None else memory_step.observations + info
+    )

@@ -321,6 +321,11 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     browser_manager = None
     gui_manager = None
 
+    # LoadImageTool — always available (no system dependencies)
+    from smolagents.bp_tools import LoadImageTool, load_image_callback
+    load_image_tool = LoadImageTool()
+    tools.append(load_image_tool)
+
     if browser_enabled:
         from smolagents.bp_tools_browser import create_browser_tools
         browser_manager, browser_tools = create_browser_tools()
@@ -331,7 +336,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         gui_manager, gui_tools = create_gui_tools()
         tools.extend(gui_tools)
 
-    step_cbs = [_compact_step_callback]
+    step_cbs = [_compact_step_callback, load_image_callback]
     if gui_manager:
         from smolagents.bp_tools_gui import gui_screenshot_callback
         step_cbs.append(gui_screenshot_callback)
@@ -349,6 +354,8 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         approval_callback=approval_callback,
     )
     agent.add_planning_tool()
+
+    agent._load_image_tool = load_image_tool
 
     if browser_manager:
         agent._browser_manager = browser_manager

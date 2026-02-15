@@ -21,6 +21,7 @@ limitations under the License.
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui` flag).
+* 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
 * ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
 * 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
 * 🛠️ **Developer tools:** Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
@@ -533,6 +534,7 @@ The `bp_tools.py` file provides a suite of functions and classes that can be use
 *   `read_first_n_lines(filename: string, n: integer)`: Reads the first `n` lines of a file. Useful for previewing large files without loading everything into memory. Returns the first `n` lines as a string.
 *   `read_last_n_lines(filename: string, n: integer)`: Reads the last `n` lines of a file. Useful for reading log files or checking the end of large files. Returns the last `n` lines as a string.
 *   `delete_lines_from_file(filename: string, start_line: integer, end_line: integer = None)`: Deletes specific lines from a file. If `end_line` is `None`, only deletes the `start_line`. Both `start_line` and `end_line` are 1-based indices (inclusive). Returns the updated file content as a string.
+*   `load_image(filepath: string)`: Loads an image file (PNG, JPG, BMP, GIF, etc.) into the agent's visual context. The image appears in the next turn so the agent can reason about its contents. Supports multiple images per step. Always available (no flags needed). Useful for inspecting matplotlib plots, generated diagrams, screenshots, or any visual output.
 
 ### Sub-assistant Tool Classes
 

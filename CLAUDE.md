@@ -77,6 +77,7 @@ Tools are functions decorated with `@tool` or classes inheriting from `Tool`. Ke
 - Sub-assistant classes (`Summarize`, `CoderSubassistant`, `InternetSearchSubassistant`) wrap agents as tools for delegation
 - `add_base_tools=True` gives agents default tools (web search, file ops, Python interpreter)
 - Context manipulation tools (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) allow the agent to manually manage its own context by archiving, restoring, or LLM-summarizing individual step content by `actionstep_id`
+- Image loading: `LoadImageTool` loads image files into the agent's visual context (always available, no flags needed)
 
 ### Execution Model
 1. Agent receives task via `.run(task)`
@@ -120,6 +121,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Modify ad-infinitum task cycling | `src/smolagents/bp_ad_infinitum.py` |
 | Modify session save/load | `src/smolagents/bp_session.py` |
 | Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) |
+| Modify image loading tool | `src/smolagents/bp_tools.py` (`LoadImageTool`, `load_image_callback`) |
 
 ## Testing
 
@@ -127,6 +129,7 @@ Tests are in `./tests/`. Key test files:
 - `test_agents.py` - Agent behavior tests
 - `test_bp_context_tools.py` - Beyond Python tools tests
 - `test_bp_gui_tools.py` - GUI interaction tools tests
+- `test_bp_load_image.py` - Image loading tool tests
 - `test_bp_session.py` - Session save/load tests
 - `test_compression.py` - Context compression tests
 - `test_local_python_executor.py` - Python execution tests
