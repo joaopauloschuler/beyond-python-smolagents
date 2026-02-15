@@ -112,6 +112,69 @@ class GuiManager:
         if self._window_id is None:
             raise RuntimeError("No window ID recorded. Launch a GUI process first.")
 
+    def _ensure_process(self):
+        """Validate the process is alive (window may be any)."""
+        if self._process is None or self._process.poll() is not None:
+            raise RuntimeError("No GUI process is running. Launch one first with gui_launch.")
+
+    # ------------------------------------------------------------------
+    # Window management
+    # ------------------------------------------------------------------
+
+    def list_windows(self) -> list[dict]:
+        """List all X11 windows belonging to the managed process.
+
+        Returns a list of dicts with ``window_id``, ``name``, ``geometry``,
+        and ``is_current`` (whether it is the currently targeted window).
+        """
+        self._ensure_process()
+        result = subprocess.run(
+            ["xdotool", "search", "--pid", str(self._process.pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        wids = [w.strip() for w in result.stdout.strip().splitlines() if w.strip()]
+        windows = []
+        for wid in wids:
+            info = {"window_id": wid, "is_current": wid == self._window_id}
+            # Get window name
+            try:
+                name_result = subprocess.run(
+                    ["xdotool", "getwindowname", wid],
+                    capture_output=True, text=True, timeout=3,
+                )
+                info["name"] = name_result.stdout.strip()
+            except Exception:
+                info["name"] = ""
+            # Get window geometry
+            try:
+                geo_result = subprocess.run(
+                    ["xdotool", "getwindowgeometry", wid],
+                    capture_output=True, text=True, timeout=3,
+                )
+                info["geometry"] = geo_result.stdout.strip()
+            except Exception:
+                info["geometry"] = ""
+            windows.append(info)
+        return windows
+
+    def focus_window(self, window_id: str):
+        """Switch the targeted window to *window_id*."""
+        self._ensure_process()
+        # Verify the window belongs to this process
+        result = subprocess.run(
+            ["xdotool", "search", "--pid", str(self._process.pid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        wids = [w.strip() for w in result.stdout.strip().splitlines() if w.strip()]
+        if window_id not in wids:
+            raise ValueError(
+                f"Window {window_id} does not belong to PID {self._process.pid}. "
+                f"Available windows: {wids}"
+            )
+        self._window_id = window_id
+
     # ------------------------------------------------------------------
     # Interaction
     # ------------------------------------------------------------------
@@ -310,6 +373,63 @@ class GuiKeyTool(Tool):
         return f"Sent key: {key}"
 
 
+class GuiListWindowsTool(Tool):
+    """List all X11 windows belonging to the managed GUI process."""
+
+    name = "gui_list_windows"
+    description = (
+        "List all X11 windows belonging to the running GUI process. "
+        "Returns each window's ID, name, geometry, and whether it is the "
+        "currently targeted window. Useful for discovering tooltips, dialogs, "
+        "popups, and child windows that appear on top of the main window."
+    )
+    inputs = {}
+    output_type = "string"
+
+    def __init__(self, gui_manager: GuiManager):
+        self.gui_manager = gui_manager
+        super().__init__()
+
+    def forward(self) -> str:
+        windows = self.gui_manager.list_windows()
+        if not windows:
+            return "No windows found for the managed process."
+        lines = []
+        for w in windows:
+            marker = " [CURRENT]" if w["is_current"] else ""
+            lines.append(
+                f"  id={w['window_id']}{marker}  name={w['name']!r}  {w['geometry']}"
+            )
+        return f"Found {len(windows)} window(s):\n" + "\n".join(lines)
+
+
+class GuiFocusWindowTool(Tool):
+    """Switch the targeted window for GUI interactions."""
+
+    name = "gui_focus_window"
+    description = (
+        "Switch which window receives screenshots, clicks, typing, and key presses. "
+        "Use gui_list_windows first to see available window IDs. "
+        "Useful for interacting with tooltips, dialogs, or popup windows."
+    )
+    inputs = {
+        "window_id": {
+            "type": "string",
+            "description": "The X11 window ID to target (from gui_list_windows output)",
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, gui_manager: GuiManager):
+        self.gui_manager = gui_manager
+        super().__init__()
+
+    def forward(self, window_id: str) -> str:
+        window_id = window_id.strip()
+        self.gui_manager.focus_window(window_id)
+        return f"Now targeting window {window_id}. All GUI interactions will use this window."
+
+
 class GuiCloseTool(Tool):
     """Close the managed GUI process."""
 
@@ -407,6 +527,8 @@ def create_gui_tools() -> tuple[GuiManager, list[Tool]]:
         GuiClickTool(manager),
         GuiTypeTool(manager),
         GuiKeyTool(manager),
+        GuiListWindowsTool(manager),
+        GuiFocusWindowTool(manager),
         GuiCloseTool(manager),
     ]
     return manager, tools

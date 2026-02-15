@@ -22,6 +22,8 @@ from smolagents.bp_tools_gui import (
     GuiClickTool,
     GuiTypeTool,
     GuiKeyTool,
+    GuiListWindowsTool,
+    GuiFocusWindowTool,
     GuiCloseTool,
     gui_screenshot_callback,
     create_gui_tools,
@@ -350,6 +352,119 @@ class TestGuiTools:
         result = tool.forward()
         assert "No GUI" in result
 
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_list_windows_tool(self, mock_run):
+        mgr = self._make_ready_manager()
+        # xdotool search returns 2 windows
+        mock_run.side_effect = [
+            MagicMock(stdout="555\n777\n", returncode=0),  # search --pid
+            MagicMock(stdout="Main Window", returncode=0),  # getwindowname 555
+            MagicMock(stdout="Window 555:\n  Position: 100,200\n  Geometry: 400x300", returncode=0),  # getwindowgeometry
+            MagicMock(stdout="Tooltip", returncode=0),  # getwindowname 777
+            MagicMock(stdout="Window 777:\n  Position: 150,250\n  Geometry: 100x30", returncode=0),  # getwindowgeometry
+        ]
+        tool = GuiListWindowsTool(mgr)
+        result = tool.forward()
+
+        assert "2 window(s)" in result
+        assert "555" in result
+        assert "777" in result
+        assert "[CURRENT]" in result  # 555 is current
+        assert "Main Window" in result
+        assert "Tooltip" in result
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_focus_window_tool(self, mock_run):
+        mgr = self._make_ready_manager()
+        # search returns both windows so 777 is valid
+        mock_run.return_value = MagicMock(stdout="555\n777\n", returncode=0)
+
+        tool = GuiFocusWindowTool(mgr)
+        result = tool.forward("777")
+
+        assert mgr._window_id == "777"
+        assert "777" in result
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_focus_window_tool_invalid_id(self, mock_run):
+        mgr = self._make_ready_manager()
+        mock_run.return_value = MagicMock(stdout="555\n", returncode=0)
+
+        tool = GuiFocusWindowTool(mgr)
+        with pytest.raises(ValueError, match="does not belong"):
+            tool.forward("999")
+
+
+# ======================================================================
+# GuiManager.list_windows / focus_window
+# ======================================================================
+
+class TestGuiManagerWindows:
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_list_windows(self, mock_run):
+        mgr = GuiManager()
+        proc = MagicMock()
+        proc.pid = 42
+        proc.poll.return_value = None
+        mgr._process = proc
+        mgr._window_id = "100"
+
+        mock_run.side_effect = [
+            MagicMock(stdout="100\n200\n", returncode=0),
+            MagicMock(stdout="MainWin", returncode=0),
+            MagicMock(stdout="geom1", returncode=0),
+            MagicMock(stdout="Dialog", returncode=0),
+            MagicMock(stdout="geom2", returncode=0),
+        ]
+
+        windows = mgr.list_windows()
+        assert len(windows) == 2
+        assert windows[0]["window_id"] == "100"
+        assert windows[0]["is_current"] is True
+        assert windows[0]["name"] == "MainWin"
+        assert windows[1]["window_id"] == "200"
+        assert windows[1]["is_current"] is False
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_list_windows_no_process(self, mock_run):
+        mgr = GuiManager()
+        with pytest.raises(RuntimeError, match="No GUI process"):
+            mgr.list_windows()
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_focus_window_valid(self, mock_run):
+        mgr = GuiManager()
+        proc = MagicMock()
+        proc.pid = 42
+        proc.poll.return_value = None
+        mgr._process = proc
+        mgr._window_id = "100"
+
+        mock_run.return_value = MagicMock(stdout="100\n200\n", returncode=0)
+
+        mgr.focus_window("200")
+        assert mgr._window_id == "200"
+
+    @patch("smolagents.bp_tools_gui.subprocess.run")
+    def test_focus_window_invalid(self, mock_run):
+        mgr = GuiManager()
+        proc = MagicMock()
+        proc.pid = 42
+        proc.poll.return_value = None
+        mgr._process = proc
+        mgr._window_id = "100"
+
+        mock_run.return_value = MagicMock(stdout="100\n", returncode=0)
+
+        with pytest.raises(ValueError, match="does not belong"):
+            mgr.focus_window("999")
+
+    def test_focus_window_no_process(self):
+        mgr = GuiManager()
+        with pytest.raises(RuntimeError, match="No GUI process"):
+            mgr.focus_window("123")
+
 
 # ======================================================================
 # create_gui_tools()
@@ -361,9 +476,12 @@ class TestCreateGuiTools:
     def test_shape(self, mock_check):
         manager, tools = create_gui_tools()
         assert isinstance(manager, GuiManager)
-        assert len(tools) == 6
+        assert len(tools) == 8
         names = {t.name for t in tools}
-        assert names == {"gui_launch", "gui_screenshot", "gui_click", "gui_type", "gui_key", "gui_close"}
+        assert names == {
+            "gui_launch", "gui_screenshot", "gui_click", "gui_type", "gui_key",
+            "gui_list_windows", "gui_focus_window", "gui_close",
+        }
         mock_check.assert_called_once()
 
 

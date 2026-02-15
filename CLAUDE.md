@@ -61,7 +61,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_thinkers.py` - `Thinker` agent with multi-step reasoning (thoughts/plans/code sections)
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
 - `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
-- `bp_tools_gui.py` - Native GUI interaction: `GuiManager`, `gui_launch`, `gui_screenshot`, `gui_click`, `gui_type`, `gui_key`, `gui_close` (xdotool/ImageMagick on X11)
+- `bp_tools_gui.py` - Native GUI interaction: `GuiManager`, `gui_launch`, `gui_screenshot`, `gui_click`, `gui_type`, `gui_key`, `gui_list_windows`, `gui_focus_window`, `gui_close` (xdotool/ImageMagick on X11)
 - `bp_tools_image.py` - Image analysis/drawing: `diff_images`, `screen_ocr`, `canvas_create`, `canvas_draw`
 - `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files
 - `bp_session.py` - Session persistence: save/load agent memory, counters, and stats to/from JSON files
