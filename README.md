@@ -20,6 +20,7 @@ limitations under the License.
 * 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Automatic LLM-based summarization of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
+* 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui` flag).
 * ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
 * 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
 * 🛠️ **Developer tools:** Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
@@ -72,6 +73,7 @@ $ bpsa run "task description"       # One-shot mode
 $ echo "task" | bpsa                # Piped input
 $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
+$ bpsa --gui                        # Enable native GUI interaction (xdotool/ImageMagick)
 ```
 
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.

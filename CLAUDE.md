@@ -10,6 +10,7 @@ Beyond Python Smolagents is a fork of HuggingFace's smolagents (v1.23.0) that ex
 - Extended tooling for file operations, source code analysis, and multi-language code execution
 - Context compression: Automatic LLM-based summarization of older memory steps to manage context window size
 - Browser integration: Playwright-based headed Chromium browser controllable from agent `<runcode>` blocks via `--browser` CLI flag
+- GUI interaction: Native X11 GUI app interaction (screenshot, click, type, key) via xdotool/ImageMagick with `--gui` CLI flag
 
 ## Build & Development Commands
 
@@ -60,6 +61,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_thinkers.py` - `Thinker` agent with multi-step reasoning (thoughts/plans/code sections)
 - `bp_executors.py` - `LocalExecExecutor` for direct Python execution via `exec()`
 - `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
+- `bp_tools_gui.py` - Native GUI interaction: `GuiManager`, `gui_launch`, `gui_screenshot`, `gui_click`, `gui_type`, `gui_key`, `gui_close` (xdotool/ImageMagick on X11)
 - `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files
 - `bp_session.py` - Session persistence: save/load agent memory, counters, and stats to/from JSON files
 - `bp_utils.py` - Utilities: code validation, tag fixing, file operations
@@ -114,6 +116,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 | Configure context compression | `src/smolagents/bp_compression.py` |
 | Modify CLI (`bpsa`) | `src/smolagents/bp_cli.py` |
 | Modify browser integration | `src/smolagents/bp_tools_browser.py` |
+| Modify GUI interaction tools | `src/smolagents/bp_tools_gui.py` |
 | Modify ad-infinitum task cycling | `src/smolagents/bp_ad_infinitum.py` |
 | Modify session save/load | `src/smolagents/bp_session.py` |
 | Modify context manipulation tools | `src/smolagents/bp_tools.py` (`MoveActionStepToMemory`, `RetrieveActionStepFromMemory`, `SummarizeActionStep`) |
@@ -123,6 +126,7 @@ When enabled, older steps are automatically summarized via LLM while preserving 
 Tests are in `./tests/`. Key test files:
 - `test_agents.py` - Agent behavior tests
 - `test_bp_context_tools.py` - Beyond Python tools tests
+- `test_bp_gui_tools.py` - GUI interaction tools tests
 - `test_bp_session.py` - Session save/load tests
 - `test_compression.py` - Context compression tests
 - `test_local_python_executor.py` - Python execution tests
