@@ -10,7 +10,7 @@ Beyond Python Smolagents is a fork of HuggingFace's smolagents (v1.23.0) that ex
 - Extended tooling for file operations, source code analysis, and multi-language code execution
 - Context compression: Automatic LLM-based summarization of older memory steps to manage context window size
 - Browser integration: Playwright-based headed Chromium browser controllable from agent `<runcode>` blocks via `--browser` CLI flag or `BPSA_BROWSER` env var
-- GUI interaction: Native X11 GUI app interaction (screenshot, click, type, key) via xdotool/ImageMagick with `--gui` CLI flag or `BPSA_GUI` env var
+- GUI interaction: Native X11 GUI app interaction (screenshot, click, type, key) via xdotool/ImageMagick with `--gui` CLI flag or `BPSA_GUI` env var. Supports multiple simultaneous apps, each identified by a unique name assigned at launch time.
 
 ## Build & Development Commands
 
