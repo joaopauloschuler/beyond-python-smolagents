@@ -1925,8 +1925,9 @@ def main():
     args = parser.parse_args()
     skip_instructions = not args.load_instructions
     auto_approve = args.auto_approve == "on"
-    browser_enabled = args.browser
-    gui_enabled = args.gui
+    from smolagents.bp_utils import bool_env
+    browser_enabled = args.browser or bool_env("BPSA_BROWSER")
+    gui_enabled = args.gui or bool_env("BPSA_GUI")
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

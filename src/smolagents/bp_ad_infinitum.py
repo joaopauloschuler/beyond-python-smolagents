@@ -30,6 +30,8 @@ Environment variables (same BPSA_* as bpsa, plus):
     BPSA_MAX_STEPS      - Max steps per agent run (default: 200)
     BPSA_COOLDOWN       - Seconds to wait between cycles (default: 0)
     BPSA_INJECT_FOLDER  - Inject directory tree (default: true = cwd, false = off, or a path)
+    BPSA_BROWSER        - Enable Playwright browser integration (default: false)
+    BPSA_GUI            - Enable native GUI interaction tools (default: false)
 """
 
 import glob
@@ -45,6 +47,8 @@ from rich.panel import Panel
 from rich.rule import Rule
 
 from smolagents.bp_cli import get_env
+from smolagents.bp_utils import bool_env
+
 
 console = Console()
 
@@ -197,6 +201,9 @@ def print_banner(config: dict):
     plan_str = str(config["plan_interval"]) if config["plan_interval"] else "off"
     tree_str = config["tree_folder"] if config["tree_folder"] else "off"
 
+    browser_str = "[green]on[/]" if config.get("browser") else "off"
+    gui_str = "[green]on[/]" if config.get("gui") else "off"
+
     console.print(
         Panel.fit(
             f"[bold]AD-INFINITUM[/] - Autonomous Agents\n"
@@ -206,7 +213,9 @@ def print_banner(config: dict):
             f"Steps/run: [green]{config['max_steps']}[/]\n"
             f"Planning: {plan_str} | "
             f"Inject folder: {tree_str} | "
-            f"Cooldown: {config['cooldown']}s",
+            f"Cooldown: {config['cooldown']}s\n"
+            f"Browser: {browser_str} | "
+            f"GUI: {gui_str}",
             border_style="blue",
         )
     )
@@ -222,9 +231,10 @@ def print_banner(config: dict):
     console.print("[dim]Press Ctrl+C to stop after current task. Double Ctrl+C to abort.[/]\n")
 
 
-def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown):
+def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
+             browser_enabled=False, gui_enabled=False):
     """Core autonomous loop: cycles x tasks, fresh agent per task."""
-    from smolagents.bp_cli import build_agent
+    from smolagents.bp_cli import _shutdown_browser, _shutdown_gui, build_agent
 
     original_dir = os.getcwd()
     total_start = time.time()
@@ -255,7 +265,7 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                 if tree_folder:
                     prompt += inject_tree(tree_folder)
 
-                agent = build_agent(model)
+                agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
                 if plan_interval:
                     agent.planning_interval = plan_interval
 
@@ -282,6 +292,9 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                     elapsed = time.time() - task_start
                     total_tasks_run += 1
                     console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
+                finally:
+                    _shutdown_browser(agent)
+                    _shutdown_gui(agent)
 
             else:
                 # Script execution (python or shell)
@@ -340,13 +353,21 @@ def main():
         default=None,
         help="Number of cycles, 0 = infinite (overrides BPSA_CYCLES, default: 1)",
     )
+    parser.add_argument(
+        "--browser", action="store_true", default=None,
+        help="Enable Playwright browser integration (overrides BPSA_BROWSER)",
+    )
+    parser.add_argument(
+        "--gui", action="store_true", default=None,
+        help="Enable native GUI interaction tools (overrides BPSA_GUI)",
+    )
     args = parser.parse_args()
 
     # Install Ctrl+C handler
     signal.signal(signal.SIGINT, _signal_handler)
 
     # Load .env
-    from smolagents.bp_cli import try_load_dotenv, check_required_env, build_model
+    from smolagents.bp_cli import build_model, check_required_env, try_load_dotenv
     try_load_dotenv()
     check_required_env()
 
@@ -364,6 +385,9 @@ def main():
     else:
         tree_folder = tree_folder_raw
 
+    browser_enabled = args.browser if args.browser else bool_env("BPSA_BROWSER")
+    gui_enabled = args.gui if args.gui else bool_env("BPSA_GUI")
+
     # Load tasks
     console.print("[dim]Loading tasks...[/]")
     tasks = load_tasks(args.task_source)
@@ -377,6 +401,8 @@ def main():
         "plan_interval": plan_interval,
         "tree_folder": tree_folder,
         "cooldown": cooldown,
+        "browser": browser_enabled,
+        "gui": gui_enabled,
     }
     print_banner(config)
 
@@ -384,7 +410,8 @@ def main():
     model = build_model()
 
     # Run the loop
-    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown)
+    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
+             browser_enabled=browser_enabled, gui_enabled=gui_enabled)
 
 
 if __name__ == "__main__":
