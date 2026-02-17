@@ -36,6 +36,34 @@ __all__ = [
 
 logger = getLogger(__name__)
 
+COMMON_COMPRESSION_INSTRUCTIONS="""Preserve the most important information:
+1. Key decisions, outcomes, and final results
+2. Critical errors or failures encountered
+3. Overall progress toward the goal
+4. Any information that would be needed for continued problem-solving
+5. KEEP the latest todo list or plan if present.
+6. KEEP any information that is relevant for the continuation of the task.
+Eliminate redundancy and consolidate overlapping information.
+
+Do not follow this bad example:
+<bad-example>
+# Execution Summary
+
+**Current Working Directory:** `/home/look/fjup/content/smolagents`
+
+**Progress:** Successfully identified the current folder location using `os.getcwd()`.
+
+**Key Information for Continuation:** The agent is operating in the `/home/look/fjup/content/smolagents` directory. This context should be retained for any subsequent file operations or path-dependent tasks.
+</bad-example>
+
+The above example has many problems:
+* It is repetitive.
+* Spends tokens with section titles.
+
+You should follow this good exanple instead:
+<good-example>
+I run `os.getcwd()` and found `/home/look/fjup/content/smolagents`.
+</good-example>"""
 
 @dataclass
 class CompressionConfig:
@@ -246,18 +274,13 @@ def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
 
     steps_text = "<\n>".join(step_descriptions)
 
-    return f"""Summarize the following agent execution history into a concise summary that preserves:
-1. Key decisions and reasoning
-2. Important observations and results
-3. Any errors or issues encountered
-4. Progress toward the goal
-5. KEEP the latest todo list or plan if present.
-6. KEEP any information that is relevant for the continuation of the task.
+    return f"""Summarize the following agent execution history (<execution_history></execution_history>) into a concise summary.
+{COMMON_COMPRESSION_INSTRUCTIONS}
 
-Be concise but preserve critical context needed for continued problem-solving.
-
-EXECUTION HISTORY:
+This is the execution history:
+<execution_history>
 {steps_text}
+</execution_history>
 
 SUMMARY:"""
 
@@ -286,40 +309,14 @@ def create_merge_prompt(compressed_steps: list[CompressedHistoryStep]) -> str:
     summaries_text = "\n\n".join(summaries)
     total_steps = sum(step.original_step_count for step in compressed_steps)
 
-    return f"""Merge the following {len(compressed_steps)} summaries of previous agent work into a single consolidated summary.
+    return f"""Merge the following {len(compressed_steps)} summaries (<SUMMARIES_TO_MERGE></SUMMARIES_TO_MERGE>) of previous agent work into a single consolidated summary.
 These summaries cover {total_steps} total steps of agent execution.
 
-Preserve the most important information:
-1. Key decisions, outcomes, and final results
-2. Critical errors or failures encountered
-3. Overall progress toward the goal
-4. Any information that would be needed for continued problem-solving
-5. KEEP the latest todo list or plan if present.
-6. KEEP any information that is relevant for the continuation of the task.
-Eliminate redundancy and consolidate overlapping information.
+{COMMON_COMPRESSION_INSTRUCTIONS}
 
-Do not follow this bad example:
-<bad-example>
-# Execution Summary
-
-**Current Working Directory:** `/home/look/fjup/content/smolagents`
-
-**Progress:** Successfully identified the current folder location using `os.getcwd()`.
-
-**Key Information for Continuation:** The agent is operating in the `/home/look/fjup/content/smolagents` directory. This context should be retained for any subsequent file operations or path-dependent tasks.
-</bad-example>
-
-The above example has many problems:
-* It is repetitive.
-* Spends tokens with section titles.
-
-You should follow this good exanple instead:
-<good-example>
-I run `os.getcwd()` and found `/home/look/fjup/content/smolagents`.
-</good-example>
-
-SUMMARIES TO MERGE:
+<SUMMARIES_TO_MERGE>
 {summaries_text}
+</SUMMARIES_TO_MERGE>
 
 CONSOLIDATED SUMMARY:"""
 
