@@ -59,14 +59,6 @@ BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
 
-#### `BPSA_INJECT_FOLDER`
-
-| Variable | Default | Description |
-|---|---|---|
-| `BPSA_INJECT_FOLDER` | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
-
-When `BPSA_INJECT_FOLDER` is set to `true` (the default), a fresh `list_directory_tree` snapshot of the current working directory is appended to the prompt task, so the agent can "see" the current project structure (files, class/method signatures, section titles). You can also pass a specific folder path instead of `true`, or set to `false` to disable. This variable is shared with `ad-infinitum`.
-
 ### BPSA CLI Usage
 
 ```bash
@@ -96,6 +88,7 @@ Define command aliases with `/alias <name> <value>` (e.g., `/alias gs !!git stat
 
 Sessions are automatically saved every 5 turns to `~/.bpsa_autosave.json`. Configure the interval with the `BPSA_AUTOSAVE_INTERVAL` environment variable (set to 0 to disable).
 
+Find more about bpsa CLI at [CLI.md](CLI.md).
 
 ## CLI (`ad-infinitum`)
 
