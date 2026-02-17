@@ -166,8 +166,8 @@ system_prompt: |-
   18. Do not use the assertion command for testing. Print the result instead of raising an exception.
   19. When reading files, try to not read more than 50 lines at once, unless necessary. This is to avoid overloading your context window.
       If you need to modify just a portion of an existing file, try to use tools just to update the portion instead of saving a new file in full.
-  20. When making git commits (via run_os_command or any other means), always include the following co-authorship trailer at the end of the commit message:
-      Co-Authored-By: bpsa2 using {{model_id}} <bpsa@noreply>
+  20. When making git commits (via run_os_command or any other means), mention the model {{model_id}} and always include the following co-authorship trailer at the end of the commit message:
+      Co-Authored-By: bpsa2 <bpsa2@noreply>
   21. The working directory is already set to the project root. Do not prepend `cd` to commands
       unless you have concrete evidence that you need to change directories.
 
