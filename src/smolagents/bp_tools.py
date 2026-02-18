@@ -1560,7 +1560,24 @@ def detect_language(filename):
         }
         return language_map.get(ext, 'generic')
 
-DEFAULT_SKIP_DIRS = {'build', 'dist', '__pycache__', 'node_modules', '.eggs', '*.egg-info'}
+DEFAULT_SKIP_DIRS = {
+    # Python
+    'build', 'dist', '__pycache__', '.eggs', 'venv', 'env',
+    # JavaScript
+    'node_modules', 'bower_components',
+    # Test coverage (multi-language)
+    'coverage',
+    # Java / Rust / Scala
+    'target',
+    # Go / Ruby / PHP
+    'vendor',
+    # C / C++
+    'CMakeFiles',
+    # iOS / Xcode
+    'Pods', 'DerivedData',
+    # General build output
+    'out', 'bin',
+}
 
 @tool
 def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False, skip_dirs: object = None) -> str:
