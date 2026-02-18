@@ -1560,27 +1560,35 @@ def detect_language(filename):
         }
         return language_map.get(ext, 'generic')
 
+DEFAULT_SKIP_DIRS = {'build', 'dist', '__pycache__', 'node_modules', '.eggs', '*.egg-info'}
+
 @tool
-def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False) -> str:
+def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False, skip_dirs: object = None) -> str:
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.
+
+    Folders in skip_dirs are shown in the tree with "(not inspected)" but are not
+    traversed. Defaults to skipping common build/artifact folders.
     
     Example output:
     project/
     ├── src/
     │   ├── main.py (123 lines)
     │   └── utils.py (45 lines)
-    └── tests/
-        └── test_main.py (67 lines)
+    ├── tests/
+    │   └── test_main.py (67 lines)
+    ├── build/  (not inspected)
+    └── dist/   (not inspected)
     
     Total source code lines: 235
     
     Args:
         folder_path: str The root folder path to visualize
-        max_depth: int Maximum depth to traverse (default 3)
+        max_depth: int Maximum depth to traverse (default 6)
         show_files: bool Whether to show files or only directories (default True)
         add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
+        skip_dirs: set/list of directory names to show but not inspect (default: build, dist, __pycache__, node_modules, .eggs)
     
     Returns:
         str: A string representation of the directory tree
@@ -1588,6 +1596,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
     if not os.path.isdir(folder_path):
         return f"Error: '{folder_path}' is not a valid directory"
 
+    effective_skip_dirs = DEFAULT_SKIP_DIRS if skip_dirs is None else set(skip_dirs)
     lines = []
     total_lines = 0
 
@@ -1616,6 +1625,11 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
 
             # Choose the appropriate tree characters
             connector = "└── " if is_last else "├── "
+
+            # If this is a directory in skip_dirs, show it but don't recurse
+            if os.path.isdir(item_path) and item in effective_skip_dirs:
+                lines.append(f"{prefix}{connector}{item}/  (not inspected)")
+                continue
 
             # Check if file is a source code file and count lines
             line_count_str = ""
