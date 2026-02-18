@@ -1760,8 +1760,9 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
     pattern = search_pattern if case_sensitive else search_pattern.lower()
 
     for root, _, files in os.walk(folder_path):
-        # Skip hidden directories
-        if any(part.startswith('.') for part in root.split(os.sep)):
+        # Skip hidden directories (check only relative path parts, not the root itself)
+        rel_root = os.path.relpath(root, folder_path)
+        if any(part.startswith('.') for part in rel_root.split(os.sep) if part not in ('', '.')):
             continue
 
         for filename in files:
@@ -2350,8 +2351,9 @@ def count_lines_of_code(folder_path: str, file_extensions: tuple = ('.py', '.js'
     total_lines = 0
 
     for root, _, files in os.walk(folder_path):
-        # Skip hidden directories
-        if any(part.startswith('.') for part in root.split(os.sep)):
+        # Skip hidden directories (check only relative path parts, not the root itself)
+        rel_root = os.path.relpath(root, folder_path)
+        if any(part.startswith('.') for part in rel_root.split(os.sep) if part not in ('', '.')):
             continue
 
         for filename in files:

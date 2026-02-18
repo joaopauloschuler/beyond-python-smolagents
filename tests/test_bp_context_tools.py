@@ -356,6 +356,34 @@ class TestSearchInFiles:
         result = search_in_files(str(tmp_path), "nonexistent")
         assert "No matches found" in result
 
+    def test_search_from_dot_path(self, tmp_path):
+        """Test that searching from '.' style relative paths works correctly.
+        Regression test: previously the root '.' was treated as a hidden directory
+        and skipped, causing no results to ever be returned."""
+        import os
+        orig_dir = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            (tmp_path / "visible.py").write_text("magic_string = 42\n")
+            result = search_in_files(".", "magic_string", file_extensions=('.py',))
+            assert "magic_string" in result, f"Expected to find 'magic_string' when searching from '.', got: {result}"
+        finally:
+            os.chdir(orig_dir)
+
+    def test_hidden_dirs_still_skipped(self, tmp_path):
+        """Test that truly hidden directories (starting with .) are still skipped"""
+        import os
+        hidden = tmp_path / ".hidden_dir"
+        hidden.mkdir()
+        (hidden / "secret.py").write_text("hidden_content = True\n")
+        (tmp_path / "visible.py").write_text("visible_content = True\n")
+
+        result = search_in_files(str(tmp_path), "hidden_content", file_extensions=('.py',))
+        assert "No matches found" in result
+
+        result2 = search_in_files(str(tmp_path), "visible_content", file_extensions=('.py',))
+        assert "visible_content" in result2
+
 
 class TestReadFileRange:
     def test_basic_read_range(self, tmp_path):
