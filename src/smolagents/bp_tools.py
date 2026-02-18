@@ -2508,10 +2508,11 @@ def delete_lines_from_file(filename: str, start_line: int, end_line: int = None)
 
 
 class PlanningTool(Tool):
-    """A tool that lets the agent trigger a planning step on demand.
+    """This tool lets the agent trigger a planning step on demand.
 
     The tool makes a single LLM call (no tools, no agent loop) to generate or
-    update a plan based on the current task, memory, and available capabilities.
+    update a plan based on the current recent memory (last 22 steps),
+    available capabilities and the situation that you describe.
     It must be bound to an agent via ``set_agent`` before use.
     """
 
@@ -2521,13 +2522,13 @@ class PlanningTool(Tool):
         "Use it when starting a complex task, when your current approach is failing, "
         "when the task scope changes, or when you feel stuck. "
         "Provide a short summary of what happened so far and what you need to plan for."
-        "I do have access to your recent steps."
+        "I do have partial access to your last 22 steps."
     )
     inputs = {
         "situation": {
             "type": "string",
             "description": (
-                "A brief description of the current situation: what has been tried, "
+                "A brief description of the current status: what has been tried, "
                 "what worked, what failed, and what needs to be planned next."
             ),
         }
@@ -2549,7 +2550,6 @@ class PlanningTool(Tool):
 
         agent = self._agent
         model = self._planning_model or agent.model
-        task = agent.task or "No task set"
 
         # Build tool/agent capability list
         capabilities = []
@@ -2580,9 +2580,6 @@ class PlanningTool(Tool):
         prompt = textwrap.dedent(f"""\
             You are a planning assistant. Your ONLY job is to produce a clear,actionable plan.
             Do NOT write code. Do NOT execute actions. Just plan.
-
-            ## Task
-            {task}
 
             ## Current situation
             {situation}
