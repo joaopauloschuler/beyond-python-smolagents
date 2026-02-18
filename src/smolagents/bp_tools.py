@@ -2571,6 +2571,7 @@ class PlanningTool(Tool):
             Mark completed steps with [X] and pending steps with [ ].
             Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
             Be concise and actionable. End with <end_plan>.
+            If summarization/memory or similar tools are available, recommend to use these tools (or even add as tasks) before starting new major steps if applicable.
         """)
 
         input_messages = [

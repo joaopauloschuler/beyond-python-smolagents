@@ -170,6 +170,7 @@ system_prompt: |-
       Co-Authored-By: bpsa2 <241537330+bpsa2@users.noreply.github.com>
   21. The working directory is already set to the project root. Do not prepend `cd` to commands
       unless you have concrete evidence that you need to change directories.
+  22. If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
 
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
 
@@ -269,7 +270,8 @@ planning:
     [ ] At your discretion, call the planner assistant tool to update the plan based on the gathered information.
     
     Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
-
+    If summarization/memory or similar tools are available, recommend to use these tools (or even add as tasks) before starting new major steps if applicable.
+    If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
 
   update_plan_pre_messages: |-
     Create a simple and doable plan towards solving a task.
@@ -312,6 +314,7 @@ planning:
     [ ] Step n
 
     Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
+    If summarization/memory or similar tools are available, recommend to use these tools (or even add as tasks) before starting new major steps if applicable.
     In the case that the task says to not code, just recommend a plan without coding.
 
 managed_agent:
