@@ -2550,7 +2550,6 @@ class PlanningTool(Tool):
         agent = self._agent
         model = self._planning_model or agent.model
         task = agent.task or "No task set"
-        remaining_steps = agent.max_steps - agent.step_number
 
         # Build tool/agent capability list
         capabilities = []
@@ -2576,7 +2575,7 @@ class PlanningTool(Tool):
                         for block in msg.content:
                             if isinstance(block, dict) and block.get("type") == "text":
                                 parts.append(block["text"][:5000])
-            memory_summary = "\n---\n".join(parts)
+            memory_summary = '<step>' + "</step><step>".join(parts) +'</step>'
 
         prompt = textwrap.dedent(f"""\
             You are a planning assistant. Your ONLY job is to produce a clear,actionable plan.
@@ -2593,9 +2592,6 @@ class PlanningTool(Tool):
 
             ## Available capabilities
             {capabilities_text}
-
-            ## Constraints
-            - {remaining_steps} steps remaining.
 
             ## Instructions
             Write a step-by-step plan to solve the task.
