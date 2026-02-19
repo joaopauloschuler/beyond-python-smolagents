@@ -2079,12 +2079,19 @@ You can combine the above to be able to run very large portions of python code i
             code_output = self.python_executor(code_action)
             code_output.logs = truncate_content(code_output.logs, MAX_LENGTH_TRUNCATE_CONTENT) # execution log is truncated to 20K
             execution_outputs_console = []
-            if len(code_output.logs) > 0:
+            if len(code_output.logs.strip()) > 0:
                 execution_outputs_console += [
                     Text("Execution logs:", style="bold"),
                     Text(code_output.logs),
                 ]
                 observation = "Execution logs:\n" + code_output.logs
+            else:
+                if not(code_output.is_final_answer):
+                    observation = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
+                    execution_outputs_console = [
+                        Text("Message:", style="bold"),
+                        Text(observation),
+            ]
         except Exception as e:
             if hasattr(self.python_executor, "state") and "_print_outputs" in self.python_executor.state:
                 code_output.logs = str(self.python_executor.state["_print_outputs"])
@@ -2102,20 +2109,24 @@ You can combine the above to be able to run very large portions of python code i
                     level=LogLevel.INFO,
                 )
             raise AgentExecutionError(error_msg, self.logger)
-
-        if (code_output.output is not None) and (code_output.output != "None"):
-            truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
-            if (len(truncated_output) > 0):
-                observation += "Last output from code snippet:\n" + truncated_output
-                if not code_output.is_final_answer:
-                    execution_outputs_console += [
-                        Text(
-                            f"Out: {truncated_output}",
-                        ),
-                    ]
-        else:
-            truncated_output = ''
-
+        truncated_output=''
+        # This portion of code seems to be duplicated.
+        # if (code_output.output is not None) and (code_output.output != "None"):
+        #    truncated_output = truncate_content(str(code_output.output), self.model.max_len_truncate_content)
+        #    if (len(truncated_output) > 0):
+        #        observation += "Last output from code snippet:\n" + truncated_output
+        #        if not code_output.is_final_answer:
+        #            execution_outputs_console += [
+        #                Text(
+        #                    f"Out: {truncated_output}",
+        #                ),
+        #            ]
+        # else:
+        #    truncated_output = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
+        #    execution_outputs_console = [
+        #        Text("Message:", style="bold"),
+        #        Text(truncated_output),
+        #    ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
         memory_step.observations = observation
         memory_step.action_output = truncated_output
