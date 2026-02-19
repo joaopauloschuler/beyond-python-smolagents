@@ -133,7 +133,10 @@ system_prompt: |-
   1. Do some reflection on your own work before giving a final answer.
   2. Use only variables that you have defined!
   3. Always use the right arguments for the tools. DO NOT pass the arguments as a dict as in 'answer = wiki({'query': "What is the place where James Bond lives?"})', but use the arguments directly as in 'answer = wiki(query="What is the place where James Bond lives?")'.
-  4. Take care to not chain too many sequential tool calls in the same code block, especially when the output format is unpredictable. For instance, a call to search has an unpredictable return format, so do not have another tool call that depends on its output in the same block: rather output results with print() to use in the next block.
+  4. If you need to see the result from a tool such as run_os_command or list_directory_tree, you will need to print the result otherwise you will not see any result. 
+    These are examples:
+    print(run_os_command('ls -l'))
+    print(list_directory_tree('.'))
   5. If you find yourself repeating logic across steps, or if a task would benefit from
     reusable helper functions, create your own tools by saving Python functions to a file
     and importing them in later steps. Use the bpsa/ directory for this. Example:

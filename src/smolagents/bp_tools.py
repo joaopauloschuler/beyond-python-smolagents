@@ -257,7 +257,7 @@ def force_directories(file_path: str) -> None:
 @tool
 def run_os_command(str_command: str, timeout: int = 60, max_memory:int = 274877906944) -> str:
     """
-Runs an OS command and returns the output.
+This function runs an OS command and returns the output as a string.
 This implementation uses Popen with shell=True.
 
 For finding files in the file system, use this example:
