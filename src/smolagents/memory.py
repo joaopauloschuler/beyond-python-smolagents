@@ -21,6 +21,19 @@ __all__ = ["AgentMemory"]
 logger = getLogger(__name__)
 
 
+def count_messages_chars(messages: list[ChatMessage]) -> int:
+    """Count the total text characters in a list of ChatMessage objects."""
+    total_chars = 0
+    for msg in messages:
+        if isinstance(msg.content, str):
+            total_chars += len(msg.content)
+        elif isinstance(msg.content, list):
+            for item in msg.content:
+                if isinstance(item, dict) and "text" in item:
+                    total_chars += len(str(item["text"]))
+    return total_chars
+
+
 @dataclass
 class ToolCall:
     name: str

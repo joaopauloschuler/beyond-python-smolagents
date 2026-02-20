@@ -443,6 +443,9 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
         if compressed_count > 0:
             line += f" | Compressed: {compressed_count} (from {compressed_original} steps)"
         line += f" | Memory: {total_steps} steps"
+        ctx_chars = agent.get_context_char_size()
+        if ctx_chars > 0:
+            line += f" | Context: {format_tokens(ctx_chars)} chars"
     line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)

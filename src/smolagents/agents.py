@@ -839,6 +839,26 @@ You have been provided with these additional arguments, that you can access dire
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
         return messages
 
+    def get_context_char_size(self) -> int:
+        """Return the character count of the last context sent to the LLM."""
+        from smolagents.memory import ActionStep, count_messages_chars
+        for step in reversed(self.memory.steps):
+            if isinstance(step, ActionStep) and step.model_input_messages:
+                return count_messages_chars(step.model_input_messages)
+        return 0
+
+    def cleanup_model_input_messages(self, keep_last: int = 2):
+        """Clear model_input_messages from all steps except the last `keep_last` that have them."""
+        # action_output - Safe to clean (not used in next run)                                                                                   
+        # model_output_message - Safe to clean (not used in next run) 
+        from smolagents.memory import ActionStep, PlanningStep
+        steps_with_messages = [
+            s for s in self.memory.steps
+            if isinstance(s, (ActionStep, PlanningStep)) and s.model_input_messages
+        ]
+        for step in steps_with_messages[:-keep_last]:
+            step.model_input_messages = None if isinstance(step, ActionStep) else []
+
     def _step_stream(
         self, memory_step: ActionStep
     ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
@@ -1828,6 +1848,7 @@ class CodeAgent(MultiStepAgent):
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
         At the end, yields either None if the step is not final, or the final answer.
         """
+        self.cleanup_model_input_messages(3)
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()

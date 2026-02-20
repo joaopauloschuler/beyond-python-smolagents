@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, Callable
 
-from smolagents.memory import ActionStep, MemoryStep, PlanningStep, TaskStep, SystemPromptStep
+from smolagents.memory import ActionStep, MemoryStep, PlanningStep, TaskStep, SystemPromptStep, count_messages_chars
 from smolagents.models import CHARS_PER_TOKEN, ChatMessage, MessageRole
 from smolagents.monitoring import AgentLogger, LogLevel, Timing, TokenUsage
 
@@ -189,16 +189,7 @@ def estimate_step_tokens(step: MemoryStep) -> int:
     Returns:
         Estimated number of tokens for the step.
     """
-    messages = step.to_messages(summary_mode=False)
-    total_chars = 0
-    for msg in messages:
-        if isinstance(msg.content, str):
-            total_chars += len(msg.content)
-        elif isinstance(msg.content, list):
-            for item in msg.content:
-                if isinstance(item, dict) and "text" in item:
-                    total_chars += len(str(item["text"]))
-    return total_chars // CHARS_PER_TOKEN
+    return count_messages_chars(step.to_messages(summary_mode=False)) // CHARS_PER_TOKEN
 
 
 def should_preserve_step(step: MemoryStep, config: CompressionConfig) -> bool:
