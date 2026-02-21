@@ -15,6 +15,19 @@ Environment variables:
     BPSA_GLOBAL_EXECUTOR - Executor type (default: exec)
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
+
+    Context compression parameters (see CompressionConfig for details):
+    BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
+    BPSA_COMPRESSION_KEEP_RECENT_STEPS        - Recent steps to keep uncompressed (default: 40)
+    BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS   - Trigger threshold for compression (default: 50)
+    BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS    - Compressed steps to keep on merge (default: 80)
+    BPSA_COMPRESSION_MAX_COMPRESSED_STEPS     - Trigger threshold for merge (default: 120)
+    BPSA_COMPRESSION_TOKEN_THRESHOLD          - Token-based trigger (default: 0 = disabled)
+    BPSA_COMPRESSION_MODEL                    - Model ID for compression (default: same as main)
+    BPSA_COMPRESSION_MAX_SUMMARY_TOKENS       - Max tokens in summary (default: 50000)
+    BPSA_COMPRESSION_PRESERVE_ERROR_STEPS     - Keep error steps uncompressed (default: 0)
+    BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS - Keep final_answer steps (default: 1)
+    BPSA_COMPRESSION_MIN_CHARS                - Min chars before compressing (default: 4096)
 """
 
 import os
@@ -30,6 +43,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
+from smolagents.bp_utils import get_env
 
 
 VERSION = "1.23-bp"
@@ -200,11 +214,6 @@ def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
     sys.exit(1)
 
-
-def get_env(name: str, default: str | None = None) -> str | None:
-    return os.environ.get(name, default)
-
-
 def try_load_dotenv():
     env_path = os.path.join(os.getcwd(), ".env")
     if os.path.isfile(env_path):
@@ -259,9 +268,9 @@ def check_required_env():
         sys.exit(1)
 
 
-def build_model():
+def build_model(override_model_id=None):
     server_model = get_env("BPSA_SERVER_MODEL", None)
-    model_id = get_env("BPSA_MODEL_ID")
+    model_id = override_model_id or get_env("BPSA_MODEL_ID")
     api_key = get_env("BPSA_KEY_VALUE")
     api_endpoint = get_env("BPSA_API_ENDPOINT")
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
@@ -344,6 +353,15 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         from smolagents.bp_tools_gui import gui_screenshot_callback
         step_cbs.append(gui_screenshot_callback)
 
+    # Resolve compression model (may be a separate model via BPSA_COMPRESSION_MODEL)
+    compression_cfg = DEFAULT_THINKER_COMPRESSION
+    compression_model_id = get_env("BPSA_COMPRESSION_MODEL")
+    if compression_model_id:
+        from copy import copy
+        compression_model = build_model(override_model_id=compression_model_id)
+        compression_cfg = copy(DEFAULT_THINKER_COMPRESSION)
+        compression_cfg.compression_model = compression_model
+
     agent = CodeAgent(
         tools=tools,
         model=model,
@@ -351,7 +369,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         add_base_tools=True,
         max_steps=DEFAULT_THINKER_MAX_STEPS,
         executor_type=executor_type,
-        compression_config=DEFAULT_THINKER_COMPRESSION,
+        compression_config=compression_cfg,
         planning_interval=None,
         step_callbacks=step_cbs,
         approval_callback=approval_callback,
@@ -1928,9 +1946,9 @@ def main():
     args = parser.parse_args()
     skip_instructions = not args.load_instructions
     auto_approve = args.auto_approve == "on"
-    from smolagents.bp_utils import bool_env
-    browser_enabled = args.browser or bool_env("BPSA_BROWSER")
-    gui_enabled = args.gui or bool_env("BPSA_GUI")
+    from smolagents.bp_utils import get_env_bool
+    browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
+    gui_enabled = args.gui or get_env_bool("BPSA_GUI")
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

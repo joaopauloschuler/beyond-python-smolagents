@@ -32,6 +32,14 @@ Environment variables (same BPSA_* as bpsa, plus):
     BPSA_INJECT_FOLDER  - Inject directory tree (default: true = cwd, false = off, or a path)
     BPSA_BROWSER        - Enable Playwright browser integration (default: false)
     BPSA_GUI            - Enable native GUI interaction tools (default: false)
+
+    Context compression parameters (see bpsa --help or CompressionConfig for details):
+    BPSA_COMPRESSION_ENABLED, BPSA_COMPRESSION_KEEP_RECENT_STEPS,
+    BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS, BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS,
+    BPSA_COMPRESSION_MAX_COMPRESSED_STEPS, BPSA_COMPRESSION_TOKEN_THRESHOLD,
+    BPSA_COMPRESSION_MODEL, BPSA_COMPRESSION_MAX_SUMMARY_TOKENS,
+    BPSA_COMPRESSION_PRESERVE_ERROR_STEPS, BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS,
+    BPSA_COMPRESSION_MIN_CHARS
 """
 
 import glob
@@ -46,8 +54,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
 
-from smolagents.bp_cli import get_env
-from smolagents.bp_utils import bool_env
+from smolagents.bp_utils import get_env, get_env_bool, get_env_int
 
 
 console = Console()
@@ -165,19 +172,6 @@ def load_tasks(path: str) -> list[TaskItem]:
 
     else:
         fail(f"Path not found: {path}")
-
-
-
-def get_int_env(name: str, default: int) -> int:
-    val = get_env(name)
-    if val is None:
-        return default
-    try:
-        return int(val)
-    except ValueError:
-        console.print(f"[yellow]Warning: Invalid integer for {name}='{val}', using default: {default}[/]")
-        return default
-
 
 def inject_tree(folder: str) -> str:
     """Generate directory tree string to append to task prompts."""
@@ -372,11 +366,11 @@ def main():
     check_required_env()
 
     # Read config from env
-    cycles = args.cycles if args.cycles is not None else get_int_env("BPSA_CYCLES", 1)
+    cycles = args.cycles if args.cycles is not None else get_env_int("BPSA_CYCLES", 1)
     plan_interval_val = get_env("BPSA_PLAN_INTERVAL")
     plan_interval = int(plan_interval_val) if plan_interval_val else None
-    max_steps = get_int_env("BPSA_MAX_STEPS", 200)
-    cooldown = get_int_env("BPSA_COOLDOWN", 0)
+    max_steps = get_env_int("BPSA_MAX_STEPS", 200)
+    cooldown = get_env_int("BPSA_COOLDOWN", 0)
     tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
     if tree_folder_raw is not None and tree_folder_raw.lower() == "false":
         tree_folder = None
@@ -385,8 +379,8 @@ def main():
     else:
         tree_folder = tree_folder_raw
 
-    browser_enabled = args.browser if args.browser else bool_env("BPSA_BROWSER")
-    gui_enabled = args.gui if args.gui else bool_env("BPSA_GUI")
+    browser_enabled = args.browser if args.browser else get_env_bool("BPSA_BROWSER")
+    gui_enabled = args.gui if args.gui else get_env_bool("BPSA_GUI")
 
     # Load tasks
     console.print("[dim]Loading tasks...[/]")

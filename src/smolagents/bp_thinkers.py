@@ -13,11 +13,17 @@ DEFAULT_THINKER_PLANNING_INTERVAL = None
 DEFAULT_THINKER_LOG_LEVEL = LogLevel.ERROR
 
 DEFAULT_THINKER_COMPRESSION = CompressionConfig(
-    keep_recent_steps=40,
-    max_uncompressed_steps=40+10,
-    keep_compressed_steps=40*2,
-    max_compressed_steps=40*3,
-    preserve_error_steps=False
+    enabled=get_env_bool_default("BPSA_COMPRESSION_ENABLED", True),
+    keep_recent_steps=get_env_int("BPSA_COMPRESSION_KEEP_RECENT_STEPS", 40),
+    max_uncompressed_steps=get_env_int("BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS", 40+10),
+    keep_compressed_steps=get_env_int("BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS", 40*2),
+    max_compressed_steps=get_env_int("BPSA_COMPRESSION_MAX_COMPRESSED_STEPS", 40*3),
+    estimated_token_threshold=get_env_int("BPSA_COMPRESSION_TOKEN_THRESHOLD", 0),
+    compression_model=None,  # Set in build_agent() via BPSA_COMPRESSION_MODEL
+    max_summary_tokens=get_env_int("BPSA_COMPRESSION_MAX_SUMMARY_TOKENS", 50000),
+    preserve_error_steps=get_env_bool_default("BPSA_COMPRESSION_PRESERVE_ERROR_STEPS", False),
+    preserve_final_answer_steps=get_env_bool_default("BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS", True),
+    min_compression_chars=get_env_int("BPSA_COMPRESSION_MIN_CHARS", 4096),
 )
 
 DEFAULT_THINKER_TOOLS = [

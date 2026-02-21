@@ -7,10 +7,30 @@ import time
 from textwrap import dedent
 
 
-def bool_env(name: str) -> bool:
+def get_env_bool(name: str) -> bool:
     """Check if an environment variable is set to a truthy value."""
     val = os.environ.get(name)
     return val is not None and val.lower() not in ("false", "0", "no", "")
+
+def get_env_bool_default(name: str, default: bool) -> bool:
+    """Get an environment variable as a bool, returning default if not set."""
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.lower() not in ("false", "0", "no", "")
+
+def get_env(name: str, default: str | None = None) -> str | None:
+    return os.environ.get(name, default)
+
+def get_env_int(name: str, default: int) -> int:
+    val = get_env(name)
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        console.print(f"[yellow]Warning: Invalid integer for {name}='{val}', using default: {default}[/]")
+        return default
 
 
 def delay_execution_10(pagent, **kwargs) -> bool:
