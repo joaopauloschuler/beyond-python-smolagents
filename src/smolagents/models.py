@@ -1686,6 +1686,10 @@ class OpenAIModel(ApiModel):
             model=self.model_id,
             custom_role_conversions=self.custom_role_conversions,
             convert_images_to_image_urls=True,
+            extra_headers={
+                "HTTP-Referer": "https://github.com/joaopauloschuler/beyond-python-smolagents",
+                "X-Title": "BPSA",
+            },
             **kwargs,
         )
         self._apply_rate_limit()
