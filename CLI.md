@@ -61,6 +61,24 @@ All prefixed with `BPSA_`:
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 
+### Context Compression Variables
+
+All optional. Configure `CompressionConfig` without touching code:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BPSA_COMPRESSION_ENABLED` | `1` | Enable/disable compression (`0` or `1`) |
+| `BPSA_COMPRESSION_KEEP_RECENT_STEPS` | `40` | Recent steps kept in full detail |
+| `BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS` | `50` | Trigger compression when uncompressed step count exceeds this |
+| `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `80` | Compressed steps to keep during a merge |
+| `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `120` | Trigger merge when compressed step count exceeds this |
+| `BPSA_COMPRESSION_TOKEN_THRESHOLD` | `0` | Token-based compression trigger (`0` = disabled) |
+| `BPSA_COMPRESSION_MODEL` | _(main model)_ | Model ID for compression (uses main model if unset) |
+| `BPSA_COMPRESSION_MAX_SUMMARY_TOKENS` | `50000` | Max tokens in a generated summary |
+| `BPSA_COMPRESSION_PRESERVE_ERROR_STEPS` | `0` | Keep steps with errors uncompressed (`0` or `1`) |
+| `BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS` | `1` | Keep final_answer steps uncompressed (`0` or `1`) |
+| `BPSA_COMPRESSION_MIN_CHARS` | `4096` | Min characters of content before an LLM compression call is made |
+
 ### Supported Model Classes (`BPSA_SERVER_MODEL`)
 
 `OpenAIServerModel`, `LiteLLMModel`, `LiteLLMRouterModel`, `InferenceClientModel`, `TransformersModel`, `AzureOpenAIServerModel`, `AmazonBedrockModel`, `VLLMModel`, `MLXModel`, `GoogleColabModel`

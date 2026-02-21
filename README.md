@@ -59,6 +59,8 @@ BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
 
+Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](CLI.md) for the full list.
+
 ### BPSA CLI Usage
 
 ```bash
@@ -306,6 +308,8 @@ agent = CodeAgent(
 | `preserve_error_steps` | `False` | Always keep steps with errors |
 | `preserve_final_answer_steps` | `True` | Always keep final answer steps |
 | `min_compression_chars` | `4096` | Minimum chars before compression LLM call is made (0 = disabled) |
+
+When using `bpsa` or `ad-infinitum`, all of the above can be configured via environment variables (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`) without changing any code. See [CLI.md](CLI.md) for the full list.
 
 
 ### What Gets Preserved
