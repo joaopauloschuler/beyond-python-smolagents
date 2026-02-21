@@ -352,7 +352,7 @@ def main():
         help="Enable Playwright browser integration (overrides BPSA_BROWSER)",
     )
     parser.add_argument(
-        "--gui", action="store_true", default=None,
+        "--gui-x11", action="store_true", default=None,
         help="Enable native GUI interaction tools (overrides BPSA_GUI)",
     )
     args = parser.parse_args()
@@ -380,7 +380,7 @@ def main():
         tree_folder = tree_folder_raw
 
     browser_enabled = args.browser if args.browser else get_env_bool("BPSA_BROWSER")
-    gui_enabled = args.gui if args.gui else get_env_bool("BPSA_GUI")
+    gui_enabled = args.gui_x11 if args.gui_x11 else get_env_bool("BPSA_GUI")
 
     # Load tasks
     console.print("[dim]Loading tasks...[/]")

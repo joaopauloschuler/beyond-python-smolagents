@@ -10,7 +10,7 @@ Beyond Python Smolagents is a fork of HuggingFace's smolagents (v1.23.0) that ex
 - Extended tooling for file operations, source code analysis, and multi-language code execution
 - Context compression: Automatic LLM-based summarization of older memory steps to manage context window size
 - Browser integration: Playwright-based headed Chromium browser controllable from agent `<runcode>` blocks via `--browser` CLI flag or `BPSA_BROWSER` env var
-- GUI interaction: Native X11 GUI app interaction (screenshot, click, type, key) via xdotool/ImageMagick with `--gui` CLI flag or `BPSA_GUI` env var. Supports multiple simultaneous apps, each identified by a unique name assigned at launch time.
+- GUI interaction: Native X11 GUI app interaction (screenshot, click, type, key) via xdotool/ImageMagick with `--gui-x11` CLI flag or `BPSA_GUI` env var. Supports multiple simultaneous apps, each identified by a unique name assigned at launch time.
 
 ## Build & Development Commands
 
@@ -63,7 +63,7 @@ The project uses a `src/smolagents/` layout. All source code is under `src/smola
 - `bp_tools_browser.py` - Playwright browser integration: `BrowserManager`, `navigate`, `get_page_html`, `get_page_markdown`, `click`, `type_text`
 - `bp_tools_gui.py` - Native GUI interaction: `GuiManager`, `gui_launch`, `gui_screenshot`, `gui_click`, `gui_type`, `gui_key`, `gui_list_windows`, `gui_focus_window`, `gui_close` (xdotool/ImageMagick on X11)
 - `bp_tools_image.py` - Image analysis/drawing: `diff_images`, `screen_ocr`, `canvas_create`, `canvas_draw`
-- `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files, with `--browser` and `--gui` support
+- `bp_ad_infinitum.py` - Ad-infinitum CLI: autonomous task cycling from folders of `.md` (agent prompts), `.py`, and `.sh` (direct execution) files, with `--browser` and `--gui-x11` support
 - `bp_session.py` - Session persistence: save/load agent memory, counters, and stats to/from JSON files
 - `bp_utils.py` - Utilities: code validation, tag fixing, file operations
 

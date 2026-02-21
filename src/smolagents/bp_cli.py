@@ -1935,7 +1935,7 @@ def main():
         help="Enable Playwright browser integration (navigate, click, type_text, etc. in runcode blocks)",
     )
     parser.add_argument(
-        "--gui", action="store_true",
+        "--gui-x11", action="store_true",
         help="Enable native GUI interaction tools (screenshot, click, type, key via xdotool/ImageMagick on X11)",
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -1948,7 +1948,7 @@ def main():
     auto_approve = args.auto_approve == "on"
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
-    gui_enabled = args.gui or get_env_bool("BPSA_GUI")
+    gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

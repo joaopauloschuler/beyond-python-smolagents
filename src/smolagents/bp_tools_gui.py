@@ -643,7 +643,7 @@ def _check_gui_dependencies():
         missing.append("imagemagick (provides the 'import' command)")
     if missing:
         raise EnvironmentError(
-            "Missing system dependencies for --gui: {deps}. "
+            "Missing system dependencies for --gui-x11: {deps}. "
             "Install with: sudo apt install xdotool imagemagick".format(
                 deps=", ".join(missing)
             )
@@ -651,7 +651,7 @@ def _check_gui_dependencies():
     if not os.environ.get("DISPLAY"):
         raise EnvironmentError(
             "No X11 display found ($DISPLAY is not set). "
-            "The --gui flag requires a running X11 display."
+            "The --gui-x11 flag requires a running X11 display."
         )
 
 
