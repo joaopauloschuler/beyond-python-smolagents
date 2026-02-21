@@ -174,6 +174,8 @@ system_prompt: |-
   21. The working directory is already set to the project root. Do not prepend `cd` to commands
       unless you have concrete evidence that you need to change directories.
   22. If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
+  23. Before you start coding, please search in the existing code for similar functions to those that you intend to implement. Avoid creating
+   replicated code.
 
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
 
