@@ -7,13 +7,12 @@ import time
 from textwrap import dedent
 
 
-def get_env_bool(name: str) -> bool:
-    """Check if an environment variable is set to a truthy value."""
-    val = os.environ.get(name)
-    return val is not None and val.lower() not in ("false", "0", "no", "")
+def get_env_bool(name: str, default: bool = False) -> bool:
+    """Get an environment variable as a bool.
 
-def get_env_bool_default(name: str, default: bool) -> bool:
-    """Get an environment variable as a bool, returning default if not set."""
+    If the variable is not set, returns default.
+    Truthy values: anything not in ('false', '0', 'no', '').
+    """
     val = os.environ.get(name)
     if val is None:
         return default
