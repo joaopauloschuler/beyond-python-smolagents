@@ -2038,6 +2038,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/voice":
                 arg = cmd_args.strip().lower()
                 if arg == "on":
+                    console.print("[cyan]Loading voice support.[/]")
                     if not _has_prompt_toolkit:
                         console.print("[red]Voice input requires voicelistener. Install with: pip install voicelistener[/]")
                     else:
@@ -2083,6 +2084,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             else:
                 agent.logger.level = LogLevel.ERROR
             _spinner.start()
+            if _voice_listener is not None:
+                _voice_listener.stop()
             last_prompt = text
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
@@ -2095,6 +2098,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 pending_shell_outputs.clear()
             result = agent.run(task_text, reset=False)
             _spinner.stop()
+            if _voice_listener is not None:
+                _voice_listener.start()
             elapsed = time.time() - start_time
 
             # Calculate token usage for this turn
@@ -2127,9 +2132,13 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
 
         except KeyboardInterrupt:
             _spinner.stop()
+            if _voice_listener is not None:
+                _voice_listener.start()
             console.print("\n[yellow]Interrupted.[/]")
         except Exception as e:
             _spinner.stop()
+            if _voice_listener is not None:
+                _voice_listener.start()
             from smolagents.utils import AgentExecutionRejected
             if isinstance(e, AgentExecutionRejected):
                 console.print("\n[yellow]Execution rejected by user.[/]")
