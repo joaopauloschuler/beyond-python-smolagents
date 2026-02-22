@@ -30,8 +30,9 @@ Environment variables:
     BPSA_COMPRESSION_MIN_CHARS                - Min chars before compressing (default: 4096)
 
     Voice input (requires `pip install bpsa[voice]`):
-    BPSA_VOICE_TRANSCRIBER    - Transcriber name, e.g. 'whisper' (required for /voice)
-    BPSA_VOICE_MODEL          - Model name passed to transcriber (optional)
+    BPSA_VOICE_TRANSCRIBER    - Transcriber name: 'whisper' or 'elevenlabs' (required for /voice)
+    BPSA_VOICE_MODEL          - Model name passed to transcriber (optional, whisper only)
+    ELEVENLABS_API_KEY        - API key for ElevenLabs transcriber (required when using elevenlabs)
 """
 
 import os
@@ -697,7 +698,7 @@ _voice_queue = queue.Queue()
 _voice_prompt_active = False
 _prompt_session = None  # Set to PromptSession instance in run_repl()
 
-_VOICE_TRANSCRIBERS = {"whisper"}
+_VOICE_TRANSCRIBERS = {"whisper", "elevenlabs"}
 
 
 def _voice_start():
@@ -731,6 +732,9 @@ def _voice_start():
         if model:
             kwargs["model"] = model
         transcriber = WhisperTranscriber(**kwargs)
+    elif transcriber_name == "elevenlabs":
+        from voicelistener import ElevenLabsTranscriber
+        transcriber = ElevenLabsTranscriber()
 
     def _on_transcription(text):
         _voice_queue.put(text)

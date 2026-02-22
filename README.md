@@ -23,6 +23,7 @@ limitations under the License.
 * 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui-x11` flag).
 * 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
 * 🎨 **Image tools:** Visual image diffing (`diff_images`), OCR text extraction from images (`screen_ocr`), and a canvas for drawing shapes, text, and annotations (`canvas_create`, `canvas_draw`) — always available.
+* 🎤 **Voice input:** Dictate prompts via microphone using Whisper or ElevenLabs transcription (`/voice` command, requires `BPSA_VOICE_TRANSCRIBER` env var).
 * ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
 * 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
 * 🛠️ **Developer tools:** Lots of new tools that help agents to compile, test, and debug source code in various computing languages.
@@ -60,6 +61,24 @@ BPSA_MAX_TOKENS=64000
 ```
 
 Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](CLI.md) for the full list.
+
+#### Voice Input
+
+Dictate prompts via microphone instead of typing. Requires the voice extra and a transcriber environment variable:
+
+```bash
+pip install bpsa[voice]
+
+# Option 1: Whisper (local, offline)
+export BPSA_VOICE_TRANSCRIBER=whisper
+export BPSA_VOICE_MODEL=base.en        # optional (default: base.en)
+
+# Option 2: ElevenLabs (cloud API)
+export BPSA_VOICE_TRANSCRIBER=elevenlabs
+export ELEVENLABS_API_KEY=your_api_key
+```
+
+Then use `/voice on` in the REPL to start listening and `/voice off` to stop. While active, the prompt shows `[mic] >` and transcribed speech is inserted at the cursor.
 
 ### BPSA CLI Usage
 
