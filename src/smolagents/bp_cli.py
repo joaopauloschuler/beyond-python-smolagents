@@ -28,9 +28,14 @@ Environment variables:
     BPSA_COMPRESSION_PRESERVE_ERROR_STEPS     - Keep error steps uncompressed (default: 0)
     BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS - Keep final_answer steps (default: 1)
     BPSA_COMPRESSION_MIN_CHARS                - Min chars before compressing (default: 4096)
+
+    Voice input (requires `pip install bpsa[voice]`):
+    BPSA_VOICE_TRANSCRIBER    - Transcriber name, e.g. 'whisper' (required for /voice)
+    BPSA_VOICE_MODEL          - Model name passed to transcriber (optional)
 """
 
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -92,6 +97,8 @@ MODEL_REQUIRED_VARS = {
     "MLXModel": [],
     "GoogleColabModel": [],
 }
+
+BPSA_DEFAULT_VOICE_MODEL = 'base.en'
 
 class Spinner:
     """Improved spinner using Rich library for better UX and reliability."""
@@ -597,6 +604,7 @@ SLASH_COMMANDS = [
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
+    "/voice",
 ]
 
 
@@ -639,6 +647,7 @@ def print_help():
     table.add_row("/show-tools", "List all loaded tools")
     table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
+    table.add_row(r"/voice \[on|off]", "Toggle voice dictation (requires BPSA_VOICE_TRANSCRIBER)")
     console.print(table)
     console.print()
 
@@ -679,6 +688,97 @@ def _getch():
             return key.lower()
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+# ── Voice input ──────────────────────────────────────────────────────────────
+
+_voice_listener = None
+_voice_queue = queue.Queue()
+_voice_prompt_active = False
+_prompt_session = None  # Set to PromptSession instance in run_repl()
+
+_VOICE_TRANSCRIBERS = {"whisper"}
+
+
+def _voice_start():
+    """Start the voice listener. Returns an error message string on failure, or None on success."""
+    global _voice_listener
+    if _voice_listener is not None:
+        return "Voice input is already active."
+    try:
+        from voicelistener import VoiceListener
+    except ImportError:
+        return "Voice input requires the voicelistener package. Install with: pip install bpsa[voice]"
+
+    transcriber_name = get_env("BPSA_VOICE_TRANSCRIBER", default="")
+    if not transcriber_name:
+        return (
+            "Set BPSA_VOICE_TRANSCRIBER environment variable to enable voice input"
+            f" (available transcribers: {', '.join(sorted(_VOICE_TRANSCRIBERS))})"
+        )
+    transcriber_name = transcriber_name.lower().strip()
+    if transcriber_name not in _VOICE_TRANSCRIBERS:
+        return (
+            f"Unknown transcriber '{transcriber_name}'."
+            f" Available transcribers: {', '.join(sorted(_VOICE_TRANSCRIBERS))}"
+        )
+
+    model = get_env("BPSA_VOICE_MODEL", default=BPSA_DEFAULT_VOICE_MODEL)
+
+    if transcriber_name == "whisper":
+        from voicelistener import WhisperTranscriber
+        kwargs = {}
+        if model:
+            kwargs["model"] = model
+        transcriber = WhisperTranscriber(**kwargs)
+
+    def _on_transcription(text):
+        _voice_queue.put(text)
+        # Force prompt_toolkit to re-render so the text appears immediately
+        if _prompt_session is not None and _prompt_session.app is not None:
+            _prompt_session.app.invalidate()
+
+    _voice_listener = VoiceListener(transcriber=transcriber, on_transcription=_on_transcription)
+    _voice_listener.start()
+    return None
+
+
+def _voice_stop():
+    """Stop the voice listener."""
+    global _voice_listener
+    if _voice_listener is None:
+        return "Voice input is not active."
+    _voice_listener.stop()
+    _voice_listener = None
+    # Drain any remaining items
+    while not _voice_queue.empty():
+        try:
+            _voice_queue.get_nowait()
+        except queue.Empty:
+            break
+    return None
+
+
+def _shutdown_voice():
+    """Safe cleanup for voice listener."""
+    if _voice_listener is not None:
+        _voice_stop()
+
+
+def _drain_voice_queue_into_buffer(buffer):
+    """Drain voice transcriptions into a prompt_toolkit buffer at cursor position."""
+    if not _voice_prompt_active or _voice_listener is None:
+        return
+    while not _voice_queue.empty():
+        try:
+            text = _voice_queue.get_nowait()
+        except queue.Empty:
+            break
+        # Prepend space if buffer has content and doesn't end with whitespace
+        doc = buffer.document
+        if doc.text and not doc.text_before_cursor.endswith((" ", "\n", "\t")):
+            text = " " + text
+        buffer.insert_text(text)
 
 
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
@@ -1595,23 +1695,58 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             event.current_buffer.insert_text("\n")
 
 
+        global _prompt_session
         session = PromptSession(
             history=FileHistory(history_file),
             completer=completer,
             key_bindings=bindings,
         )
+        _prompt_session = session
+
+        _has_prompt_toolkit = True
 
         def get_input():
+            global _voice_prompt_active
             try:
                 console.print(Rule(style="dim"))
-                console.print("[dim]Enter to submit, Alt+Enter for newline[/]")
-                return session.prompt("> ")
+                voice_on = _voice_listener is not None
+                hint = "[dim]Enter to submit, Alt+Enter for newline"
+                if voice_on:
+                    hint += ", voice active"
+                hint += "[/]"
+                console.print(hint)
+                prompt_str = "[mic] > " if voice_on else "> "
+                # Clear stale voice transcriptions from agent execution time
+                while not _voice_queue.empty():
+                    try:
+                        _voice_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                _voice_prompt_active = True
+                try:
+                    return session.prompt(prompt_str, pre_run=_setup_voice_before_render)
+                finally:
+                    _voice_prompt_active = False
             except EOFError:
                 return None
             except KeyboardInterrupt:
                 print()
                 return ""
+
+        def _setup_voice_before_render():
+            """Hook called once when prompt_toolkit app starts; registers the voice renderer."""
+            app = session.app
+            if not hasattr(app, "_voice_renderer_registered"):
+                app.before_render += _voice_before_render
+                app._voice_renderer_registered = True
+
+        def _voice_before_render(app):
+            """Called before each prompt_toolkit render; drains voice queue into buffer."""
+            _drain_voice_queue_into_buffer(app.current_buffer)
+
     except ImportError:
+        _has_prompt_toolkit = False
+
         def get_input():
             try:
                 console.print(Rule(style="dim"))
@@ -1639,6 +1774,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     while True:
         user_input = get_input()
         if user_input is None:
+            _shutdown_voice()
             _shutdown_browser(agent)
             _shutdown_gui(agent)
             console.print("[dim]Goodbye![/]")
@@ -1693,6 +1829,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 if session_stats["turns"] > 0:
                     console.print()
                     print_stats(session_stats)
+                _shutdown_voice()
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
                 console.print("[dim]Goodbye![/]")
@@ -1897,6 +2034,33 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     console.print("[yellow]Usage: /auto-approve [on|off][/]")
                     continue
                 console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
+                continue
+            elif cmd == "/voice":
+                arg = cmd_args.strip().lower()
+                if arg == "on":
+                    if not _has_prompt_toolkit:
+                        console.print("[red]Voice input requires voicelistener. Install with: pip install voicelistener[/]")
+                    else:
+                        err = _voice_start()
+                        if err:
+                            console.print(f"[red]{err}[/]")
+                        else:
+                            console.print("[cyan][mic] Voice input active[/]")
+                elif arg == "off":
+                    err = _voice_stop()
+                    if err:
+                        console.print(f"[yellow]{err}[/]")
+                    else:
+                        console.print("[cyan]Voice input deactivated[/]")
+                elif arg == "":
+                    if _voice_listener is not None:
+                        transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default="(unknown)")
+                        model = get_env("BPSA_VOICE_MODEL", default=BPSA_DEFAULT_VOICE_MODEL)
+                        console.print(f"[cyan]Voice: on | transcriber: {transcriber} | model: {model}[/]")
+                    else:
+                        console.print("[dim]Voice: off[/]")
+                else:
+                    console.print("[yellow]Usage: /voice [on|off][/]")
                 continue
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
