@@ -1670,8 +1670,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     _verbose = verbose
 
     console.clear()
-    voice_transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
-    print_banner(model_id, server_model, tool_count, voice_transcriber=voice_transcriber or None)
+    voice_transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default=None)
+    print_banner(model_id, server_model, tool_count, voice_transcriber=voice_transcriber)
 
     instructions = None
     if not skip_instructions:
