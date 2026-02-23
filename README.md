@@ -33,10 +33,10 @@ limitations under the License.
 
 
 ## Installation
-Install the project, including the CLI, OpenAI protocol and LiteLLM dependencies.
+Install the project, including the voice support, CLIs, OpenAI protocol and LiteLLM dependencies.
 
 ```bash
-$ pip install bpsa[browser,openai,litellm]
+$ pip install bpsa[voice,browser,openai,litellm]
 ```
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
