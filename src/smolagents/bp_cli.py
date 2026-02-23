@@ -535,12 +535,13 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
     console.print(line)
 
 
-def print_banner(model_id: str, server_model: str, tool_count: int):
+def print_banner(model_id: str, server_model: str, tool_count: int, voice_transcriber: str = None):
+    voice_line = f"\nVoice: [magenta]{voice_transcriber}[/]" if voice_transcriber else ""
     console.print(
         Panel.fit(
             f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
-            f"Tools: [green]{tool_count}[/] loaded",
+            f"Tools: [green]{tool_count}[/] loaded{voice_line}",
             border_style="blue",
         )
     )
@@ -1669,7 +1670,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     _verbose = verbose
 
     console.clear()
-    print_banner(model_id, server_model, tool_count)
+    voice_transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
+    print_banner(model_id, server_model, tool_count, voice_transcriber=voice_transcriber or None)
 
     instructions = None
     if not skip_instructions:
@@ -1887,7 +1889,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 last_answer = None
                 first_turn = True
                 console.clear()
-                print_banner(model_id, server_model, count_tools(agent))
+                _vt = get_env("BPSA_VOICE_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
+                print_banner(model_id, server_model, count_tools(agent), voice_transcriber=_vt or None)
                 continue
             elif cmd == "/show-tools":
                 print_tools(agent)
