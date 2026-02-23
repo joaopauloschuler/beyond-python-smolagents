@@ -99,7 +99,7 @@ MODEL_REQUIRED_VARS = {
     "GoogleColabModel": [],
 }
 
-BPSA_DEFAULT_VOICE_MODEL = 'base.en'
+BPSA_DEFAULT_VOICE_MODEL = None
 
 class Spinner:
     """Improved spinner using Rich library for better UX and reliability."""
@@ -725,16 +725,16 @@ def _voice_start():
         )
 
     model = get_env("BPSA_VOICE_MODEL", default=BPSA_DEFAULT_VOICE_MODEL)
+    kwargs = {}
+    if model is not None:
+        kwargs["model_id"] = model
 
     if transcriber_name == "whisper":
         from voicelistener import WhisperTranscriber
-        kwargs = {}
-        if model:
-            kwargs["model"] = model
         transcriber = WhisperTranscriber(**kwargs)
     elif transcriber_name == "elevenlabs":
         from voicelistener import ElevenLabsTranscriber
-        transcriber = ElevenLabsTranscriber()
+        transcriber = ElevenLabsTranscriber(**kwargs)
 
     def _on_transcription(text):
         _voice_queue.put(text)

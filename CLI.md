@@ -86,7 +86,7 @@ Requires `pip install bpsa[voice]`.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `BPSA_VOICE_TRANSCRIBER` | Yes (for `/voice`) | - | Transcriber name: `whisper` or `elevenlabs` |
-| `BPSA_VOICE_MODEL` | No | `base.en` | Model name passed to the transcriber (whisper only) |
+| `BPSA_VOICE_MODEL` | No | `base.en` (`whisper`) or `scribe_v2` (`elevenlabs`) | Model name passed to the transcriber (whisper only) |
 | `ELEVENLABS_API_KEY` | Yes (for `elevenlabs`) | - | API key for ElevenLabs Scribe API |
 
 ### Supported Model Classes (`BPSA_SERVER_MODEL`)
