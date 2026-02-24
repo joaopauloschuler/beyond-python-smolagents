@@ -113,6 +113,14 @@ class Monitor:
             console_outputs += (
                 f"| Input tokens: {self.total_input_token_count:,} | Output tokens: {self.total_output_token_count:,}"
             )
+
+        # Compute context length once and store on the step for later use
+        if hasattr(step_log, "model_input_messages") and step_log.model_input_messages:
+            from smolagents.memory import count_messages_chars  # lazy to avoid circular import
+            ctx_chars = count_messages_chars(step_log.model_input_messages)
+            step_log.context_chars = ctx_chars
+            console_outputs += f"| Context: {ctx_chars:,} chars"
+
         console_outputs += "]"
         self.logger.log(Text(console_outputs, style="dim"), level=1)
 

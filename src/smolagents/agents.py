@@ -843,8 +843,11 @@ You have been provided with these additional arguments, that you can access dire
         """Return the character count of the last context sent to the LLM."""
         from smolagents.memory import ActionStep, count_messages_chars
         for step in reversed(self.memory.steps):
-            if isinstance(step, ActionStep) and step.model_input_messages:
-                return count_messages_chars(step.model_input_messages)
+            if isinstance(step, ActionStep):
+                if step.context_chars is not None:
+                    return step.context_chars  # already computed by Monitor.update_metrics
+                if step.model_input_messages:
+                    return count_messages_chars(step.model_input_messages)
         return 0
 
     def cleanup_model_input_messages(self, keep_last: int = 2):

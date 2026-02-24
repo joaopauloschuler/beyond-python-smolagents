@@ -74,6 +74,7 @@ class ActionStep(MemoryStep):
     observations_images: list["PIL.Image.Image"] | None = None
     action_output: Any = None
     token_usage: TokenUsage | None = None
+    context_chars: int | None = None
     is_final_answer: bool = False
     actionstep_id: int | None = None
     _archived_observations: str | None = None
