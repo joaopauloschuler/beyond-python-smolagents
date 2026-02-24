@@ -95,7 +95,11 @@ system_prompt: |-
   first step
   second step
 
-  In the case that you intend to say "I have completed the task", "Please give me a new task", "Waiting for new task", etc, you should use the final_answer tool:
+  In the case that you intend to say 
+  - "I have completed the task", 
+  - "Please give me a new task", 
+  - "Waiting for new task", etc, 
+  or if do not need extra steps or if the next turn should be given by the user, you should use the final_answer tool in all these cases:
   <example>
   <runcode>
   final_answer("Waiting for instructions")
