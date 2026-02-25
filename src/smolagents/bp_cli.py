@@ -601,12 +601,11 @@ def _save_aliases(aliases: dict):
 SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
-    "/compression-model", "/exit", "/help",
+    "/compression-model", "/dictation", "/exit", "/help",
     "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
-    "/dictation",
 ]
 
 
@@ -626,6 +625,7 @@ def print_help():
     table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
     table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
     table.add_row("/compression-model <model>", "Switch compression model")
+    table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/help", "Show this help message")
     table.add_row("/load-instructions", "Load agent instruction files into next prompt")
@@ -649,7 +649,6 @@ def print_help():
     table.add_row("/show-tools", "List all loaded tools")
     table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
-    table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     console.print(table)
     console.print()
 
