@@ -79,14 +79,14 @@ All optional. Configure `CompressionConfig` without touching code:
 | `BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS` | `1` | Keep final_answer steps uncompressed (`0` or `1`) |
 | `BPSA_COMPRESSION_MIN_CHARS` | `4096` | Min characters of content before an LLM compression call is made |
 
-### Voice Input Variables
+### Dictation Input Variables
 
-Requires `pip install bpsa[voice]`.
+Requires `pip install bpsa[dictation]`.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `BPSA_VOICE_TRANSCRIBER` | Yes (for `/voice`) | - | Transcriber name: `whisper` or `elevenlabs` |
-| `BPSA_VOICE_MODEL` | No | `base.en` (`whisper`) or `scribe_v2` (`elevenlabs`) | Model name passed to the transcriber (whisper only) |
+| `BPSA_DICTATION_TRANSCRIBER` | Yes (for `/dictation`) | - | Transcriber name: `whisper` or `elevenlabs` |
+| `BPSA_DICTATION_MODEL` | No | `base.en` (`whisper`) or `scribe_v2` (`elevenlabs`) | Model name passed to the transcriber (whisper only) |
 | `ELEVENLABS_API_KEY` | Yes (for `elevenlabs`) | - | API key for ElevenLabs Scribe API |
 
 ### Supported Model Classes (`BPSA_SERVER_MODEL`)
@@ -184,7 +184,7 @@ Use `prompt_toolkit` for:
 | `/show-tools` | List all loaded tools |
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
-| `/voice [on\|off]` | Toggle voice dictation (requires `BPSA_VOICE_TRANSCRIBER`) |
+| `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
 
 ## Configuration Layering
 

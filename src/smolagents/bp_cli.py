@@ -29,9 +29,9 @@ Environment variables:
     BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS - Keep final_answer steps (default: 1)
     BPSA_COMPRESSION_MIN_CHARS                - Min chars before compressing (default: 4096)
 
-    Voice input (requires `pip install bpsa[voice]`):
-    BPSA_VOICE_TRANSCRIBER    - Transcriber name: 'whisper' or 'elevenlabs' (required for /voice)
-    BPSA_VOICE_MODEL          - Model name passed to transcriber (optional, whisper only)
+    Dictation input (requires `pip install bpsa[dictation]`):
+    BPSA_DICTATION_TRANSCRIBER - Transcriber name: 'whisper' or 'elevenlabs' (required for /dictation)
+    BPSA_DICTATION_MODEL       - Model name passed to transcriber (optional, whisper only)
     ELEVENLABS_API_KEY        - API key for ElevenLabs transcriber (required when using elevenlabs)
 """
 
@@ -99,7 +99,7 @@ MODEL_REQUIRED_VARS = {
     "GoogleColabModel": [],
 }
 
-BPSA_DEFAULT_VOICE_MODEL = None
+BPSA_DEFAULT_DICTATION_MODEL = None
 
 class Spinner:
     """Improved spinner using Rich library for better UX and reliability."""
@@ -535,13 +535,13 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
     console.print(line)
 
 
-def print_banner(model_id: str, server_model: str, tool_count: int, voice_transcriber: str = None):
-    voice_line = f"\nVoice: [magenta]{voice_transcriber}[/]" if voice_transcriber else ""
+def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None):
+    dictation_line = f"\nDictation: [magenta]{dictation_transcriber}[/]" if dictation_transcriber else ""
     console.print(
         Panel.fit(
             f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
-            f"Tools: [green]{tool_count}[/] loaded{voice_line}",
+            f"Tools: [green]{tool_count}[/] loaded{dictation_line}",
             border_style="blue",
         )
     )
@@ -606,7 +606,7 @@ SLASH_COMMANDS = [
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
-    "/voice",
+    "/dictation",
 ]
 
 
@@ -649,7 +649,7 @@ def print_help():
     table.add_row("/show-tools", "List all loaded tools")
     table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
-    table.add_row(r"/voice \[on|off]", "Toggle voice dictation (requires BPSA_VOICE_TRANSCRIBER)")
+    table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     console.print(table)
     console.print()
 
@@ -706,16 +706,16 @@ def _voice_start():
     """Start the voice listener. Returns an error message string on failure, or None on success."""
     global _voice_listener
     if _voice_listener is not None:
-        return "Voice input is already active."
+        return "Dictation is already active."
     try:
         from voicelistener import VoiceListener
     except ImportError:
-        return "Voice input requires the voicelistener package. Install with: pip install bpsa[voice]"
+        return "Dictation requires the voicelistener package. Install with: pip install bpsa[dictation]"
 
-    transcriber_name = get_env("BPSA_VOICE_TRANSCRIBER", default="")
+    transcriber_name = get_env("BPSA_DICTATION_TRANSCRIBER", default="")
     if not transcriber_name:
         return (
-            "Set BPSA_VOICE_TRANSCRIBER environment variable to enable voice input"
+            "Set BPSA_DICTATION_TRANSCRIBER environment variable to enable dictation"
             f" (available transcribers: {', '.join(sorted(_VOICE_TRANSCRIBERS))})"
         )
     transcriber_name = transcriber_name.lower().strip()
@@ -725,7 +725,7 @@ def _voice_start():
             f" Available transcribers: {', '.join(sorted(_VOICE_TRANSCRIBERS))}"
         )
 
-    model = get_env("BPSA_VOICE_MODEL", default=BPSA_DEFAULT_VOICE_MODEL)
+    model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
     kwargs = {}
     if model is not None:
         kwargs["model_id"] = model
@@ -752,7 +752,7 @@ def _voice_stop():
     """Stop the voice listener."""
     global _voice_listener
     if _voice_listener is None:
-        return "Voice input is not active."
+        return "Dictation is not active."
     _voice_listener.stop()
     _voice_listener = None
     # Drain any remaining items
@@ -1670,8 +1670,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     _verbose = verbose
 
     console.clear()
-    voice_transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default=None)
-    print_banner(model_id, server_model, tool_count, voice_transcriber=voice_transcriber)
+    dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
+    print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber)
 
     instructions = None
     if not skip_instructions:
@@ -1889,8 +1889,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 last_answer = None
                 first_turn = True
                 console.clear()
-                _vt = get_env("BPSA_VOICE_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
-                print_banner(model_id, server_model, count_tools(agent), voice_transcriber=_vt or None)
+                _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
+                print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None)
                 continue
             elif cmd == "/show-tools":
                 print_tools(agent)
@@ -2042,33 +2042,33 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     continue
                 console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
                 continue
-            elif cmd == "/voice":
+            elif cmd == "/dictation":
                 arg = cmd_args.strip().lower()
                 if arg == "on":
-                    console.print("[cyan]Loading voice support.[/]")
+                    console.print("[cyan]Loading dictation support.[/]")
                     if not _has_prompt_toolkit:
-                        console.print("[red]Voice input requires voicelistener. Install with: pip install voicelistener[/]")
+                        console.print("[red]Dictation requires voicelistener. Install with: pip install voicelistener[/]")
                     else:
                         err = _voice_start()
                         if err:
                             console.print(f"[red]{err}[/]")
                         else:
-                            console.print("[cyan][mic] Voice input active[/]")
+                            console.print("[cyan][mic] Dictation active[/]")
                 elif arg == "off":
                     err = _voice_stop()
                     if err:
                         console.print(f"[yellow]{err}[/]")
                     else:
-                        console.print("[cyan]Voice input deactivated[/]")
+                        console.print("[cyan]Dictation deactivated[/]")
                 elif arg == "":
                     if _voice_listener is not None:
-                        transcriber = get_env("BPSA_VOICE_TRANSCRIBER", default="(unknown)")
-                        model = get_env("BPSA_VOICE_MODEL", default=BPSA_DEFAULT_VOICE_MODEL)
-                        console.print(f"[cyan]Voice: on | transcriber: {transcriber} | model: {model}[/]")
+                        transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default="(unknown)")
+                        model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
+                        console.print(f"[cyan]Dictation: on | transcriber: {transcriber} | model: {model}[/]")
                     else:
-                        console.print("[dim]Voice: off[/]")
+                        console.print("[dim]Dictation: off[/]")
                 else:
-                    console.print("[yellow]Usage: /voice [on|off][/]")
+                    console.print("[yellow]Usage: /dictation [on|off][/]")
                 continue
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")

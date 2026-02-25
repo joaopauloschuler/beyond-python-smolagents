@@ -101,7 +101,7 @@ vision = [
   "helium",
   "selenium",
 ]
-voice = [
+dictation = [
   "voicelistener>=1.0.3",
 ]
 vllm = [
@@ -109,7 +109,7 @@ vllm = [
   "torch"
 ]
 all = [
-  "bpsa[audio,blaxel,docker,e2b,gradio,litellm,mcp,mlx-lm,modal,openai,telemetry,toolkit,transformers,vision,voice,bedrock]",
+  "bpsa[audio,blaxel,docker,e2b,gradio,litellm,mcp,mlx-lm,modal,openai,telemetry,toolkit,transformers,vision,dictation,bedrock]",
 ]
 quality = [
   "ruff>=0.9.0",
