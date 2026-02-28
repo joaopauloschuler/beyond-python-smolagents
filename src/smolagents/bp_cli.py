@@ -847,7 +847,7 @@ def save_answer(last_answer, args: str):
         console.print(f"[red]Error saving: {e}[/]")
 
 
-def print_stats(session_stats: dict):
+def print_stats(session_stats: dict, agent=None):
     console.print(Rule("[bold]Session Statistics", style="blue"))
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Metric", style="bold")
@@ -863,6 +863,12 @@ def print_stats(session_stats: dict):
         avg_tokens = total_tokens // session_stats["turns"]
         table.add_row("Avg time/turn", f"{avg_time:.1f}s")
         table.add_row("Avg tokens/turn", f"{avg_tokens:,}")
+    if agent and hasattr(agent, 'get_prompt_char_breakdown'):
+        breakdown = agent.get_prompt_char_breakdown()
+        table.add_row("", "")
+        table.add_row("System prompt", f"{breakdown['total']:,} chars")
+        table.add_row("  Instructions", f"{breakdown['instructions']:,} chars")
+        table.add_row("  Tool descriptions", f"{breakdown['tools']:,} chars")
     console.print(table)
     console.print()
 
@@ -1833,7 +1839,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             if cmd == "/exit":
                 if session_stats["turns"] > 0:
                     console.print()
-                    print_stats(session_stats)
+                    print_stats(session_stats, agent)
                 _shutdown_voice()
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
@@ -1903,7 +1909,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 save_answer(last_answer, cmd_args)
                 continue
             elif cmd == "/show-stats":
-                print_stats(session_stats)
+                print_stats(session_stats, agent)
                 continue
             elif cmd == "/run-prompt":
                 file_content = load_file_as_prompt(cmd_args)
