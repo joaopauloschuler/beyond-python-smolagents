@@ -544,6 +544,16 @@ You have been provided with these additional arguments, that you can access dire
             level=LogLevel.DEBUG,
             title=self.name if hasattr(self, "name") else None,
         )
+        breakdown = self.get_prompt_char_breakdown()
+        self.logger.log(
+            Text(
+                f"[System prompt: {breakdown['total']:,} chars"
+                f" | Instructions: {breakdown['instructions']:,} chars"
+                f" | Tool descriptions: {breakdown['tools']:,} chars]",
+                style="dim",
+            ),
+            level=LogLevel.INFO,
+        )
         self.memory.steps.append(TaskStep(task=self.task, task_images=images))
 
         if getattr(self, "python_executor", None):
@@ -849,6 +859,28 @@ You have been provided with these additional arguments, that you can access dire
                 if step.model_input_messages:
                     return count_messages_chars(step.model_input_messages)
         return 0
+
+    def get_prompt_char_breakdown(self) -> dict:
+        """Return character counts for the system prompt split into instructions vs tool descriptions.
+
+        Returns a dict with keys 'total', 'instructions', and 'tools'.
+        """
+        full_prompt = self.system_prompt
+        no_tools_prompt = populate_template(
+            self.prompt_templates["system_prompt"],
+            variables={
+                "tools": {},
+                "managed_agents": self.managed_agents,
+                "custom_instructions": getattr(self, "instructions", None),
+                "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
+            },
+        )
+        tool_chars = len(full_prompt) - len(no_tools_prompt)
+        return {
+            "total": len(full_prompt),
+            "instructions": len(no_tools_prompt),
+            "tools": tool_chars,
+        }
 
     def cleanup_model_input_messages(self, keep_last: int = 2):
         """Clear model_input_messages from all steps except the last `keep_last` that have them."""
