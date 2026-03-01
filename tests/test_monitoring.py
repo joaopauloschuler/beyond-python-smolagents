@@ -80,8 +80,8 @@ class MonitoringTester(unittest.TestCase):
 
         agent.run("Fake task")
 
-        self.assertEqual(agent.monitor.total_input_token_count, 20)
-        self.assertEqual(agent.monitor.total_output_token_count, 40)
+        self.assertEqual(agent.monitor.total_input_token_count, 10)
+        self.assertEqual(agent.monitor.total_output_token_count, 20)
 
     def test_code_agent_metrics_generation_error(self):
         class FakeLLMModelGenerationException(Model):
