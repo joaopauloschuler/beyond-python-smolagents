@@ -3005,12 +3005,21 @@ class UpdateKnowledge(Tool):
     """
 
     name = "update_knowledge"
+    should_add_tool_description_into_system_prompt = True
     description = (
-        "Update your persistent knowledge store with tagged XML sections. "
-        "The knowledge store appears in your context as <knowledge>...</knowledge> and survives compression. "
-        "Use descriptive tag names. To ADD or UPDATE a section: <tagname>content</tagname>. "
-        "To DELETE a section: <tagname/>. Only include sections you want to change. "
-        "Example: update_knowledge('<current_plan>1. Do X  2. Do Y</current_plan><old_notes/>')"
+        "Update your persistent knowledge store with tagged XML sections.\n\n"
+        "You have a <knowledge> section in your context containing your long-term notes. "
+        "It survives context compression and is always visible to you.\n\n"
+        "Usage: update_knowledge(updates='<tag_name>content</tag_name>')\n\n"
+        "Rules:\n"
+        "- To ADD a new section: use a new descriptive tag name\n"
+        "- To UPDATE an existing section: use the same tag name with new content\n"
+        "- To DELETE a section no longer relevant: use a self-closing tag <tag_name/>\n"
+        "- Tag names are free: use descriptive names like <plan>, <findings>, <codebase>, <decisions>\n"
+        "- Only include sections you want to change\n\n"
+        "Example:\n"
+        "  update_knowledge('<plan>1. Setup done\\n2. Now implementing API</plan><old_notes/>')\n\n"
+        "Use this to note important discoveries, track your plan, or remove stale information."
     )
     inputs = {
         "updates": {

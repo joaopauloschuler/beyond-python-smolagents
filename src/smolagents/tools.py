@@ -133,6 +133,7 @@ class Tool(BaseTool):
     inputs: dict[str, dict[str, str | type | bool]]
     output_type: str
     output_schema: dict[str, Any] | None = None
+    should_add_tool_description_into_system_prompt: bool = False
 
     def __init__(self, *args, **kwargs):
         self.is_initialized = False
