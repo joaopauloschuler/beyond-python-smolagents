@@ -481,3 +481,55 @@ class TestActionStepNoneFields:
         assert loaded.observations_images is None
         assert loaded.token_usage is None
         assert loaded.is_final_answer is False
+
+
+class TestKnowledgeRoundTrip:
+    def test_knowledge_saved_and_restored(self, tmp_path):
+        """Knowledge store should survive save/load roundtrip."""
+        filepath = str(tmp_path / "knowledge.json")
+        agent = FakeAgent()
+        agent.memory.knowledge = "<db>PostgreSQL 15</db>\n<auth>JWT tokens</auth>"
+        stats = {"turns": 5, "total_time": 10.0, "total_input_tokens": 100, "total_output_tokens": 50}
+
+        save_session(filepath, agent, stats)
+
+        agent2 = FakeAgent()
+        assert agent2.memory.knowledge == ""
+        load_session(filepath, agent2)
+        assert agent2.memory.knowledge == "<db>PostgreSQL 15</db>\n<auth>JWT tokens</auth>"
+
+    def test_empty_knowledge_roundtrip(self, tmp_path):
+        """Empty knowledge should remain empty after roundtrip."""
+        filepath = str(tmp_path / "no_knowledge.json")
+        agent = FakeAgent()
+        stats = {"turns": 0, "total_time": 0.0, "total_input_tokens": 0, "total_output_tokens": 0}
+
+        save_session(filepath, agent, stats)
+        agent2 = FakeAgent()
+        load_session(filepath, agent2)
+        assert agent2.memory.knowledge == ""
+
+    def test_backward_compatible_load(self, tmp_path):
+        """Loading a session saved without knowledge field should set knowledge to empty."""
+        import json
+        filepath = str(tmp_path / "old_session.json")
+        # Simulate old session format without knowledge key
+        old_payload = {
+            "version": 1,
+            "saved_at": "2025-01-01T00:00:00+00:00",
+            "agent_state": {
+                "system_prompt": "You are a helpful assistant.",
+                "next_actionstep_id": 1,
+                "last_plan_step": 0,
+            },
+            "session_stats": {"turns": 0, "total_time": 0.0, "total_input_tokens": 0, "total_output_tokens": 0},
+            "monitor_state": {"total_input_token_count": 0, "total_output_token_count": 0},
+            "steps": [],
+        }
+        with open(filepath, "w") as f:
+            json.dump(old_payload, f)
+
+        agent = FakeAgent()
+        agent.memory.knowledge = "should be cleared"
+        load_session(filepath, agent)
+        assert agent.memory.knowledge == ""

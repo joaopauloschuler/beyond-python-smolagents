@@ -289,6 +289,7 @@ def save_session_to_dict(agent, session_stats: dict) -> dict:
             "system_prompt": agent.memory.system_prompt.system_prompt,
             "next_actionstep_id": agent._next_actionstep_id,
             "last_plan_step": agent._last_plan_step,
+            "knowledge": getattr(agent.memory, "knowledge", ""),
         },
         "session_stats": dict(session_stats),
         "monitor_state": {
@@ -322,6 +323,8 @@ def load_session_from_dict(payload: dict, agent) -> dict:
     agent_state = payload.get("agent_state", {})
     agent.memory.system_prompt = SystemPromptStep(system_prompt=agent_state.get("system_prompt", ""))
     agent.memory.steps = [deserialize_step(s) for s in payload.get("steps", [])]
+    if hasattr(agent.memory, "knowledge"):
+        agent.memory.knowledge = agent_state.get("knowledge", "")
 
     # Restore agent counters
     agent._next_actionstep_id = agent_state.get("next_actionstep_id", 1)
@@ -360,6 +363,7 @@ def save_session(filepath: str, agent, session_stats: dict) -> int:
             "system_prompt": agent.memory.system_prompt.system_prompt,
             "next_actionstep_id": agent._next_actionstep_id,
             "last_plan_step": agent._last_plan_step,
+            "knowledge": getattr(agent.memory, "knowledge", ""),
         },
         "session_stats": dict(session_stats),
         "monitor_state": {
@@ -399,6 +403,8 @@ def load_session(filepath: str, agent) -> dict:
     agent_state = payload.get("agent_state", {})
     agent.memory.system_prompt = SystemPromptStep(system_prompt=agent_state.get("system_prompt", ""))
     agent.memory.steps = [deserialize_step(s) for s in payload.get("steps", [])]
+    if hasattr(agent.memory, "knowledge"):
+        agent.memory.knowledge = agent_state.get("knowledge", "")
 
     # Restore agent counters
     agent._next_actionstep_id = agent_state.get("next_actionstep_id", 1)

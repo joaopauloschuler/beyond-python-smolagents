@@ -869,6 +869,11 @@ def print_stats(session_stats: dict, agent=None):
         table.add_row("System prompt", f"{breakdown['total']:,} chars")
         table.add_row("  Instructions", f"{breakdown['instructions']:,} chars")
         table.add_row("  Tool descriptions", f"{breakdown['tools']:,} chars")
+    if agent:
+        knowledge = getattr(agent.memory, "knowledge", "")
+        if knowledge:
+            table.add_row("", "")
+            table.add_row("Knowledge store", f"{len(knowledge):,} chars")
     console.print(table)
     console.print()
 
@@ -1013,6 +1018,12 @@ def cmd_compression_stats(agent):
     total_chars = sum(len(s.summary) for s in steps if isinstance(s, CompressedHistoryStep))
     compression_count = compressor._compression_count if compressor else 0
 
+    # Knowledge store info
+    knowledge = getattr(agent.memory, "knowledge", "")
+    knowledge_chars = len(knowledge)
+    from smolagents.bp_compression import list_xml_tag_names
+    knowledge_tags = list_xml_tag_names(knowledge) if knowledge else []
+
     console.print()
     console.print(Rule("[bold]Compression Stats", style="blue"))
     stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -1023,6 +1034,8 @@ def cmd_compression_stats(agent):
     stats_table.add_row("Original steps compressed", str(compressed_original))
     stats_table.add_row("Compression runs", str(compression_count))
     stats_table.add_row("Compressed summary chars", f"{total_chars:,}")
+    stats_table.add_row("Knowledge store chars", f"{knowledge_chars:,}")
+    stats_table.add_row("Knowledge sections", f"{len(knowledge_tags)} ({', '.join(knowledge_tags)})" if knowledge_tags else "0")
     console.print(stats_table)
     console.print()
 
@@ -1061,8 +1074,12 @@ def cmd_memory_stats(agent):
     table.add_row("Total memory steps", str(total_steps))
     for type_name, count in sorted(type_counts.items()):
         table.add_row(f"  {type_name}", str(count))
+    # Knowledge store
+    knowledge = getattr(agent.memory, "knowledge", "")
+    knowledge_chars = len(knowledge)
     table.add_row("Total chars", f"{total_chars:,}")
     table.add_row("Estimated tokens", f"{total_tokens:,}")
+    table.add_row("Knowledge store chars", f"{knowledge_chars:,}")
     console.print(table)
     console.print()
 
@@ -1270,7 +1287,9 @@ def cmd_session_save(agent, session_stats: dict, args: str):
         filename += ".json"
     try:
         count = save_session(filename, agent, session_stats)
-        console.print(f"[green]Session saved to {filename} ({count} steps).[/]")
+        knowledge = getattr(agent.memory, "knowledge", "")
+        knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
+        console.print(f"[green]Session saved to {filename} ({count} steps{knowledge_info}).[/]")
     except Exception as e:
         console.print(f"[red]Failed to save session: {e}[/]")
 
@@ -1291,7 +1310,9 @@ def cmd_session_load(agent, args: str) -> dict | None:
     try:
         stats = load_session(filename, agent)
         step_count = len(agent.memory.steps)
-        console.print(f"[green]Session loaded from {filename} ({step_count} steps).[/]")
+        knowledge = getattr(agent.memory, "knowledge", "")
+        knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
+        console.print(f"[green]Session loaded from {filename} ({step_count} steps{knowledge_info}).[/]")
         return stats
     except Exception as e:
         console.print(f"[red]Failed to load session: {e}[/]")
