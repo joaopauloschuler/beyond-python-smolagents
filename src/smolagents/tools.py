@@ -1116,58 +1116,63 @@ def tool(tool_function: Callable) -> Tool:
 
     # Create and attach the source code of the dynamically created tool class and forward method
     # - Get the source code of tool_function
-    tool_source = textwrap.dedent(inspect.getsource(tool_function))
-    # - Remove the tool decorator and function definition line
-    lines = tool_source.splitlines()
-    tree = ast.parse(tool_source)
-    #   - Find function definition
-    func_node = next((node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)), None)
-    if not func_node:
-        raise ValueError(
-            f"No function definition found in the provided source of {tool_function.__name__}. "
-            "Ensure the input is a standard function."
-        )
-    #   - Extract decorator lines
-    decorator_lines = ""
-    if func_node.decorator_list:
-        tool_decorators = [d for d in func_node.decorator_list if isinstance(d, ast.Name) and d.id == "tool"]
-        if len(tool_decorators) > 1:
+    try:
+        tool_source = textwrap.dedent(inspect.getsource(tool_function))
+    except OSError:
+        tool_source = None
+
+    if tool_source is not None:
+        # - Remove the tool decorator and function definition line
+        lines = tool_source.splitlines()
+        tree = ast.parse(tool_source)
+        #   - Find function definition
+        func_node = next((node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)), None)
+        if not func_node:
             raise ValueError(
-                f"Multiple @tool decorators found on function '{func_node.name}'. Only one @tool decorator is allowed."
+                f"No function definition found in the provided source of {tool_function.__name__}. "
+                "Ensure the input is a standard function."
             )
-        if len(tool_decorators) < len(func_node.decorator_list):
-            warnings.warn(
-                f"Function '{func_node.name}' has decorators other than @tool. "
-                "This may cause issues with serialization in the remote executor. See issue #1626."
-            )
-        decorator_start = tool_decorators[0].end_lineno if tool_decorators else 0
-        decorator_end = func_node.decorator_list[-1].end_lineno
-        decorator_lines = "\n".join(lines[decorator_start:decorator_end])
-    #   - Extract tool source body
-    body_start = func_node.body[0].lineno - 1  # AST lineno starts at 1
-    tool_source_body = "\n".join(lines[body_start:])
-    # - Create the forward method source, including def line and indentation
-    forward_method_source = f"def forward{new_sig}:\n{tool_source_body}"
-    # - Create the class source
-    indent = " " * 4  # for class method
-    class_source = (
-        textwrap.dedent(f"""
-        class SimpleTool(Tool):
-            name: str = "{tool_json_schema["name"]}"
-            description: str = {json.dumps(textwrap.dedent(tool_json_schema["description"]).strip())}
-            inputs: dict[str, dict[str, str]] = {tool_json_schema["parameters"]["properties"]}
-            output_type: str = "{tool_json_schema["return"]["type"]}"
+        #   - Extract decorator lines
+        decorator_lines = ""
+        if func_node.decorator_list:
+            tool_decorators = [d for d in func_node.decorator_list if isinstance(d, ast.Name) and d.id == "tool"]
+            if len(tool_decorators) > 1:
+                raise ValueError(
+                    f"Multiple @tool decorators found on function '{func_node.name}'. Only one @tool decorator is allowed."
+                )
+            if len(tool_decorators) < len(func_node.decorator_list):
+                warnings.warn(
+                    f"Function '{func_node.name}' has decorators other than @tool. "
+                    "This may cause issues with serialization in the remote executor. See issue #1626."
+                )
+            decorator_start = tool_decorators[0].end_lineno if tool_decorators else 0
+            decorator_end = func_node.decorator_list[-1].end_lineno
+            decorator_lines = "\n".join(lines[decorator_start:decorator_end])
+        #   - Extract tool source body
+        body_start = func_node.body[0].lineno - 1  # AST lineno starts at 1
+        tool_source_body = "\n".join(lines[body_start:])
+        # - Create the forward method source, including def line and indentation
+        forward_method_source = f"def forward{new_sig}:\n{tool_source_body}"
+        # - Create the class source
+        indent = " " * 4  # for class method
+        class_source = (
+            textwrap.dedent(f"""
+            class SimpleTool(Tool):
+                name: str = "{tool_json_schema["name"]}"
+                description: str = {json.dumps(textwrap.dedent(tool_json_schema["description"]).strip())}
+                inputs: dict[str, dict[str, str]] = {tool_json_schema["parameters"]["properties"]}
+                output_type: str = "{tool_json_schema["return"]["type"]}"
 
-            def __init__(self):
-                self.is_initialized = True
+                def __init__(self):
+                    self.is_initialized = True
 
-        """)
-        + textwrap.indent(decorator_lines, indent)
-        + textwrap.indent(forward_method_source, indent)
-    )
-    # - Store the source code on both class and method for inspection
-    SimpleTool.__source__ = class_source
-    SimpleTool.forward.__source__ = forward_method_source
+            """)
+            + textwrap.indent(decorator_lines, indent)
+            + textwrap.indent(forward_method_source, indent)
+        )
+        # - Store the source code on both class and method for inspection
+        SimpleTool.__source__ = class_source
+        SimpleTool.forward.__source__ = forward_method_source
 
     simple_tool = SimpleTool()
     return simple_tool
