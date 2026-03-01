@@ -250,11 +250,11 @@ coder_model = LiteLLMModel(model_id=coder_model_id, api_key=YOUR_KEY_VALUE, max_
 
 tools = [ run_os_command,
   copy_file, is_file, 
-  print_source_code_lines, get_line_from_file, get_file_lines,
+  print_file_lines, get_line_from_file, count_file_lines,
   read_file_range, insert_lines_into_file, replace_line_in_file,
   remove_pascal_comments_from_string, pascal_interface_to_string,
   source_code_to_string, string_to_source_code,
-  run_os_command, replace_on_file, replace_on_file_with_files,
+  run_os_command, replace_in_file, replace_in_file_from_files,
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
   list_directory_tree, search_in_files, get_file_info, list_directory,
   extract_function_signatures, compare_files, count_lines_of_code,
@@ -526,13 +526,13 @@ The `bp_tools.py` file provides a suite of functions and classes that can be use
 *   `get_file_size(filename: string)`: Returns the size of a specified file in bytes as an integer. Useful for file management tasks.
 *   `is_file(filename: string)`: Returns true if the specified path is a file. Implemented as `os.path.isfile(filename)`.
 *   `force_directories(file_path: string)`: Extracts the directory path from a full file path and creates the directory structure if it does not already exist. Useful for ensuring parent directories exist before creating files.
-*   `get_file_lines(filename: string)`: Returns the number of lines in a text file as an integer.
+*   `count_file_lines(filename: string)`: Returns the number of lines in a text file as an integer.
 *   `get_line_from_file(file_name: string, line_number: integer)`: Reads a specified line from a text file (1-based index). Useful for finding specific lines where compilers report errors.
-*   `print_source_code_lines(filename: string, start_line: integer, end_line: integer)`: Prints lines from `start_line` to `end_line` of the specified file. Useful in combination with `get_line_from_file` for finding bugs in source code.
+*   `print_file_lines(filename: string, start_line: integer, end_line: integer)`: Prints lines from `start_line` to `end_line` of the specified file. Useful in combination with `get_line_from_file` for finding bugs in source code.
 *   `replace_line_in_file(file_name: string, line_number: integer, new_content: string)`: Replaces a specified line in a text file with new content. The line_number is 1-based.
 *   `insert_lines_into_file(file_name: string, line_number: integer, new_content: string)`: Inserts new content before a specified line in a text file. The original line and all subsequent lines are shifted down.
-*   `replace_on_file(filename: string, old_value: string, new_value: string)`: Reads the content of `filename`, replaces all occurrences of `old_value` with `new_value` in the content, and writes the modified content back to the same file. Returns the modified content string. Useful for in-place file patching.
-*   `replace_on_file_with_files(filename: string, file_with_old_value: string, file_with_new_value: string)`: Reads content from `file_with_old_value` and `file_with_new_value`, then replaces all occurrences of the old content with the new content within the `filename` file. Returns the modified content string of `filename`.
+*   `replace_in_file(filename: string, old_value: string, new_value: string)`: Reads the content of `filename`, replaces all occurrences of `old_value` with `new_value` in the content, and writes the modified content back to the same file. Returns the modified content string. Useful for in-place file patching.
+*   `replace_in_file_from_files(filename: string, file_with_old_value: string, file_with_new_value: string)`: Reads content from `file_with_old_value` and `file_with_new_value`, then replaces all occurrences of the old content with the new content within the `filename` file. Returns the modified content string of `filename`.
 *   `trim_right_lines(multi_line_string: string)`: Performs a right trim on all lines of a string, removing trailing whitespace from each line.
 *   `trim_right_lines_in_file(filename: string)`: Performs a right trim on all lines of the specified file, removing trailing whitespace from each line.
 *   `get_files_in_folder(folder: string = 'solutions', fileext: string = '.md')`: Returns a list of files in a folder with a given file extension. Useful for discovering files of a specific type.
@@ -616,7 +616,7 @@ get_relevant_info_from_url = GetRelevantInfoFromUrl(no_tool_agent)
 
 tools = [save_string_to_file, load_string_from_file, copy_file, get_file_size,
   source_code_to_string, string_to_source_code, pascal_interface_to_string,
-  replace_on_file, replace_on_file_with_files,
+  replace_in_file, replace_in_file_from_files,
   subassistant, coder_subassistant, internet_search_subassistant,
   summarize, summarize_url, summarize_local_file,
   get_relevant_info_from_file, get_relevant_info_from_url,

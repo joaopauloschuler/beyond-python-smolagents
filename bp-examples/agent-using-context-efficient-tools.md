@@ -136,14 +136,14 @@ utils_content = load_string_from_file('src/utils.py')
 ### Step 6: Make Targeted Changes
 
 ```python
-# Make specific changes using replace_on_file
-replace_on_file(
+# Make specific changes using replace_in_file
+replace_in_file(
     'src/models.py',
     'def __init__(self, name, email):',
     'def __init__(self, name: str, email: str):'
 )
 
-replace_on_file(
+replace_in_file(
     'src/models.py',
     'def __init__(self, title, price):',
     'def __init__(self, title: str, price: float):'
@@ -293,14 +293,14 @@ Let me load and modify them.
 models = load_string_from_file('src/models.py')
 
 # Add type hints to User.__init__
-replace_on_file(
+replace_in_file(
     'src/models.py',
     'def __init__(self, name, email):',
     'def __init__(self, name: str, email: str):'
 )
 
 # Add type hints to Product.__init__
-replace_on_file(
+replace_in_file(
     'src/models.py', 
     'def __init__(self, title, price):',
     'def __init__(self, title: str, price: float):'

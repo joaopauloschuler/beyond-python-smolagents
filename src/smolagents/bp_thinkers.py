@@ -28,11 +28,11 @@ DEFAULT_THINKER_COMPRESSION = CompressionConfig(
 
 DEFAULT_THINKER_TOOLS = [
   copy_file, is_file, 
-  print_source_code_lines, get_line_from_file, get_file_lines,
+  print_file_lines, get_line_from_file, count_file_lines,
   read_file_range, insert_lines_into_file, replace_line_in_file,
   remove_pascal_comments_from_string, pascal_interface_to_string,
   source_code_to_string, string_to_source_code,
-  run_os_command, replace_on_file, replace_on_file_with_files,
+  run_os_command, replace_in_file, replace_in_file_from_files,
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
   list_directory_tree, inject_tree, search_in_files, get_file_info, list_directory,
   extract_function_signatures, compare_files, count_lines_of_code,
@@ -343,9 +343,9 @@ These are the solutions:
 <solution2>"""+load_string_from_file('solution2'+fileext)+"""</solution2>
 <solution3>"""+load_string_from_file('solution3'+fileext)+"""</solution3>
 
-The solution 1 has """+str(get_file_lines('solution1'+fileext))+""" text lines.
-The solution 2 has """+str(get_file_lines('solution2'+fileext))+""" text lines.
-The solution 3 has """+str(get_file_lines('solution3'+fileext))+""" text lines.
+The solution 1 has """+str(count_file_lines('solution1'+fileext))+""" text lines.
+The solution 2 has """+str(count_file_lines('solution2'+fileext))+""" text lines.
+The solution 3 has """+str(count_file_lines('solution3'+fileext))+""" text lines.
 
 YOUR TASK PRODUCING A TEXT ABOUT THE SOLUTIONS.
 

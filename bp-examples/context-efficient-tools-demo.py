@@ -166,7 +166,7 @@ def demo_workflow():
 5. 📖 Load only necessary files (load_string_from_file)
    └─> Now you know exactly what to load
    
-6. ⚙️  Make changes (replace_on_file, etc.)
+6. ⚙️  Make changes (replace_in_file, etc.)
    └─> Work with confidence
    
 7. 🔄 Compare results (compare_files)

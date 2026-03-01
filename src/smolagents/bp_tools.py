@@ -113,7 +113,7 @@ def copy_file(source_filename: str, dest_filename: str) -> bool:
     return True
 
 @tool
-def replace_on_file(filename: str, old_value: str, new_value: str) -> str:
+def replace_in_file(filename: str, old_value: str, new_value: str) -> str:
     """
     Replace the old_value with the new_value in the filename.
     This function is useful for fixing source code directly on file.
@@ -134,7 +134,7 @@ def replace_on_file(filename: str, old_value: str, new_value: str) -> str:
     return new_code
 
 @tool
-def replace_on_file_with_files(filename: str, file_with_old_value: str, file_with_new_value: str) -> str:
+def replace_in_file_from_files(filename: str, file_with_old_value: str, file_with_new_value: str) -> str:
     """
     Replace the content from the file_with_old_value with the content from the file_with_new_value in the filename.
     This function is useful for fixing source code directly on the file specified by filename.
@@ -148,7 +148,7 @@ def replace_on_file_with_files(filename: str, file_with_old_value: str, file_wit
     save_string_to_file(new_code, filename)
     return new_code
 
-In the case that you need to replace strings in an existing file, you can do it using the replace_on_file tool. This is an example:
+In the case that you need to replace strings in an existing file, you can do it using the replace_in_file tool. This is an example:
 <example>
 <savetofile filename="tmp1.txt">
 hello world
@@ -160,7 +160,7 @@ hello home!
 Hey! hello world
 </savetofile>
 <runcode>
-replace_on_file_with_files('test.txt', 'tmp1.txt', 'tmp2.txt')
+replace_in_file_from_files('test.txt', 'tmp1.txt', 'tmp2.txt')
 </runcode>
 </example>
 
@@ -312,7 +312,7 @@ As you can see in the above command, you can use any computer language that is a
     return result
 
 @tool
-def print_source_code_lines(filename: str, start_line: int, end_line: int) -> None:
+def print_file_lines(filename: str, start_line: int, end_line: int) -> None:
   """ 
   This tool prints the lines from the start_line to the end_line of the file filename.
   In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
@@ -329,9 +329,9 @@ def print_source_code_lines(filename: str, start_line: int, end_line: int) -> No
       print(f"{i+1}: {lines[i]}")
 
 @tool
-def get_file_lines(filename: str) -> int:
+def count_file_lines(filename: str) -> int:
   """ 
-  get_file_lines returns the number of lines in a text file.
+  count_file_lines returns the number of lines in a text file.
 
   Args:
     filename: str The path to the text file.
@@ -1654,7 +1654,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
                 _, ext = os.path.splitext(item)
                 if ext.lower() in DEFAULT_SOURCE_CODE_EXTENSIONS:
                     try:
-                        num_lines = get_file_lines(item_path)
+                        num_lines = count_file_lines(item_path)
                         line_word = "line" if num_lines == 1 else "lines"
                         line_count_str = f" ({num_lines} {line_word})"
                         total_lines += num_lines
@@ -2394,7 +2394,7 @@ def read_first_n_lines(filename: str, n: int) -> str:
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
 
-    cnt_lines = get_file_lines(filename)
+    cnt_lines = count_file_lines(filename)
 
     if n < 1:
         raise ValueError("n must be >= 1")
@@ -2437,7 +2437,7 @@ def read_last_n_lines(filename: str, n: int) -> str:
     """
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
-    cnt_lines = get_file_lines(filename)
+    cnt_lines = count_file_lines(filename)
 
     if n < 1:
         raise ValueError("n must be >= 1")
@@ -2478,7 +2478,7 @@ def delete_lines_from_file(filename: str, start_line: int, end_line: int = None)
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"File '{filename}' not found")
 
-    cnt_lines = get_file_lines(filename)
+    cnt_lines = count_file_lines(filename)
 
     if start_line < 1:
         raise ValueError("start_line must be >= 1")

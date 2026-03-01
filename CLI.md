@@ -29,7 +29,7 @@ bpsa = "smolagents.bp_cli:main"
 All tools from `DEFAULT_THINKER_TOOLS` (defined in `bp_thinkers.py`) plus all default tools from `tools.py` (via `add_base_tools=True`):
 
 **DEFAULT_THINKER_TOOLS:**
-`copy_file`, `is_file`, `print_source_code_lines`, `get_line_from_file`, `get_file_lines`, `read_file_range`, `insert_lines_into_file`, `replace_line_in_file`, `remove_pascal_comments_from_string`, `pascal_interface_to_string`, `source_code_to_string`, `string_to_source_code`, `run_os_command`, `replace_on_file`, `replace_on_file_with_files`, `get_file_size`, `load_string_from_file`, `save_string_to_file`, `append_string_to_file`, `list_directory_tree`, `search_in_files`, `get_file_info`, `list_directory`, `extract_function_signatures`, `compare_files`, `count_lines_of_code`, `mkdir`, `delete_file`, `delete_directory`, `compare_folders`, `read_first_n_lines`, `read_last_n_lines`, `delete_lines_from_file`
+`copy_file`, `is_file`, `print_file_lines`, `get_line_from_file`, `count_file_lines`, `read_file_range`, `insert_lines_into_file`, `replace_line_in_file`, `remove_pascal_comments_from_string`, `pascal_interface_to_string`, `source_code_to_string`, `string_to_source_code`, `run_os_command`, `replace_in_file`, `replace_in_file_from_files`, `get_file_size`, `load_string_from_file`, `save_string_to_file`, `append_string_to_file`, `list_directory_tree`, `search_in_files`, `get_file_info`, `list_directory`, `extract_function_signatures`, `compare_files`, `count_lines_of_code`, `mkdir`, `delete_file`, `delete_directory`, `compare_folders`, `read_first_n_lines`, `read_last_n_lines`, `delete_lines_from_file`
 
 ## Compression
 

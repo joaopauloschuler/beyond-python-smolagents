@@ -225,7 +225,7 @@ for file in candidate_files:
 target_file = load_string_from_file('src/target.py')
 
 # Make changes
-replace_on_file('src/target.py', old_code, new_code)
+replace_in_file('src/target.py', old_code, new_code)
 
 # Verify changes
 diff = compare_files('src/target.py.bak', 'src/target.py')
