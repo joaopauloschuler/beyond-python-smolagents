@@ -1735,12 +1735,13 @@ def inject_tree(folder: str) -> str:
 def search_in_files(folder_path: str, search_pattern: str, file_extensions: tuple = None, 
                     case_sensitive: bool = False, max_results: int = 50) -> str:
     """
-    Searches for a pattern in files within a folder and its subfolders.
+    Searches for a pattern in files within a folder (and its subfolders) or a single file.
     Returns matching lines with file paths and line numbers. This is much more efficient
     than loading all files when you need to find specific code patterns.
     
     Args:
-        folder_path: str The root folder to search in
+        folder_path: str The root folder to search in, or a direct path to a single file.
+                     When a file path is given, file_extensions is ignored.
         search_pattern: str The text pattern to search for
         file_extensions: tuple Optional tuple of file extensions to search (e.g., ('.py', '.js'))
                         If None, searches all text files
@@ -1750,8 +1751,29 @@ def search_in_files(folder_path: str, search_pattern: str, file_extensions: tupl
     Returns:
         str: Search results formatted as "filepath:line_number: line_content"
     """
+    if os.path.isfile(folder_path):
+        # Single-file mode: search only this file, ignore file_extensions
+        results = []
+        count = 0
+        pattern = search_pattern if case_sensitive else search_pattern.lower()
+        try:
+            with open(folder_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    search_line = line if case_sensitive else line.lower()
+                    if pattern in search_line:
+                        results.append(f"{folder_path}:{line_num}: {line.rstrip()}")
+                        count += 1
+                        if count >= max_results:
+                            results.append(f"\n... (stopped at {max_results} results)")
+                            return "\n".join(results)
+        except (UnicodeDecodeError, PermissionError, IOError):
+            return f"Error: could not read file '{folder_path}'"
+        if not results:
+            return f"No matches found for '{search_pattern}' in '{folder_path}'"
+        return "\n".join(results)
+
     if not os.path.isdir(folder_path):
-        return f"Error: '{folder_path}' is not a valid directory"
+        return f"Error: '{folder_path}' is not a valid directory or file"
 
     results = []
     count = 0
