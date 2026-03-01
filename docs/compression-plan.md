@@ -1,28 +1,35 @@
 
+
 # Context Compression & Knowledge Extraction
 
 ## Overview
-A hybrid rolling summarization system for smolagents that compresses older memory steps via LLM summarization while keeping recent steps in full detail. When compressed summaries accumulate, they are further distilled into a persistent knowledge store using tagged XML.
+A hybrid rolling summarization system for smolagents that compresses older memory steps via LLM summarization while keeping recent steps in full detail. Knowledge is extracted incrementally during compression and further refined when compressed summaries accumulate.
 
 ## Architecture
 
 ### Two-Phase Compression Pipeline
 
-**Phase 1 — Step Compression:** Older action steps are summarized by the LLM into `CompressedHistoryStep` instances. Recent steps are kept in full detail.
+**Phase 1 — Step Compression + Knowledge Extraction:** Older action steps are summarized by the LLM into `CompressedHistoryStep` instances. The same LLM call also extracts knowledge updates, which are applied to the persistent knowledge store immediately. The LLM receives the full current knowledge so it can avoid redundancy and propose corrections. Recent steps are kept in full detail.
 
-**Phase 2 — Knowledge Extraction:** When compressed steps accumulate beyond a threshold, older ones are merged into a persistent `memory.knowledge` store as tagged XML. The merged compressed steps are then removed entirely.
+**Phase 2 — Knowledge Refinement:** When compressed steps accumulate beyond a threshold, older ones are merged into the knowledge store via a separate LLM call. The merged compressed steps are then removed entirely. This phase refines and consolidates knowledge that may have been partially captured in Phase 1.
 
 ```
-Steps accumulate → compress older steps → CompressedHistoryStep summaries
-                                              ↓ (when too many accumulate)
-                                    Extract knowledge via LLM
-                                              ↓
-                                    merge_context() into memory.knowledge
-                                              ↓
-                                    Old compressed steps removed
-                                              ↓
-                                    Knowledge injected into LLM context
-                                    as <knowledge>...</knowledge> message
+Steps accumulate → Phase 1: compress older steps
+                     ↓
+                   LLM produces <summary> + optional <knowledge_updates>
+                     ↓                              ↓
+                   CompressedHistoryStep    merge_context() → memory.knowledge
+                     ↓
+                   (when too many compressed steps accumulate)
+                     ↓
+                   Phase 2: extract knowledge from old compressed steps
+                     ↓
+                   merge_context() → memory.knowledge
+                     ↓
+                   Old compressed steps removed
+                     ↓
+                   Knowledge injected into LLM context
+                   as <knowledge>...</knowledge> message
 ```
 
 ## Files
@@ -56,7 +63,7 @@ class CompressedHistoryStep(MemoryStep):
 
 class ContextCompressor:
     def should_compress(steps) -> bool
-    def compress(steps) -> list[MemoryStep]
+    def compress(steps, knowledge) -> tuple[list[MemoryStep], str]
     def should_merge_compressed(steps) -> bool
     def merge_compressed(steps, knowledge) -> tuple[list[MemoryStep], str]
 ```
@@ -65,8 +72,9 @@ Key functions:
 - `estimate_tokens(text)` — Character-based heuristic (~4 chars/token)
 - `estimate_step_tokens(step)` — Token estimate for a memory step
 - `should_preserve_step(step, config)` — Check if step must be kept
-- `create_compression_prompt(steps)` — Build LLM prompt for step summarization
-- `create_knowledge_extraction_prompt(steps, tag_names)` — Build LLM prompt for knowledge extraction
+- `create_compression_prompt(steps, knowledge)` — Build LLM prompt for step summarization with knowledge-aware context; requests structured `<summary>` + optional `<knowledge_updates>` output
+- `parse_compression_output(raw_output)` — Parse structured LLM output into `(summary, knowledge_updates)` with graceful fallback for unstructured output
+- `create_knowledge_extraction_prompt(steps, tag_names)` — Build LLM prompt for Phase 2 knowledge extraction
 - `create_merge_prompt(steps)` — Build prompt for merging compressed steps
 - `list_xml_tag_names(text)` — Extract XML tag names from a string
 - `merge_context(existing, updates)` — Apply tagged XML diff (add/update/delete)
@@ -88,6 +96,7 @@ Integration in `MultiStepAgent`:
 
 ### `src/smolagents/bp_cli.py`
 - `print_turn_summary()` shows Context and Knowledge char counts
+- `/compress` command handles tuple return from `compress()`
 - Environment variable configuration (see below)
 
 ### `tests/test_compression.py`
@@ -96,6 +105,8 @@ Tests for:
 - Token estimation functions
 - `should_preserve_step()` logic
 - `ContextCompressor.should_compress()` threshold behavior
+- `ContextCompressor.compress()` — tuple return, knowledge extraction, fallback for unstructured output
+- `parse_compression_output()` — structured output, summary-only, fallback, empty/None input
 - `merge_context()` add/update/delete operations
 - `list_xml_tag_names()` extraction
 - Integration test with mock model
@@ -111,9 +122,10 @@ The knowledge store (`memory.knowledge`) is a plain string of tagged XML:
 <current_status>API endpoints implemented, testing in progress</current_status>
 ```
 
-**Two sources of updates:**
-1. **Automatic:** `merge_compressed()` extracts knowledge from old compressed summaries (Phase 2)
-2. **Manual:** The `update_knowledge` tool lets the agent explicitly add/update/delete sections
+**Three sources of updates:**
+1. **Phase 1 (automatic):** `compress()` extracts `<knowledge_updates>` from the same LLM call that produces the summary — knowledge starts accumulating from the very first compression cycle
+2. **Phase 2 (automatic):** `merge_compressed()` extracts knowledge from old compressed summaries when they accumulate beyond the threshold — refines and consolidates
+3. **Manual:** The `update_knowledge` tool lets the agent explicitly add/update/delete sections at any time
 
 **`merge_context(existing, updates)` applies three operations:**
 - `<tag>content</tag>` where tag exists → **UPDATE** (replace content)
@@ -121,6 +133,32 @@ The knowledge store (`memory.knowledge`) is a plain string of tagged XML:
 - `<tag/>` or `<tag></tag>` (self-closing/empty) → **DELETE**
 
 **Injection:** Knowledge is inserted as a `<knowledge>...</knowledge>` USER message just before the last message in the LLM context, giving it high attention weight.
+
+### Phase 1 Knowledge Extraction
+
+During Phase 1 compression, the LLM receives:
+- The full current knowledge store as `<current_knowledge>` context
+- Instructions to output structured format:
+
+```
+<summary>
+Concise summary of compressed steps...
+</summary>
+<knowledge_updates>
+<tag>new or updated content</tag>
+<obsolete_tag/>
+</knowledge_updates>
+```
+
+The `parse_compression_output()` function handles parsing with graceful fallback:
+- If `<summary>` tags present → extract summary and knowledge_updates separately
+- If no `<summary>` tags → entire output becomes the summary (backwards compatible)
+- If no `<knowledge_updates>` → no knowledge changes applied
+
+This design means:
+- **Zero extra LLM calls** — knowledge extraction piggybacks on the existing compression call
+- **Higher fidelity** — Phase 1 has access to full original steps (not lossy summaries)
+- **Immediate availability** — knowledge accumulates from the first compression, not after 32+ steps
 
 ## BPSA CLI Configuration
 
@@ -175,8 +213,9 @@ bpsa
 - **New file vs existing:** `bp_compression.py` keeps all compression/knowledge logic together, follows pattern of `monitoring.py`
 - **Callback-based:** Uses existing callback system for clean integration without modifying the agent loop
 - **Token estimation:** Character heuristic (4 chars/token) since no proactive token counting exists
-- **Graceful fallback:** If compression or knowledge extraction LLM call fails, keep original steps and log warning
-- **Two-phase design:** Step compression (lossy but retains prose summaries) feeds into knowledge extraction (structured XML) for long-term retention
+- **Graceful fallback:** If compression LLM call fails, keep original steps and log warning. If LLM doesn't follow structured format, entire output becomes the summary with no knowledge changes.
+- **Combined summary + knowledge in Phase 1:** Single LLM call produces both summary and knowledge updates. The LLM sees the full knowledge store so it can avoid redundancy and propose corrections. Zero extra cost.
+- **Two-phase design:** Phase 1 extracts knowledge from full original steps (high fidelity). Phase 2 refines/consolidates from compressed summaries when they accumulate. Both phases use `merge_context()` for consistent tagged XML operations.
 - **Tagged XML for knowledge:** Simple, parseable format that supports incremental updates via diff operations
 - **Knowledge placement:** Injected near end of context for high attention weight in transformer models
 - **Min chars threshold:** Avoids wasting LLM calls on already-concise content
@@ -184,4 +223,4 @@ bpsa
 ## Verification
 1. Run existing tests: `pytest tests/test_memory.py tests/test_agents.py`
 2. Run compression tests: `pytest tests/test_compression.py`
-3. Manual test: Create agent with compression enabled, run multi-step task, verify memory gets compressed and knowledge accumulates
+3. Manual test: Create agent with compression enabled, run multi-step task, verify memory gets compressed and knowledge accumulates from Phase 1
