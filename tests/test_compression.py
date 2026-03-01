@@ -275,8 +275,52 @@ class TestCreateCompressionPrompt:
             ),
         ]
         prompt = create_compression_prompt(steps)
-        assert "Planning step:" in prompt
+        assert "<plan>" in prompt
         assert "First step" in prompt
+
+    def test_creates_prompt_with_knowledge_tags(self):
+        steps = [
+            ActionStep(
+                step_number=1,
+                model_input_messages=[],
+                model_output="Found the config file",
+                observations="config.yaml loaded",
+                model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Found config"),
+                timing=Timing(start_time=0, end_time=1),
+            ),
+        ]
+        prompt = create_compression_prompt(steps, knowledge_tag_names=["plan", "architecture"])
+        assert "plan, architecture" in prompt
+        assert "already captured in the persistent knowledge store" in prompt
+        assert "Do NOT repeat" in prompt
+
+    def test_creates_prompt_without_knowledge_tags(self):
+        steps = [
+            ActionStep(
+                step_number=1,
+                model_input_messages=[],
+                model_output="Found the config file",
+                observations="config.yaml loaded",
+                model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Found config"),
+                timing=Timing(start_time=0, end_time=1),
+            ),
+        ]
+        prompt = create_compression_prompt(steps, knowledge_tag_names=None)
+        assert "already captured in the persistent knowledge store" not in prompt
+
+    def test_creates_prompt_with_empty_knowledge_tags(self):
+        steps = [
+            ActionStep(
+                step_number=1,
+                model_input_messages=[],
+                model_output="Found the config file",
+                observations="config.yaml loaded",
+                model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Found config"),
+                timing=Timing(start_time=0, end_time=1),
+            ),
+        ]
+        prompt = create_compression_prompt(steps, knowledge_tag_names=[])
+        assert "already captured in the persistent knowledge store" not in prompt
 
 
 class TestCreateMergePrompt:

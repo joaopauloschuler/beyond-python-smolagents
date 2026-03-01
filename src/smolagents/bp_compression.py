@@ -234,14 +234,22 @@ def should_preserve_step(step: MemoryStep, config: CompressionConfig) -> bool:
     return False
 
 
-def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
+def create_compression_prompt(
+    steps_to_compress: list[MemoryStep],
+    knowledge_tag_names: list[str] | None = None,
+) -> str:
     """Create the prompt for the compression LLM call.
 
     Builds a structured representation of the steps to compress and asks
     the LLM to generate a concise summary preserving key information.
 
+    When knowledge_tag_names is provided, the prompt tells the LLM which
+    topics are already captured in the persistent knowledge store so it
+    can avoid redundantly summarizing them and focus on new/changed info.
+
     Args:
         steps_to_compress: List of memory steps to summarize.
+        knowledge_tag_names: Optional list of tag names already in the knowledge store.
 
     Returns:
         The prompt string for the compression LLM call.
@@ -269,9 +277,17 @@ def create_compression_prompt(steps_to_compress: list[MemoryStep]) -> str:
 
     steps_text = "<\n>".join(step_descriptions)
 
+    knowledge_hint = ""
+    if knowledge_tag_names:
+        tag_list = ", ".join(knowledge_tag_names)
+        knowledge_hint = f"""
+The following topics are already captured in the persistent knowledge store: {tag_list}
+Do NOT repeat information that is already in knowledge. Focus on new findings, changes, or corrections.
+"""
+
     return f"""Summarize the following agent execution history (<execution_history></execution_history>) into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
-
+{knowledge_hint}
 This is the execution history:
 <execution_history>
 {steps_text}
@@ -501,7 +517,7 @@ class ContextCompressor:
 
         return False
 
-    def compress(self, steps: list[MemoryStep]) -> list[MemoryStep]:
+    def compress(self, steps: list[MemoryStep], knowledge: str = "") -> list[MemoryStep]:
         """Compress older steps while preserving recent and critical steps.
 
         This method:
@@ -576,8 +592,9 @@ class ContextCompressor:
                 logger.info(f"Compression skipped: content ({original_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
             return steps
 
-        # Generate summary using LLM
-        compression_prompt = create_compression_prompt(steps_to_compress)
+        # Generate summary using LLM (knowledge-aware: skip topics already in knowledge)
+        knowledge_tag_names = list_xml_tag_names(knowledge) if knowledge else None
+        compression_prompt = create_compression_prompt(steps_to_compress, knowledge_tag_names)
 
         try:
             summary_message = self.compression_model.generate(
@@ -824,7 +841,7 @@ def create_compression_callback(compressor: ContextCompressor) -> Callable:
             return
 
         if compressor.should_compress(agent.memory.steps):
-            agent.memory.steps = compressor.compress(agent.memory.steps)
+            agent.memory.steps = compressor.compress(agent.memory.steps, agent.memory.knowledge)
 
         if compressor.should_merge_compressed(agent.memory.steps):
             agent.memory.steps, agent.memory.knowledge = compressor.merge_compressed(
