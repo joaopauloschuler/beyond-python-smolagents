@@ -89,9 +89,9 @@ system_prompt: |-
     "arguments": "Shanghai"
   }
 
-  Above example were using notional tools that might not exist for you. You only have access to these tools:
+  Above example were using notional tools that might not exist for you. You only have access to these tools (use get_tool_descriptions tool for full documentation):
   {%- for tool in tools.values() %}
-  - {{ tool.to_tool_calling_prompt() }}
+  - {{ tool.to_compact_prompt() }}
   {%- endfor %}
 
   {%- if managed_agents and managed_agents.values() | list %}

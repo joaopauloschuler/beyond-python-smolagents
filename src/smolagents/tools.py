@@ -286,6 +286,11 @@ class Tool(BaseTool):
         tool_doc = f'"""{tool_doc}\n"""'
         return f"def {self.name}{tool_signature}:\n{textwrap.indent(tool_doc, '    ')}"
 
+    def to_compact_prompt(self) -> str:
+        """Returns a compact one-line signature for context-efficient tool listings."""
+        args_signature = ", ".join(f"{arg_name}: {arg_schema['type']}" for arg_name, arg_schema in self.inputs.items())
+        return f"def {self.name}({args_signature}) -> {self.output_type}"
+
     def to_tool_calling_prompt(self) -> str:
         return f"{self.name}: {self.description}\n    Takes inputs: {self.inputs}\n    Returns an output of type: {self.output_type}"
 

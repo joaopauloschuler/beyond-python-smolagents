@@ -75,11 +75,11 @@ system_prompt: |-
 
   {"thought": "I know that the pope is 88 years old. Let's compute the result using python code.", "code": "pope_current_age = 88 ** 0.36\nfinal_answer(pope_current_age)"}
 
-  Above example were using notional tools that might not exist for you. On top of performing computations in the Python code snippets that you create, you only have access to these tools, behaving like regular python functions:
+  Above example were using notional tools that might not exist for you. On top of performing computations in the Python code snippets that you create, you only have access to these tools, behaving like regular python functions (use get_tool_descriptions(["tool_name"]) for full documentation):
   ```python
   {%- for tool in tools.values() %}
-  {{ tool.to_code_prompt() }}
-  {% endfor %}
+  {{ tool.to_compact_prompt() }}
+  {%- endfor %}
   ```
 
   {%- if managed_agents and managed_agents.values() | list %}

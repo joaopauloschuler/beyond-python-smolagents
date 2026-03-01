@@ -2969,3 +2969,37 @@ def load_image_callback(memory_step, agent=None):
     memory_step.observations = (
         info if memory_step.observations is None else memory_step.observations + info
     )
+
+
+class GetToolDescriptionsTool(Tool):
+    """Tool that returns full descriptions for specified tools, enabling compact tool listings in the system prompt."""
+
+    name = "get_tool_descriptions"
+    description = "Returns full documentation, argument descriptions, and usage examples for the specified tools. Call this before using any tool whose behavior is not clear from its signature."
+    inputs = {
+        "tool_list": {
+            "type": "object",
+            "description": "List of tool name strings to get full descriptions for, e.g. ['canvas_draw', 'diff_images']",
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._tool_docs: dict[str, str] = {}
+
+    def set_tool_docs(self, tool_docs: dict[str, str]):
+        """Set the full tool documentation dictionary."""
+        self._tool_docs = tool_docs
+
+    def forward(self, tool_list) -> str:
+        if not tool_list:
+            return "No tool names provided. Pass a list of tool name strings."
+        results = []
+        for name in tool_list:
+            if name in self._tool_docs:
+                results.append(self._tool_docs[name])
+            else:
+                available = ", ".join(sorted(self._tool_docs.keys()))
+                results.append(f"Tool '{name}' not found. Available tools: {available}")
+        return "\n\n".join(results)

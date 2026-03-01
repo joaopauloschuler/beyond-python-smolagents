@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, GetToolDescriptionsTool
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -355,6 +355,7 @@ class MultiStepAgent(ABC):
         self._setup_tools(tools, add_base_tools)
         self._bind_planning_tools()
         self._bind_memory_tools()
+        self._bind_tool_descriptions()
         self._validate_tools_and_managed_agents(tools, managed_agents)
 
         self.task: str | None = None
@@ -445,6 +446,18 @@ class MultiStepAgent(ABC):
             tool = SummarizeActionStep()
             tool.set_agent(self)
             self.tools["summarize_actionstep"] = tool
+
+    def _bind_tool_descriptions(self):
+        """Add get_tool_descriptions tool and populate it with full docs from all other tools."""
+        if "get_tool_descriptions" not in self.tools:
+            tool = GetToolDescriptionsTool()
+            self.tools["get_tool_descriptions"] = tool
+        # Build full docs dict from all registered tools
+        tool_docs = {}
+        for name, t in self.tools.items():
+            if name != "get_tool_descriptions":
+                tool_docs[name] = t.to_code_prompt()
+        self.tools["get_tool_descriptions"].set_tool_docs(tool_docs)
 
     def _validate_tools_and_managed_agents(self, tools, managed_agents):
         tool_and_managed_agent_names = [tool.name for tool in tools]

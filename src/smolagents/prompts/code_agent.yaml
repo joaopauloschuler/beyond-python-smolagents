@@ -106,18 +106,11 @@ system_prompt: |-
   </runcode>
   </example>
 
-  These are the system tools
+  These are the system tools (use get_tool_descriptions(["tool_name"]) for full documentation)
     ```python
     {%- for tool in tools.values() %}
-    def {{ tool.name }}({% for arg_name, arg_info in tool.inputs.items() %}{{ arg_name }}: {{ arg_info.type }}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{tool.output_type}}:
-        \"\"\"{{ tool.description }}
-
-        Args:
-        {%- for arg_name, arg_info in tool.inputs.items() %}
-            {{ arg_name }}: {{ arg_info.description }}
-        {%- endfor %}
-        \"\"\"
-    {% endfor %}
+    {{ tool.to_compact_prompt() }}
+    {%- endfor %}
     ```
 
     {%- if managed_agents and managed_agents.values() | list %}
