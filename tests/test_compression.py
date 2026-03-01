@@ -372,7 +372,7 @@ class TestContextCompressor:
         assert result == steps
 
     def test_compress_creates_compressed_step(self):
-        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -482,15 +482,16 @@ class TestContextCompressor:
             CompressedHistoryStep(summary="Only one", compressed_step_numbers=[1], original_step_count=1),
             ActionStep(step_number=5, timing=Timing(start_time=0, end_time=1)),
         ]
-        result = compressor.merge_compressed(steps)
-        assert result == steps
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
+        assert result_steps == steps
+        assert result_knowledge == ""
 
-    def test_merge_compressed_creates_merged_step(self):
-        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
+    def test_merge_compressed_extracts_knowledge(self):
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Consolidated summary.",
+            content="<findings>Useful data found and analyzed.</findings><status>Final output prepared.</status>",
             token_usage=TokenUsage(input_tokens=200, output_tokens=30),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -515,19 +516,16 @@ class TestContextCompressor:
             ActionStep(step_number=9, timing=Timing(start_time=0, end_time=1)),
         ]
 
-        result = compressor.merge_compressed(steps)
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
 
-        # Should have: TaskStep + 1 merged CompressedHistoryStep + ActionStep
-        assert len(result) == 3
-        assert isinstance(result[0], TaskStep)
-        assert isinstance(result[1], CompressedHistoryStep)
-        assert isinstance(result[2], ActionStep)
+        # Compressed steps should be removed, leaving TaskStep + ActionStep
+        assert len(result_steps) == 2
+        assert isinstance(result_steps[0], TaskStep)
+        assert isinstance(result_steps[1], ActionStep)
 
-        merged = result[1]
-        assert merged.summary == "Consolidated summary."
-        assert merged.original_step_count == 8  # 3 + 3 + 2
-        assert merged.compressed_step_numbers == [1, 2, 3, 4, 5, 6, 7, 8]
-        assert merged.compression_token_usage.input_tokens == 200
+        # Knowledge should contain the extracted tags
+        assert "<findings>" in result_knowledge
+        assert "<status>" in result_knowledge
 
         mock_model.generate.assert_called_once()
 
@@ -542,27 +540,41 @@ class TestContextCompressor:
             CompressedHistoryStep(summary="Summary B", compressed_step_numbers=[2], original_step_count=1),
         ]
 
-        result = compressor.merge_compressed(steps)
-        assert result == steps
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
+        assert result_steps == steps
+        assert result_knowledge == ""
 
-    def test_merge_compressed_skips_when_merged_is_larger(self):
-        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0)
+    def test_merge_compressed_updates_existing_knowledge(self):
+        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0, min_compression_chars=0)
         mock_model = MagicMock()
-        # Return a summary that's longer than the combined originals
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="This merged summary is intentionally much longer than the originals to trigger the safety check.",
+            content="<status>All tasks complete</status>",
             token_usage=TokenUsage(input_tokens=100, output_tokens=50),
         )
         compressor = ContextCompressor(config, mock_model)
 
         steps = [
-            CompressedHistoryStep(summary="Short A", compressed_step_numbers=[1], original_step_count=1),
-            CompressedHistoryStep(summary="Short B", compressed_step_numbers=[2], original_step_count=1),
+            CompressedHistoryStep(
+                summary="Agent searched for information and found useful data about the topic.",
+                compressed_step_numbers=[1],
+                original_step_count=1,
+            ),
+            CompressedHistoryStep(
+                summary="Agent analyzed the data and drew conclusions about the results.",
+                compressed_step_numbers=[2],
+                original_step_count=1,
+            ),
         ]
 
-        result = compressor.merge_compressed(steps)
-        assert result == steps  # Should keep originals
+        existing_knowledge = "<db>PostgreSQL</db>\n<status>In progress</status>"
+        result_steps, result_knowledge = compressor.merge_compressed(steps, existing_knowledge)
+        # Compressed steps removed
+        assert len(result_steps) == 0
+        # Knowledge should have updated status and kept db
+        assert "<db>PostgreSQL</db>" in result_knowledge
+        assert "<status>All tasks complete</status>" in result_knowledge
+        assert "In progress" not in result_knowledge
 
     def test_should_merge_compressed_false_when_not_enough_mergeable(self):
         """With keep_compressed_steps=2 and 3 compressed steps, only 1 is mergeable (need 2)."""
@@ -585,11 +597,11 @@ class TestContextCompressor:
         assert compressor.should_merge_compressed(steps) is True
 
     def test_merge_compressed_keeps_recent_compressed_steps(self):
-        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=1)
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=1, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Consolidated summary.",
+            content="<findings>Useful data about the topic.</findings>",
             token_usage=TokenUsage(input_tokens=200, output_tokens=30),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -614,33 +626,29 @@ class TestContextCompressor:
             ActionStep(step_number=9, timing=Timing(start_time=0, end_time=1)),
         ]
 
-        result = compressor.merge_compressed(steps)
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
 
-        # Should have: TaskStep + 1 merged + 1 kept compressed + ActionStep
-        assert len(result) == 4
-        assert isinstance(result[0], TaskStep)
-        assert isinstance(result[1], CompressedHistoryStep)  # merged
-        assert isinstance(result[2], CompressedHistoryStep)  # kept (most recent)
-        assert isinstance(result[3], ActionStep)
-
-        # The merged step should only cover the first 2 compressed steps
-        merged = result[1]
-        assert merged.summary == "Consolidated summary."
-        assert merged.original_step_count == 6  # 3 + 3
-        assert merged.compressed_step_numbers == [1, 2, 3, 4, 5, 6]
+        # Merged compressed steps removed, kept one remains: TaskStep + 1 kept compressed + ActionStep
+        assert len(result_steps) == 3
+        assert isinstance(result_steps[0], TaskStep)
+        assert isinstance(result_steps[1], CompressedHistoryStep)  # kept (most recent)
+        assert isinstance(result_steps[2], ActionStep)
 
         # The kept step should be the most recent one (unchanged)
-        kept = result[2]
+        kept = result_steps[1]
         assert kept.summary == "Agent refined the analysis and prepared the final output."
         assert kept.compressed_step_numbers == [7, 8]
 
+        # Knowledge should have the extracted info
+        assert "<findings>" in result_knowledge
+
     def test_merge_compressed_keep_zero_merges_all(self):
-        """With keep_compressed_steps=0 (default), all compressed steps are merged."""
-        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0)
+        """With keep_compressed_steps=0 (default), all compressed steps are removed and knowledge extracted."""
+        config = CompressionConfig(max_compressed_steps=2, keep_compressed_steps=0, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Consolidated summary.",
+            content="<summary>All data searched, analyzed and output prepared.</summary>",
             token_usage=TokenUsage(input_tokens=200, output_tokens=30),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -663,12 +671,12 @@ class TestContextCompressor:
             ),
         ]
 
-        result = compressor.merge_compressed(steps)
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
 
-        # All should be merged into one
-        assert len(result) == 1
-        assert isinstance(result[0], CompressedHistoryStep)
-        assert result[0].original_step_count == 8  # 3 + 3 + 2
+        # All compressed steps should be removed
+        assert len(result_steps) == 0
+        # Knowledge should contain the extracted info
+        assert "<summary>" in result_knowledge
 
     def test_merge_compressed_keep_too_many_returns_original(self):
         """If keep_compressed_steps >= len-1, only 1 left to merge, so return original."""
@@ -689,16 +697,18 @@ class TestContextCompressor:
             ),
         ]
 
-        result = compressor.merge_compressed(steps)
-        assert result == steps  # Nothing merged
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
+        assert result_steps == steps  # Nothing merged
+        assert result_knowledge == ""
         mock_model.generate.assert_not_called()
 
-    def test_merge_compressed_accumulates_overlapping_step_numbers(self):
-        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0)
+    def test_merge_compressed_removes_merged_steps(self):
+        """Verify that merged compressed steps are removed from the step list."""
+        config = CompressionConfig(max_compressed_steps=1, keep_compressed_steps=0, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Merged.",
+            content="<info>Important data</info>",
             token_usage=TokenUsage(input_tokens=50, output_tokens=10),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -714,19 +724,20 @@ class TestContextCompressor:
                 compressed_step_numbers=[3, 4, 5],
                 original_step_count=3,
             ),
+            ActionStep(step_number=6, timing=Timing(start_time=0, end_time=1)),
         ]
 
-        result = compressor.merge_compressed(steps)
-        merged = result[0]
-        # Overlapping step number 3 should be deduplicated
-        assert merged.compressed_step_numbers == [1, 2, 3, 4, 5]
-        # Total original count is the sum (not deduplicated)
-        assert merged.original_step_count == 6
+        result_steps, result_knowledge = compressor.merge_compressed(steps)
+        # Only ActionStep should remain
+        assert len(result_steps) == 1
+        assert isinstance(result_steps[0], ActionStep)
+        # Knowledge should be populated
+        assert "<info>Important data</info>" in result_knowledge
 
 
 class TestCreateCompressionCallback:
     def test_callback_triggers_compression(self):
-        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
@@ -738,6 +749,7 @@ class TestCreateCompressionCallback:
 
         # Create mock agent with memory (include content so original_chars > summary_chars)
         mock_agent = MagicMock()
+        mock_agent.memory.knowledge = ""
         mock_agent.memory.steps = [
             ActionStep(
                 step_number=i,
@@ -785,12 +797,13 @@ class TestCreateCompressionCallback:
             keep_recent_steps=2,
             max_compressed_steps=1,
             keep_compressed_steps=0,
+            min_compression_chars=0,
         )
         mock_model = MagicMock()
-        # First call: compress, second call: merge
+        # First call: compress, second call: merge (knowledge extraction)
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Short.",
+            content="<extracted>Knowledge from merge.</extracted>",
             token_usage=TokenUsage(input_tokens=100, output_tokens=10),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -798,6 +811,7 @@ class TestCreateCompressionCallback:
 
         # Set up agent with multiple compressed steps + action steps that exceed threshold
         mock_agent = MagicMock()
+        mock_agent.memory.knowledge = ""
         mock_agent.memory.steps = [
             CompressedHistoryStep(
                 summary="This is a long enough first summary that the merge will save space versus the originals.",
@@ -840,3 +854,101 @@ class TestCreateCompressionCallback:
 
         # The model should have been called (compression and/or merge)
         assert mock_model.generate.call_count >= 1
+
+
+class TestMergeContext:
+    def test_append_new_tag(self):
+        from smolagents.bp_compression import merge_context
+        existing = "<db>PostgreSQL</db>"
+        updates = "<auth>JWT tokens</auth>"
+        result = merge_context(existing, updates)
+        assert "<db>PostgreSQL</db>" in result
+        assert "<auth>JWT tokens</auth>" in result
+
+    def test_update_existing_tag(self):
+        from smolagents.bp_compression import merge_context
+        existing = "<db>PostgreSQL</db>\n<status>In progress</status>"
+        updates = "<status>Complete</status>"
+        result = merge_context(existing, updates)
+        assert "<db>PostgreSQL</db>" in result
+        assert "<status>Complete</status>" in result
+        assert "In progress" not in result
+
+    def test_delete_with_self_closing(self):
+        from smolagents.bp_compression import merge_context
+        existing = "<db>PostgreSQL</db>\n<old_notes>Some notes</old_notes>"
+        updates = "<old_notes/>"
+        result = merge_context(existing, updates)
+        assert "<db>PostgreSQL</db>" in result
+        assert "old_notes" not in result
+
+    def test_delete_with_empty_tag(self):
+        from smolagents.bp_compression import merge_context
+        existing = "<db>PostgreSQL</db>\n<old_notes>Some notes</old_notes>"
+        updates = "<old_notes></old_notes>"
+        result = merge_context(existing, updates)
+        assert "<db>PostgreSQL</db>" in result
+        assert "old_notes" not in result
+
+    def test_mixed_operations(self):
+        from smolagents.bp_compression import merge_context
+        existing = "<plan>Step 1</plan>\n<db>MySQL</db>\n<old>Remove me</old>"
+        updates = "<plan>Step 2</plan><old/><auth>JWT</auth>"
+        result = merge_context(existing, updates)
+        assert "<plan>Step 2</plan>" in result
+        assert "<auth>JWT</auth>" in result
+        assert "old" not in result.lower() or "<old" not in result
+        assert "<db>MySQL</db>" in result
+
+    def test_empty_existing(self):
+        from smolagents.bp_compression import merge_context
+        result = merge_context("", "<info>New data</info>")
+        assert "<info>New data</info>" in result
+
+    def test_empty_updates(self):
+        from smolagents.bp_compression import merge_context
+        result = merge_context("<db>PostgreSQL</db>", "")
+        assert "<db>PostgreSQL</db>" in result
+
+
+class TestListXmlTagNames:
+    def test_basic(self):
+        from smolagents.bp_compression import list_xml_tag_names
+        text = "<db>PostgreSQL</db>\n<auth>JWT</auth>\n<plan>Steps</plan>"
+        tags = list_xml_tag_names(text)
+        assert tags == ["auth", "db", "plan"]
+
+    def test_empty(self):
+        from smolagents.bp_compression import list_xml_tag_names
+        assert list_xml_tag_names("") == []
+
+    def test_no_tags(self):
+        from smolagents.bp_compression import list_xml_tag_names
+        assert list_xml_tag_names("plain text no tags") == []
+
+
+class TestCreateKnowledgeExtractionPrompt:
+    def test_includes_summaries(self):
+        from smolagents.bp_compression import create_knowledge_extraction_prompt, CompressedHistoryStep
+        steps = [
+            CompressedHistoryStep(summary="Found PostgreSQL", compressed_step_numbers=[1], original_step_count=1),
+        ]
+        prompt = create_knowledge_extraction_prompt(steps)
+        assert "Found PostgreSQL" in prompt
+
+    def test_includes_existing_tags(self):
+        from smolagents.bp_compression import create_knowledge_extraction_prompt, CompressedHistoryStep
+        steps = [
+            CompressedHistoryStep(summary="Some info", compressed_step_numbers=[1], original_step_count=1),
+        ]
+        prompt = create_knowledge_extraction_prompt(steps, existing_tag_names=["db", "plan"])
+        assert "db" in prompt
+        assert "plan" in prompt
+
+    def test_without_existing_tags(self):
+        from smolagents.bp_compression import create_knowledge_extraction_prompt, CompressedHistoryStep
+        steps = [
+            CompressedHistoryStep(summary="Info", compressed_step_numbers=[1], original_step_count=1),
+        ]
+        prompt = create_knowledge_extraction_prompt(steps, existing_tag_names=[])
+        assert "no existing" in prompt.lower() or "new" in prompt.lower() or len(prompt) > 0

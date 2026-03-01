@@ -245,10 +245,12 @@ class AgentMemory:
     def __init__(self, system_prompt: str):
         self.system_prompt: SystemPromptStep = SystemPromptStep(system_prompt=system_prompt)
         self.steps: list[TaskStep | ActionStep | PlanningStep] = []
+        self.knowledge: str = ""
 
     def reset(self):
         """Reset the agent's memory, clearing all steps and keeping the system prompt."""
         self.steps = []
+        self.knowledge = ""
 
     def get_succinct_steps(self) -> list[dict]:
         """Return a succinct representation of the agent's steps, excluding model input messages."""

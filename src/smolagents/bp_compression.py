@@ -8,6 +8,7 @@ This module provides a hybrid rolling summarization system that compresses older
 via LLM summarization while keeping recent steps in full detail.
 """
 
+import re
 import time
 from dataclasses import dataclass, field
 from logging import getLogger
@@ -31,6 +32,9 @@ __all__ = [
     "estimate_step_tokens",
     "create_compression_callback",
     "create_merge_prompt",
+    "merge_context",
+    "list_xml_tag_names",
+    "create_knowledge_extraction_prompt",
 ]
 
 
@@ -312,6 +316,133 @@ These summaries cover {total_steps} total steps of agent execution.
 CONSOLIDATED SUMMARY:"""
 
 
+def list_xml_tag_names(text: str) -> list[str]:
+    """List unique top-level XML tag names found in text.
+
+    Args:
+        text: String containing XML-tagged content.
+
+    Returns:
+        Sorted list of unique tag names.
+    """
+    if not text or not text.strip():
+        return []
+    names = set()
+    for m in re.finditer(r'<([\w][\w-]*)[\s>/]', text):
+        names.add(m.group(1))
+    return sorted(names)
+
+
+def merge_context(existing: str, updates: str) -> str:
+    """Merge tagged XML updates into existing context using three rules:
+
+    1. **UPDATE**: If a tag in ``updates`` has content and exists in ``existing``, replace it.
+    2. **DELETE**: If a tag in ``updates`` is self-closing (``<tag/>``) or empty
+       (``<tag></tag>``), remove it from ``existing``.
+    3. **APPEND**: If a tag in ``updates`` has content and does NOT exist in
+       ``existing``, append it.
+
+    Args:
+        existing: The current knowledge string (tagged XML).
+        updates: New tagged XML with updates, deletions, or additions.
+
+    Returns:
+        Updated knowledge string after applying all operations.
+    """
+    if not updates or not updates.strip():
+        return existing
+
+    result = existing if existing else ""
+    processed_tags = set()
+
+    # 1. Self-closing tags: <tag/> or <tag /> -> DELETE
+    for m in re.finditer(r'<([\w][\w-]*)\s*/>', updates):
+        tag = m.group(1)
+        if tag in processed_tags:
+            continue
+        processed_tags.add(tag)
+        result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>\s*', '', result, flags=re.DOTALL)
+        result = re.sub(rf'<{re.escape(tag)}\s*/>\s*', '', result, flags=re.DOTALL)
+
+    # 2. Content tags: <tag>content</tag>
+    for m in re.finditer(r'<([\w][\w-]*)>(.*?)</\1>', updates, re.DOTALL):
+        tag = m.group(1)
+        content = m.group(2)
+        if tag in processed_tags:
+            continue
+        processed_tags.add(tag)
+        full_tag = f'<{tag}>{content}</{tag}>'
+        if content.strip() == '':
+            # Empty content -> DELETE
+            result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>\s*', '', result, flags=re.DOTALL)
+        elif re.search(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>', result, re.DOTALL):
+            # Tag exists -> UPDATE
+            result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>', full_tag, result, flags=re.DOTALL)
+        else:
+            # Tag doesn't exist -> APPEND
+            result = result.rstrip() + '\n' + full_tag + '\n'
+
+    return result
+
+
+def create_knowledge_extraction_prompt(
+    compressed_steps: list[CompressedHistoryStep],
+    existing_tag_names: list[str] | None = None,
+) -> str:
+    """Create a prompt for extracting knowledge from compressed summaries.
+
+    Instead of rewriting the full knowledge, this prompt asks the LLM to produce
+    a tagged XML diff: updates to existing sections, new sections, or deletions.
+
+    Args:
+        compressed_steps: List of CompressedHistoryStep instances to extract knowledge from.
+        existing_tag_names: List of tag names currently in the knowledge store.
+
+    Returns:
+        The prompt string for the knowledge extraction LLM call.
+    """
+    summaries = []
+    for i, step in enumerate(compressed_steps, 1):
+        summaries.append(
+            f"Summary {i} (covering {step.original_step_count} steps, "
+            f"step numbers: {step.compressed_step_numbers}):\n{step.summary}"
+        )
+    summaries_text = "\n\n".join(summaries)
+    total_steps = sum(step.original_step_count for step in compressed_steps)
+
+    if existing_tag_names:
+        tag_list = ", ".join(existing_tag_names)
+        existing_section = f"""
+Existing knowledge sections: {tag_list}
+
+Rules:
+- To UPDATE an existing section, use the same tag name with new content
+- To DELETE a section that is no longer relevant, use an empty self-closing tag: <tagname/>
+- To ADD new information, use a new descriptive tag name
+- Only output sections that are new, changed, or should be deleted
+- Do NOT output sections that have not changed"""
+    else:
+        existing_section = """
+There are no existing knowledge sections yet. Create new tagged sections for
+the important information found in the summaries below.
+Use descriptive tag names (e.g., <plan>, <architecture>, <key_findings>, <current_status>)."""
+
+    return f"""Extract key knowledge from the following {len(compressed_steps)} summaries
+covering {total_steps} total steps of agent execution.
+
+Output the knowledge as XML-tagged sections. Each section should contain concise,
+factual information that would be useful for continuing the task.
+{existing_section}
+
+{COMMON_COMPRESSION_INSTRUCTIONS}
+
+<SUMMARIES>
+{summaries_text}
+</SUMMARIES>
+
+KNOWLEDGE UPDATE:"""
+
+
 class ContextCompressor:
     """Manages context compression for agent memory.
 
@@ -561,30 +692,30 @@ class ContextCompressor:
         mergeable_count = compressed_count - self.config.keep_compressed_steps
         return mergeable_count >= 2
 
-    def merge_compressed(self, steps: list[MemoryStep]) -> list[MemoryStep]:
-        """Merge multiple CompressedHistoryStep instances into one.
+    def merge_compressed(self, steps: list[MemoryStep], knowledge: str = "") -> tuple[list[MemoryStep], str]:
+        """Merge older compressed history steps by extracting knowledge.
 
-        Collects all compressed history steps, generates a consolidated summary
-        via LLM, and replaces them with a single merged CompressedHistoryStep.
+        Instead of rewriting all compressed summaries into a single prose summary,
+        this method extracts tagged XML knowledge from the older compressed steps
+        and merges it into the existing knowledge store using ``merge_context()``.
+        The merged compressed steps are then removed from the step list.
+
         If keep_compressed_steps is set, the most recent N compressed steps are
-        preserved and only older ones are merged.
-
-        Note: This is a lossy operation (summary of summaries). Information
-        fidelity decreases with each merge cycle.
+        preserved and only older ones are processed.
 
         Args:
             steps: Current list of memory steps.
+            knowledge: Current knowledge string (tagged XML).
 
         Returns:
-            New list with older compressed history steps merged into one,
-            preserving the most recent keep_compressed_steps instances.
+            Tuple of (new_steps, updated_knowledge).
         """
         start_time = time.time()
 
         compressed_steps = [step for step in steps if isinstance(step, CompressedHistoryStep)]
 
         if len(compressed_steps) <= 1:
-            return steps
+            return steps, knowledge
 
         # Determine which compressed steps to keep vs merge
         keep_count = self.config.keep_compressed_steps
@@ -598,7 +729,7 @@ class ContextCompressor:
             steps_to_merge = compressed_steps
 
         if len(steps_to_merge) <= 1:
-            return steps  # Not enough to merge
+            return steps, knowledge  # Not enough to merge
 
         # Skip merge if combined content is too small to be worth an LLM call
         pre_merge_chars = sum(len(step.summary) for step in steps_to_merge)
@@ -611,10 +742,11 @@ class ContextCompressor:
                 )
             else:
                 logger.info(f"Merge skipped: combined summaries ({pre_merge_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
-            return steps
+            return steps, knowledge
 
-        # Build merge prompt and call LLM
-        merge_prompt = create_merge_prompt(steps_to_merge)
+        # Build knowledge extraction prompt and call LLM
+        existing_tag_names = list_xml_tag_names(knowledge)
+        merge_prompt = create_knowledge_extraction_prompt(steps_to_merge, existing_tag_names)
 
         try:
             merge_message = self.compression_model.generate(
@@ -625,85 +757,50 @@ class ContextCompressor:
                     )
                 ]
             )
-            merged_summary = merge_message.content
-            if isinstance(merged_summary, list):
-                merged_summary = " ".join(
-                    item.get("text", "") for item in merged_summary if isinstance(item, dict)
+            knowledge_updates = merge_message.content
+            if isinstance(knowledge_updates, list):
+                knowledge_updates = " ".join(
+                    item.get("text", "") for item in knowledge_updates if isinstance(item, dict)
                 )
-
-            merge_token_usage = merge_message.token_usage
         except Exception as e:
-            logger.warning(f"Compressed step merge failed, keeping original steps: {e}")
-            return steps
+            logger.warning(f"Knowledge extraction failed, keeping original steps: {e}")
+            return steps, knowledge
 
-        # Safety check: skip merge if consolidated summary is larger than combined originals
+        # Apply the tagged XML diff to the knowledge store
         original_chars = sum(len(step.summary) for step in steps_to_merge)
-        merged_chars = len(merged_summary) if merged_summary else 0
-        if merged_chars >= original_chars:
-            if self.agent_logger:
-                self.agent_logger.log_markdown(
-                    content=f"Merge skipped: consolidated summary ({merged_chars:,} chars) "
-                    f"is larger than combined originals ({original_chars:,} chars)",
-                    title="Compressed Step Merge Skipped",
-                    level=LogLevel.INFO,
-                )
-            else:
-                logger.info(
-                    f"Merge skipped: consolidated summary ({merged_chars} chars) "
-                    f">= combined originals ({original_chars} chars)"
-                )
-            return steps
+        updated_knowledge = merge_context(knowledge, knowledge_updates) if knowledge_updates else knowledge
 
-        # Accumulate metadata from merged compressed steps
-        all_step_numbers = []
-        total_original_count = 0
-        for step in steps_to_merge:
-            all_step_numbers.extend(step.compressed_step_numbers)
-            total_original_count += step.original_step_count
+        # Accumulate metadata
+        total_original_count = sum(step.original_step_count for step in steps_to_merge)
 
-        merged_step = CompressedHistoryStep(
-            summary=merged_summary,
-            compressed_step_numbers=sorted(set(all_step_numbers)),
-            original_step_count=total_original_count,
-            timing=Timing(start_time=start_time, end_time=time.time()),
-            compression_token_usage=merge_token_usage,
-        )
-
-        # Rebuild steps: replace merged CompressedHistoryStep instances with the single
-        # merged one, while preserving kept compressed steps in their original positions
+        # Remove merged compressed steps from the step list
         merge_set = set(id(step) for step in steps_to_merge)
-        new_steps = []
-        merged_inserted = False
-
-        for step in steps:
-            if isinstance(step, CompressedHistoryStep) and id(step) in merge_set:
-                if not merged_inserted:
-                    new_steps.append(merged_step)
-                    merged_inserted = True
-                # Skip subsequent merged compressed steps (replaced by merged)
-            else:
-                new_steps.append(step)
+        new_steps = [step for step in steps if not (isinstance(step, CompressedHistoryStep) and id(step) in merge_set)]
 
         # Log
         kept_count = len(compressed_steps) - len(steps_to_merge)
+        knowledge_chars = len(updated_knowledge) if updated_knowledge else 0
+        elapsed = time.time() - start_time
         if self.agent_logger:
-            compression_ratio = (1 - merged_chars / original_chars) * 100 if original_chars > 0 else 0
             kept_msg = f" Kept {kept_count} recent compressed steps." if kept_count > 0 else ""
+            tag_names = list_xml_tag_names(updated_knowledge)
             self.agent_logger.log_markdown(
-                content=f"Merged {len(steps_to_merge)} compressed steps "
-                f"({total_original_count} original steps) from {original_chars:,} chars "
-                f"to {merged_chars:,} chars ({compression_ratio:.1f}% reduction).{kept_msg}",
-                title="Compressed Step Merge",
+                content=f"Extracted knowledge from {len(steps_to_merge)} compressed steps "
+                f"({total_original_count} original steps, {original_chars:,} chars). "
+                f"Knowledge store: {knowledge_chars:,} chars, sections: {tag_names}. "
+                f"Elapsed: {elapsed:.1f}s.{kept_msg}",
+                title="Knowledge Extraction",
                 level=LogLevel.INFO,
             )
         else:
             kept_msg = f", kept {kept_count} recent" if kept_count > 0 else ""
             logger.info(
-                f"Merged {len(steps_to_merge)} compressed steps "
-                f"({total_original_count} original steps) into single summary{kept_msg}"
+                f"Extracted knowledge from {len(steps_to_merge)} compressed steps "
+                f"({total_original_count} original steps) into knowledge store "
+                f"({knowledge_chars} chars){kept_msg}"
             )
 
-        return new_steps
+        return new_steps, updated_knowledge
 
 
 def create_compression_callback(compressor: ContextCompressor) -> Callable:
@@ -730,6 +827,8 @@ def create_compression_callback(compressor: ContextCompressor) -> Callable:
             agent.memory.steps = compressor.compress(agent.memory.steps)
 
         if compressor.should_merge_compressed(agent.memory.steps):
-            agent.memory.steps = compressor.merge_compressed(agent.memory.steps)
+            agent.memory.steps, agent.memory.knowledge = compressor.merge_compressed(
+                agent.memory.steps, agent.memory.knowledge
+            )
 
     return compression_callback
