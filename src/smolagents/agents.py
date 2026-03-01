@@ -1559,7 +1559,7 @@ class ToolCallingAgent(MultiStepAgent):
         except Exception as e:
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
-        model_output = str(model_output)
+        model_output = str(memory_step.model_output)
         self.save_files_from_text(model_output)
         model_output = self.remove_tags('savetofile', model_output)
         self.append_files_from_text(model_output)
