@@ -562,11 +562,20 @@ You have been provided with these additional arguments, that you can access dire
             title=self.name if hasattr(self, "name") else None,
         )
         breakdown = self.get_prompt_char_breakdown()
+        ctx_chars = self.get_context_char_size()
+        knowledge = getattr(self.memory, "knowledge", "")
+        knowledge_chars = len(knowledge) if knowledge else 0
+        extras = ""
+        if ctx_chars > 0:
+            extras += f" | Context: {ctx_chars:,} chars"
+        if knowledge_chars > 0:
+            extras += f" | Knowledge: {knowledge_chars:,} chars"
         self.logger.log(
             Text(
                 f"[System prompt: {breakdown['total']:,} chars"
                 f" | Instructions: {breakdown['instructions']:,} chars"
-                f" | Tool descriptions: {breakdown['tools']:,} chars]",
+                f" | Tool descriptions: {breakdown['tools']:,} chars"
+                f"{extras}]",
                 style="dim",
             ),
             level=LogLevel.INFO,

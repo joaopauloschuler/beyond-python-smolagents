@@ -530,6 +530,9 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
         ctx_chars = agent.get_context_char_size()
         if ctx_chars > 0:
             line += f" | Context: {format_tokens(ctx_chars)} chars"
+        knowledge = getattr(agent.memory, "knowledge", "")
+        if knowledge:
+            line += f" | Knowledge: {format_tokens(len(knowledge))} chars"
     line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)
