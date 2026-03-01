@@ -1155,7 +1155,7 @@ def cmd_compress(agent, args: str):
         old_threshold = compressor.config.max_uncompressed_steps
         compressor.config.max_uncompressed_steps = 0  # Force trigger
         original_len = len(agent.memory.steps)
-        agent.memory.steps = compressor.compress(agent.memory.steps)
+        agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
         compressor.config.max_uncompressed_steps = old_threshold
         new_len = len(agent.memory.steps)
         if new_len < original_len:

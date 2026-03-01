@@ -35,6 +35,7 @@ __all__ = [
     "merge_context",
     "list_xml_tag_names",
     "create_knowledge_extraction_prompt",
+    "parse_compression_output",
 ]
 
 
@@ -236,20 +237,20 @@ def should_preserve_step(step: MemoryStep, config: CompressionConfig) -> bool:
 
 def create_compression_prompt(
     steps_to_compress: list[MemoryStep],
-    knowledge_tag_names: list[str] | None = None,
+    knowledge: str = "",
 ) -> str:
     """Create the prompt for the compression LLM call.
 
     Builds a structured representation of the steps to compress and asks
     the LLM to generate a concise summary preserving key information.
 
-    When knowledge_tag_names is provided, the prompt tells the LLM which
-    topics are already captured in the persistent knowledge store so it
-    can avoid redundantly summarizing them and focus on new/changed info.
+    When knowledge is provided, the full knowledge store is included so the
+    LLM can avoid redundancy and also propose knowledge updates (corrections,
+    new findings) as part of its output.
 
     Args:
         steps_to_compress: List of memory steps to summarize.
-        knowledge_tag_names: Optional list of tag names already in the knowledge store.
+        knowledge: Current knowledge store content (tagged XML). Empty string if none.
 
     Returns:
         The prompt string for the compression LLM call.
@@ -277,23 +278,55 @@ def create_compression_prompt(
 
     steps_text = "<\n>".join(step_descriptions)
 
-    knowledge_hint = ""
-    if knowledge_tag_names:
-        tag_list = ", ".join(knowledge_tag_names)
-        knowledge_hint = f"""
-The following topics are already captured in the persistent knowledge store: {tag_list}
-Do NOT repeat information that is already in knowledge. Focus on new findings, changes, or corrections.
+    if knowledge and knowledge.strip():
+        knowledge_section = f"""
+The agent has a persistent knowledge store with the following content:
+<current_knowledge>
+{knowledge}
+</current_knowledge>
+
+Your summary should NOT repeat information already in knowledge.
+If the execution history contains corrections or important new information that
+should update the knowledge store, include a <knowledge_updates> section after
+your summary. Use XML tags to add, update, or delete knowledge sections:
+- To ADD or UPDATE: <tag_name>new content</tag_name>
+- To DELETE an obsolete section: <tag_name/>
+
+If no knowledge updates are needed, omit the <knowledge_updates> section entirely.
+
+Output format:
+<summary>
+Your concise summary here...
+</summary>
+<knowledge_updates>
+...tagged updates if any...
+</knowledge_updates>
+"""
+    else:
+        knowledge_section = """
+If the execution history contains important information worth remembering
+long-term, include a <knowledge_updates> section after your summary with
+tagged XML sections (e.g., <plan>...</plan>, <architecture>...</architecture>).
+
+If no knowledge is worth extracting yet, omit the <knowledge_updates> section.
+
+Output format:
+<summary>
+Your concise summary here...
+</summary>
+<knowledge_updates>
+...tagged sections if any...
+</knowledge_updates>
 """
 
-    return f"""Summarize the following agent execution history (<execution_history></execution_history>) into a concise summary.
+    return f"""Summarize the following agent execution history into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
-{knowledge_hint}
+{knowledge_section}
 This is the execution history:
 <execution_history>
 {steps_text}
 </execution_history>
-
-SUMMARY:"""
+"""
 
 
 def create_merge_prompt(compressed_steps: list[CompressedHistoryStep]) -> str:
@@ -332,6 +365,45 @@ These summaries cover {total_steps} total steps of agent execution.
 CONSOLIDATED SUMMARY:"""
 
 
+
+
+
+def parse_compression_output(raw_output: str) -> tuple[str, str]:
+    """Parse structured compression output into summary and knowledge updates.
+
+    Expects output in the format:
+        <summary>...</summary>
+        <knowledge_updates>...</knowledge_updates>
+
+    Falls back gracefully: if no <summary> tags found, treats the entire
+    output as the summary with no knowledge updates.
+
+    Args:
+        raw_output: Raw LLM output from the compression call.
+
+    Returns:
+        Tuple of (summary, knowledge_updates). knowledge_updates may be empty string.
+    """
+    if not raw_output:
+        return "", ""
+
+    # Try to extract <summary>...</summary>
+    summary_match = re.search(r'<summary>(.*?)</summary>', raw_output, re.DOTALL)
+    if summary_match:
+        summary = summary_match.group(1).strip()
+    else:
+        # Fallback: no <summary> tags, use everything before <knowledge_updates> or entire output
+        knowledge_start = raw_output.find('<knowledge_updates>')
+        if knowledge_start >= 0:
+            summary = raw_output[:knowledge_start].strip()
+        else:
+            summary = raw_output.strip()
+
+    # Try to extract <knowledge_updates>...</knowledge_updates>
+    knowledge_match = re.search(r'<knowledge_updates>(.*?)</knowledge_updates>', raw_output, re.DOTALL)
+    knowledge_updates = knowledge_match.group(1).strip() if knowledge_match else ""
+
+    return summary, knowledge_updates
 def list_xml_tag_names(text: str) -> list[str]:
     """List unique top-level XML tag names found in text.
 
@@ -517,25 +589,27 @@ class ContextCompressor:
 
         return False
 
-    def compress(self, steps: list[MemoryStep], knowledge: str = "") -> list[MemoryStep]:
+    def compress(self, steps: list[MemoryStep], knowledge: str = "") -> tuple[list[MemoryStep], str]:
         """Compress older steps while preserving recent and critical steps.
 
         This method:
         1. Identifies which steps must be preserved (TaskStep, errors, etc.)
         2. Keeps the most recent N compressible steps in full detail
         3. Compresses remaining old steps into a summary via LLM
-        4. Returns a new list with compressed history
+        4. Optionally extracts knowledge updates from the same LLM call
+        5. Returns a new step list and updated knowledge
 
         Args:
             steps: Current list of memory steps.
+            knowledge: Current knowledge store content (tagged XML).
 
         Returns:
-            New list with older steps compressed into a CompressedHistoryStep.
+            Tuple of (new_steps, updated_knowledge).
         """
         start_time = time.time()
 
         if not self.should_compress(steps):
-            return steps
+            return steps, knowledge
 
         # Separate preserved steps and compressible steps
         preserved_indices = set()
@@ -558,7 +632,7 @@ class ContextCompressor:
         compressible_indices = [i for i in range(len(steps)) if i not in preserved_indices]
 
         if len(compressible_indices) <= self.config.keep_recent_steps:
-            return steps  # Nothing to compress
+            return steps, knowledge  # Nothing to compress
 
         # Steps to keep in full detail (most recent compressible ones)
         recent_to_keep = set(compressible_indices[-self.config.keep_recent_steps :])
@@ -567,7 +641,7 @@ class ContextCompressor:
         to_compress_indices = [i for i in compressible_indices if i not in recent_to_keep]
 
         if not to_compress_indices:
-            return steps
+            return steps, knowledge
 
         steps_to_compress = [steps[i] for i in to_compress_indices]
 
@@ -590,11 +664,10 @@ class ContextCompressor:
                 )
             else:
                 logger.info(f"Compression skipped: content ({original_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
-            return steps
+            return steps, knowledge
 
-        # Generate summary using LLM (knowledge-aware: skip topics already in knowledge)
-        knowledge_tag_names = list_xml_tag_names(knowledge) if knowledge else None
-        compression_prompt = create_compression_prompt(steps_to_compress, knowledge_tag_names)
+        # Generate summary using LLM (knowledge-aware: also extracts knowledge updates)
+        compression_prompt = create_compression_prompt(steps_to_compress, knowledge)
 
         try:
             summary_message = self.compression_model.generate(
@@ -605,14 +678,15 @@ class ContextCompressor:
                     )
                 ]
             )
-            summary = summary_message.content
-            if isinstance(summary, list):
-                summary = " ".join(item.get("text", "") for item in summary if isinstance(item, dict))
+            raw_output = summary_message.content
+            if isinstance(raw_output, list):
+                raw_output = " ".join(item.get("text", "") for item in raw_output if isinstance(item, dict))
 
+            summary, knowledge_updates = parse_compression_output(raw_output)
             compression_token_usage = summary_message.token_usage
         except Exception as e:
             logger.warning(f"Compression failed, keeping original steps: {e}")
-            return steps
+            return steps, knowledge
 
         # Safety check: skip compression if summary is larger than original
         summary_chars = len(summary) if summary else 0
@@ -625,7 +699,7 @@ class ContextCompressor:
                 )
             else:
                 logger.info(f"Compression skipped: summary ({summary_chars} chars) >= original ({original_chars} chars)")
-            return steps
+            return steps, knowledge
 
         # Build compressed step
         compressed_step_numbers = []
@@ -681,7 +755,21 @@ class ContextCompressor:
                 f"(kept {len(new_steps)} steps total, compression #{self._compression_count})"
             )
 
-        return new_steps
+        # Apply knowledge updates if any were extracted
+        updated_knowledge = knowledge
+        if knowledge_updates:
+            updated_knowledge = merge_context(knowledge, knowledge_updates)
+            knowledge_chars = len(updated_knowledge) if updated_knowledge else 0
+            if self.agent_logger:
+                tag_names = list_xml_tag_names(updated_knowledge)
+                self.agent_logger.log_markdown(
+                    content=f"Knowledge updated during compression. "
+                    f"Store: {knowledge_chars:,} chars, sections: {tag_names}.",
+                    title="Knowledge Update (Phase 1)",
+                    level=LogLevel.INFO,
+                )
+
+        return new_steps, updated_knowledge
 
     def should_merge_compressed(self, steps: list[MemoryStep]) -> bool:
         """Check if compressed steps should be merged.
@@ -841,7 +929,7 @@ def create_compression_callback(compressor: ContextCompressor) -> Callable:
             return
 
         if compressor.should_compress(agent.memory.steps):
-            agent.memory.steps = compressor.compress(agent.memory.steps, agent.memory.knowledge)
+            agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
 
         if compressor.should_merge_compressed(agent.memory.steps):
             agent.memory.steps, agent.memory.knowledge = compressor.merge_compressed(

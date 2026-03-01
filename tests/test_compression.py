@@ -9,6 +9,7 @@ from smolagents.bp_compression import (
     ContextCompressor,
     create_compression_callback,
     create_compression_prompt,
+    parse_compression_output,
     create_merge_prompt,
     estimate_tokens,
     estimate_step_tokens,
@@ -278,7 +279,7 @@ class TestCreateCompressionPrompt:
         assert "<plan>" in prompt
         assert "First step" in prompt
 
-    def test_creates_prompt_with_knowledge_tags(self):
+    def test_creates_prompt_with_knowledge(self):
         steps = [
             ActionStep(
                 step_number=1,
@@ -289,12 +290,15 @@ class TestCreateCompressionPrompt:
                 timing=Timing(start_time=0, end_time=1),
             ),
         ]
-        prompt = create_compression_prompt(steps, knowledge_tag_names=["plan", "architecture"])
-        assert "plan, architecture" in prompt
-        assert "already captured in the persistent knowledge store" in prompt
-        assert "Do NOT repeat" in prompt
+        knowledge = "<plan>Step 1 done</plan>\n<architecture>REST API</architecture>"
+        prompt = create_compression_prompt(steps, knowledge=knowledge)
+        assert "<current_knowledge>" in prompt
+        assert "plan" in prompt
+        assert "architecture" in prompt
+        assert "should NOT repeat" in prompt
+        assert "<knowledge_updates>" in prompt
 
-    def test_creates_prompt_without_knowledge_tags(self):
+    def test_creates_prompt_without_knowledge(self):
         steps = [
             ActionStep(
                 step_number=1,
@@ -305,10 +309,12 @@ class TestCreateCompressionPrompt:
                 timing=Timing(start_time=0, end_time=1),
             ),
         ]
-        prompt = create_compression_prompt(steps, knowledge_tag_names=None)
-        assert "already captured in the persistent knowledge store" not in prompt
+        prompt = create_compression_prompt(steps, knowledge="")
+        assert "<current_knowledge>" not in prompt
+        # Should still mention knowledge_updates as optional output
+        assert "<knowledge_updates>" in prompt
 
-    def test_creates_prompt_with_empty_knowledge_tags(self):
+    def test_creates_prompt_with_empty_knowledge(self):
         steps = [
             ActionStep(
                 step_number=1,
@@ -319,9 +325,46 @@ class TestCreateCompressionPrompt:
                 timing=Timing(start_time=0, end_time=1),
             ),
         ]
-        prompt = create_compression_prompt(steps, knowledge_tag_names=[])
-        assert "already captured in the persistent knowledge store" not in prompt
+        prompt = create_compression_prompt(steps, knowledge="   ")
+        assert "<current_knowledge>" not in prompt
 
+
+
+
+class TestParseCompressionOutput:
+    def test_parses_structured_output(self):
+        raw = "<summary>My summary here.</summary>\n<knowledge_updates>\n<plan>Step 1</plan>\n</knowledge_updates>"
+        summary, updates = parse_compression_output(raw)
+        assert summary == "My summary here."
+        assert "<plan>Step 1</plan>" in updates
+
+    def test_parses_summary_only(self):
+        raw = "<summary>Just a summary.</summary>"
+        summary, updates = parse_compression_output(raw)
+        assert summary == "Just a summary."
+        assert updates == ""
+
+    def test_fallback_no_tags(self):
+        raw = "Plain text summary without any tags."
+        summary, updates = parse_compression_output(raw)
+        assert summary == "Plain text summary without any tags."
+        assert updates == ""
+
+    def test_fallback_no_summary_tag_with_knowledge(self):
+        raw = "Some summary text\n<knowledge_updates>\n<plan>Do X</plan>\n</knowledge_updates>"
+        summary, updates = parse_compression_output(raw)
+        assert summary == "Some summary text"
+        assert "<plan>Do X</plan>" in updates
+
+    def test_empty_input(self):
+        summary, updates = parse_compression_output("")
+        assert summary == ""
+        assert updates == ""
+
+    def test_none_input(self):
+        summary, updates = parse_compression_output(None)
+        assert summary == ""
+        assert updates == ""
 
 class TestCreateMergePrompt:
     def test_creates_prompt_from_compressed_steps(self):
@@ -412,15 +455,16 @@ class TestContextCompressor:
         config = CompressionConfig(max_uncompressed_steps=20, keep_recent_steps=5)
         compressor = ContextCompressor(config, MagicMock())
         steps = [ActionStep(step_number=i, timing=Timing(start_time=0, end_time=1)) for i in range(5)]
-        result = compressor.compress(steps)
-        assert result == steps
+        new_steps, new_knowledge = compressor.compress(steps)
+        assert new_steps == steps
+        assert new_knowledge == ""
 
     def test_compress_creates_compressed_step(self):
         config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2, min_compression_chars=0)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Summary of steps 0-5.",
+            content="<summary>Summary of steps 0-5.</summary>",
             token_usage=TokenUsage(input_tokens=100, output_tokens=50),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -436,22 +480,77 @@ class TestContextCompressor:
             for i in range(8)
         ]
 
-        result = compressor.compress(steps)
+        new_steps, new_knowledge = compressor.compress(steps)
 
         # Should have compressed step + 2 recent steps
-        assert len(result) < len(steps)
+        assert len(new_steps) < len(steps)
         # First step should be CompressedHistoryStep
-        assert isinstance(result[0], CompressedHistoryStep)
-        assert "Summary of steps" in result[0].summary
+        assert isinstance(new_steps[0], CompressedHistoryStep)
+        assert "Summary of steps" in new_steps[0].summary
         # Model should have been called
         mock_model.generate.assert_called_once()
+        # No knowledge updates in this case
+        assert new_knowledge == ""
+
+    def test_compress_extracts_knowledge_updates(self):
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2, min_compression_chars=0)
+        mock_model = MagicMock()
+        mock_model.generate.return_value = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="<summary>Summary of work done.</summary>\n<knowledge_updates>\n<plan>Step 1 complete</plan>\n</knowledge_updates>",
+            token_usage=TokenUsage(input_tokens=100, output_tokens=50),
+        )
+        compressor = ContextCompressor(config, mock_model)
+
+        steps = [
+            ActionStep(
+                step_number=i,
+                timing=Timing(start_time=0, end_time=1),
+                model_output=f"Output {i}",
+                observations=f"Observation {i}",
+            )
+            for i in range(8)
+        ]
+
+        new_steps, new_knowledge = compressor.compress(steps)
+
+        assert isinstance(new_steps[0], CompressedHistoryStep)
+        assert "Summary of work done" in new_steps[0].summary
+        assert "<plan>Step 1 complete</plan>" in new_knowledge
+
+    def test_compress_fallback_no_summary_tags(self):
+        """When LLM doesn't use <summary> tags, entire output becomes the summary."""
+        config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2, min_compression_chars=0)
+        mock_model = MagicMock()
+        mock_model.generate.return_value = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="Plain text summary without tags.",
+            token_usage=TokenUsage(input_tokens=100, output_tokens=50),
+        )
+        compressor = ContextCompressor(config, mock_model)
+
+        steps = [
+            ActionStep(
+                step_number=i,
+                timing=Timing(start_time=0, end_time=1),
+                model_output=f"Output {i}",
+                observations=f"Observation {i}",
+            )
+            for i in range(8)
+        ]
+
+        new_steps, new_knowledge = compressor.compress(steps)
+
+        assert isinstance(new_steps[0], CompressedHistoryStep)
+        assert "Plain text summary without tags" in new_steps[0].summary
+        assert new_knowledge == ""
 
     def test_compress_preserves_task_step(self):
         config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
         mock_model = MagicMock()
         mock_model.generate.return_value = ChatMessage(
             role=MessageRole.ASSISTANT,
-            content="Summary",
+            content="<summary>Summary</summary>",
             token_usage=TokenUsage(input_tokens=100, output_tokens=50),
         )
         compressor = ContextCompressor(config, mock_model)
@@ -462,11 +561,11 @@ class TestContextCompressor:
             for i in range(10)
         ])
 
-        result = compressor.compress(steps)
+        new_steps, _ = compressor.compress(steps)
 
         # TaskStep should be first
-        assert isinstance(result[0], TaskStep)
-        assert result[0].task == "Original task"
+        assert isinstance(new_steps[0], TaskStep)
+        assert new_steps[0].task == "Original task"
 
     def test_compress_handles_model_failure_gracefully(self):
         config = CompressionConfig(max_uncompressed_steps=3, keep_recent_steps=2)
@@ -479,9 +578,10 @@ class TestContextCompressor:
             for i in range(10)
         ]
 
-        # Should return original steps when compression fails
-        result = compressor.compress(steps)
-        assert result == steps
+        # Should return original steps and knowledge when compression fails
+        new_steps, new_knowledge = compressor.compress(steps)
+        assert new_steps == steps
+        assert new_knowledge == ""
 
     def test_should_merge_compressed_false_when_disabled(self):
         config = CompressionConfig(max_compressed_steps=0)
