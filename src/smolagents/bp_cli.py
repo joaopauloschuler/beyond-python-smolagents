@@ -605,9 +605,9 @@ SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
     "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
-    "/compression-set-high", "/compression-set-low", "/compression-set-normal",
+    "/compression-set-high", "/compression-set-low", "/compression-set-medium",
     "/compression-model", "/dictation", "/exit", "/help",
-    "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
+    "/instructions-load", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
     "/save-step", "/set-max-steps", "/show-knowledge", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
@@ -632,13 +632,13 @@ def print_help():
     table.add_row("/compression-keep-compressed-steps <N>", "Change keep_compressed_steps")
     table.add_row("/compression-max-compressed-steps <N>", "Change max_compressed_steps")
     table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
-    table.add_row("/compression-set-normal", "Set compression preset: NORMAL (balanced)")
+    table.add_row("/compression-set-medium", "Set compression preset: MEDIUM (balanced)")
     table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/help", "Show this help message")
-    table.add_row("/load-instructions", "Load agent instruction files into next prompt")
+    table.add_row("/instructions-load", "Load agent instruction files into next prompt")
     table.add_row(r"/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/redo", "Re-run the last prompt (undo last steps and run again)")
@@ -2086,7 +2086,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/pwd":
                 console.print(f"[cyan]{os.getcwd()}[/]")
                 continue
-            elif cmd == "/load-instructions":
+            elif cmd == "/instructions-load":
                 console.print("[dim]Loading agent instructions...[/]")
                 instructions = load_agent_instructions()
                 if instructions:
@@ -2144,7 +2144,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/compression-set-high":
                 cmd_compression_set_high(agent)
                 continue
-            elif cmd == "/compression-set-normal":
+            elif cmd == "/compression-set-medium":
                 cmd_compression_set_normal(agent)
                 continue
             elif cmd == "/compression-set-low":
