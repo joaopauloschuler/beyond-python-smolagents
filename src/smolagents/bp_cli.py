@@ -876,7 +876,7 @@ def print_stats(session_stats: dict, agent=None):
         knowledge = getattr(agent.memory, "knowledge", "")
         knowledge_chars = len(knowledge) if knowledge else 0
         table.add_row("", "")
-        table.add_row("Knowledge store", f"{knowledge_chars:,} chars")
+        table.add_row("Knowledge", f"{knowledge_chars:,} chars")
     console.print(table)
     console.print()
 
@@ -1037,7 +1037,7 @@ def cmd_compression_stats(agent):
     stats_table.add_row("Original steps compressed", str(compressed_original))
     stats_table.add_row("Compression runs", str(compression_count))
     stats_table.add_row("Compressed summary chars", f"{total_chars:,}")
-    stats_table.add_row("Knowledge store chars", f"{knowledge_chars:,}")
+    stats_table.add_row("Knowledge chars", f"{knowledge_chars:,}")
     stats_table.add_row("Knowledge sections", f"{len(knowledge_tags)} ({', '.join(knowledge_tags)})" if knowledge_tags else "0")
     console.print(stats_table)
     console.print()
@@ -1082,7 +1082,7 @@ def cmd_memory_stats(agent):
     knowledge_chars = len(knowledge)
     table.add_row("Total chars", f"{total_chars:,}")
     table.add_row("Estimated tokens", f"{total_tokens:,}")
-    table.add_row("Knowledge store chars", f"{knowledge_chars:,}")
+    table.add_row("Knowledge chars", f"{knowledge_chars:,}")
     console.print(table)
     console.print()
 
