@@ -9,7 +9,7 @@ A hybrid rolling summarization system for smolagents that compresses older memor
 
 ### Two-Phase Compression Pipeline
 
-**Phase 1 — Step Compression + Knowledge Extraction:** Older action steps are summarized by the LLM into `CompressedHistoryStep` instances. The same LLM call also extracts knowledge updates, which are applied to the persistent knowledge store immediately. The LLM receives the full current knowledge so it can avoid redundancy and propose corrections. Recent steps are kept in full detail.
+**Phase 1 — Step Compression + Knowledge Extraction:** Older action steps are summarized by the LLM into `CompressedHistoryStep` instances. The same LLM call also extracts knowledge updates, which are applied to the persistent knowledge store immediately. The LLM receives both the full compressed history (past events) and the full knowledge store (current facts) so it can avoid all duplication and propose corrections. Recent steps are kept in full detail.
 
 **Phase 2 — Knowledge Refinement:** When compressed steps accumulate beyond a threshold, older ones are merged into the knowledge store via a separate LLM call. The merged compressed steps are then removed entirely. This phase refines and consolidates knowledge that may have been partially captured in Phase 1.
 
@@ -72,7 +72,7 @@ Key functions:
 - `estimate_tokens(text)` — Character-based heuristic (~4 chars/token)
 - `estimate_step_tokens(step)` — Token estimate for a memory step
 - `should_preserve_step(step, config)` — Check if step must be kept
-- `create_compression_prompt(steps, knowledge)` — Build LLM prompt for step summarization with knowledge-aware context; requests structured `<summary>` + optional `<knowledge_updates>` output
+- `create_compression_prompt(steps, knowledge, existing_summaries)` — Build LLM prompt for step summarization with full context: existing compressed history (to avoid duplicating events) and knowledge store (current facts, updatable). Requests structured `<summary>` + optional `<knowledge_updates>` output
 - `parse_compression_output(raw_output)` — Parse structured LLM output into `(summary, knowledge_updates)` with graceful fallback for unstructured output
 - `create_knowledge_extraction_prompt(steps, tag_names)` — Build LLM prompt for Phase 2 knowledge extraction
 - `create_merge_prompt(steps)` — Build prompt for merging compressed steps
@@ -214,7 +214,7 @@ bpsa
 - **Callback-based:** Uses existing callback system for clean integration without modifying the agent loop
 - **Token estimation:** Character heuristic (4 chars/token) since no proactive token counting exists
 - **Graceful fallback:** If compression LLM call fails, keep original steps and log warning. If LLM doesn't follow structured format, entire output becomes the summary with no knowledge changes.
-- **Combined summary + knowledge in Phase 1:** Single LLM call produces both summary and knowledge updates. The LLM sees the full knowledge store so it can avoid redundancy and propose corrections. Zero extra cost.
+- **Combined summary + knowledge in Phase 1:** Single LLM call produces both summary and knowledge updates. The LLM sees the full compressed history AND knowledge store so it can avoid all duplication. The prompt explains the distinction: compressed history = events/changes over time, knowledge = current beliefs/facts. Zero extra cost.
 - **Two-phase design:** Phase 1 extracts knowledge from full original steps (high fidelity). Phase 2 refines/consolidates from compressed summaries when they accumulate. Both phases use `merge_context()` for consistent tagged XML operations.
 - **Tagged XML for knowledge:** Simple, parseable format that supports incremental updates via diff operations
 - **Knowledge placement:** Injected near end of context for high attention weight in transformer models
