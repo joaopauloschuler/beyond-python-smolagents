@@ -2541,6 +2541,7 @@ class PlanningTool(Tool):
     """
 
     name = "plan"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Call this tool whenever you need help to create or update your plan. "
         "Use it when starting a complex task, when your current approach is failing, "
@@ -2647,6 +2648,7 @@ class MoveActionStepToMemory(Tool):
     """
 
     name = "move_actionstep_to_memory"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Move content from a specific ActionStep out of the active context into memory. "
         "This reduces context size while preserving the original content for later retrieval. "
@@ -2726,6 +2728,7 @@ class RetrieveActionStepFromMemory(Tool):
     """
 
     name = "move_actionstep_from_memory"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Restore content that was previously moved to memory back into the active context. "
         "Use this when you need to re-examine a step's response or model_output that was archived. "
@@ -2802,6 +2805,7 @@ class SummarizeActionStep(Tool):
     """
 
     name = "summarize_actionstep"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Summarize content from a specific ActionStep using custom instructions. "
         "This replaces the content with an LLM-generated summary while archiving the original for later retrieval. "
