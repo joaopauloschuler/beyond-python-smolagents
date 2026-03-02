@@ -58,19 +58,13 @@ exactly.
 
 ---
 
-### 4. Reconstruction vs. Recording
-**BPSA:** Graceful fallback — if the LLM doesn't follow structured format, the whole output becomes the summary anyway. Knowledge is reconstructed, not byte-copied.
-**Human mind:** Bartlett (1932) showed memory is **reconstructive**, not reproductive. We don't record facts — we rebuild them each time from schemas. Compression is lossy by design, and that's *fine*.
-
----
-
-### 5. Schemas / Semantic Networks → Tagged XML Knowledge
+### 4. Schemas / Semantic Networks → Tagged XML Knowledge
 **BPSA:** Knowledge stored as tagged XML sections (`<plan>`, `<key_findings>`, `<current_status>`). Sections can be added, updated, or deleted via diff operations.
 **Human mind:** Cognitive psychologists call these **schemas** — organised clusters of knowledge with labels and relationships, updated incrementally as new information arrives. The `merge_context()` add/update/delete operations mirror how schemas are revised.
 
 ---
 
-### 6. Metacognition → Agent-Driven Knowledge Updates
+### 5. Metacognition → Agent-Driven Knowledge Updates
 **BPSA:** The `update_knowledge` tool lets the *agent itself* explicitly revise its knowledge store at any point during live execution.
 **Human mind:** **Metacognition** — the ability to consciously reflect on and revise one's own beliefs. This is the highest-level memory operation, reserved for deliberate reasoning — exactly what the live agent does when it calls `update_knowledge`.
 
