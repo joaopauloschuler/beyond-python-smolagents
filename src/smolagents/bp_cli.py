@@ -1352,8 +1352,15 @@ def cmd_session_load(agent, args: str) -> dict | None:
         console.print("[yellow]Usage: /session-load <filename>[/]")
         return None
     if not os.path.isfile(filename):
-        console.print(f"[red]File not found: {filename}[/]")
-        return None
+        # Try appending .json if no extension was given
+        if not os.path.splitext(filename)[1] and os.path.isfile(filename + ".json"):
+            filename = filename + ".json"
+        else:
+            if not os.path.splitext(filename)[1]:
+                console.print(f"[red]File not found: {filename} (also tried {filename}.json)[/]")
+            else:
+                console.print(f"[red]File not found: {filename}[/]")
+            return None
     try:
         stats = load_session(filename, agent)
         step_count = len(agent.memory.steps)
