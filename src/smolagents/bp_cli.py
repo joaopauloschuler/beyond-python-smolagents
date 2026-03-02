@@ -325,7 +325,7 @@ def build_model(override_model_id=None):
     return model
 
 
-def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False):
+def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, mcp_servers=None):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -337,6 +337,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     tools = list(DEFAULT_THINKER_TOOLS)
     browser_manager = None
     gui_manager = None
+    mcp_client = None
 
     # Image tools — always available (Pillow only; tesseract optional for OCR)
     from smolagents.bp_tools import LoadImageTool, load_image_callback
@@ -355,6 +356,11 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         from smolagents.bp_tools_gui import create_gui_tools
         gui_manager, gui_tools = create_gui_tools()
         tools.extend(gui_tools)
+
+    if mcp_servers:
+        from smolagents import MCPClient
+        mcp_client = MCPClient(mcp_servers, structured_output=True)
+        tools.extend(mcp_client.__enter__())
 
     step_cbs = [_compact_step_callback, load_image_callback]
     if gui_manager:
@@ -391,6 +397,9 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
 
     if gui_manager:
         agent._gui_manager = gui_manager
+
+    if mcp_client:
+        agent._mcp_client = mcp_client
 
     return agent
 
@@ -1777,6 +1786,38 @@ def _shutdown_gui(agent):
         manager.shutdown()
 
 
+def _parse_mcp_servers(mcp_list: list[str]):
+    """Parse a list of MCP server strings into server_parameters dicts/objects.
+
+    Each entry is either:
+      - An HTTP URL: {"url": "...", "transport": "streamable-http"}
+      - A command string: StdioServerParameters(command, args=[...])
+    """
+    import shlex
+    from mcp import StdioServerParameters
+    result = []
+    for spec in mcp_list:
+        spec = spec.strip()
+        if not spec:
+            continue
+        if spec.startswith("http://") or spec.startswith("https://"):
+            result.append({"url": spec, "transport": "streamable-http"})
+        else:
+            parts = shlex.split(spec)
+            result.append(StdioServerParameters(command=parts[0], args=parts[1:]))
+    return result
+
+
+def _shutdown_mcp(agent):
+    """Disconnect MCP client if one exists on the agent."""
+    client = getattr(agent, "_mcp_client", None)
+    if client:
+        try:
+            client.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -1785,13 +1826,13 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -1813,16 +1854,17 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         if manager:
             manager.shutdown()
         _shutdown_gui(agent)
+        _shutdown_mcp(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -1944,6 +1986,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             _shutdown_voice()
             _shutdown_browser(agent)
             _shutdown_gui(agent)
+            _shutdown_mcp(agent)
             console.print("[dim]Goodbye![/]")
             break
 
@@ -1999,6 +2042,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 _shutdown_voice()
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
+                _shutdown_mcp(agent)
                 console.print("[dim]Goodbye![/]")
                 break
             elif cmd == "/help":
@@ -2040,7 +2084,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/clear":
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+                _shutdown_mcp(agent)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -2347,6 +2392,10 @@ def main():
         "--gui-x11", action="store_true",
         help="Enable native GUI interaction tools (screenshot, click, type, key via xdotool/ImageMagick on X11)",
     )
+    parser.add_argument(
+        "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
+        help="Connect an MCP server. Use a URL for HTTP servers or a shell command for stdio servers. Can be repeated for multiple servers.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
@@ -2358,20 +2407,21 @@ def main():
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")
+    mcp_servers = _parse_mcp_servers(args.mcp or []) or None
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
 
 
 if __name__ == "__main__":
