@@ -79,10 +79,11 @@ class Timing:
 
 
 class Monitor:
-    def __init__(self, tracked_model, logger):
+    def __init__(self, tracked_model, logger, memory=None):
         self.step_durations = []
         self.tracked_model = tracked_model
         self.logger = logger
+        self.memory = memory
         self.total_input_token_count = 0
         self.total_output_token_count = 0
 
@@ -121,6 +122,9 @@ class Monitor:
             step_log.context_chars = ctx_chars
             console_outputs += f"| Context: {ctx_chars:,} chars"
 
+        knowledge = getattr(self.memory, "knowledge", "") if self.memory else ""
+        if knowledge:
+            console_outputs += f"| Knowledge: {len(knowledge):,} chars"
         console_outputs += "]"
         self.logger.log(Text(console_outputs, style="dim"), level=1)
 

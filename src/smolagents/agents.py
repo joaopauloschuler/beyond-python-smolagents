@@ -366,7 +366,7 @@ class MultiStepAgent(ABC):
         else:
             self.logger = logger
 
-        self.monitor = Monitor(self.model, self.logger)
+        self.monitor = Monitor(self.model, self.logger, memory=self.memory)
         self._setup_step_callbacks(step_callbacks)
         self._setup_compression(compression_config)
         self.stream_outputs = False
