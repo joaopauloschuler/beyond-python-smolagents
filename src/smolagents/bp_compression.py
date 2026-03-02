@@ -397,6 +397,7 @@ include a <knowledge_updates> section. Use XML tags to add, update, or delete se
 You can add/update/delete as many <tag_name>s as you see fit. 
 
 If no knowledge updates are needed, omit the <knowledge_updates> section entirely.
+In the case that you spot any other error in the knowledge, you can fix as you see fit.
 
 Output format:
 <summary>
@@ -609,8 +610,12 @@ Use descriptive tag names (e.g., <plan>, <architecture>, <key_findings>, <curren
 
     post_steps_section = _build_post_steps_section(post_steps)
 
-    return f"""Extract key knowledge from the following {len(compressed_steps)} summaries
+    return f"""Hello super-intelligence!
+Please extract key knowledge from the following {len(compressed_steps)} summaries
 covering {total_steps} total steps of agent execution.
+These summaries are about to be removed from the context. Therefore, updating the knowledge
+with any relevant information is important. In the case that you spot any other error in
+the knowledge, you can fix as you see fit.
 
 Output the knowledge as XML-tagged sections. Each section should contain concise,
 factual information that would be useful for continuing the task.
