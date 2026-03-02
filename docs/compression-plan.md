@@ -224,3 +224,92 @@ bpsa
 1. Run existing tests: `pytest tests/test_memory.py tests/test_agents.py`
 2. Run compression tests: `pytest tests/test_compression.py`
 3. Manual test: Create agent with compression enabled, run multi-step task, verify memory gets compressed and knowledge accumulates from Phase 1
+
+---
+
+## Inspirations from Biology
+
+The two-phase compression pipeline was designed from first principles, yet it converges
+remarkably closely on the **Standard Model of Memory Consolidation** — the dominant
+neuroscientific theory of how biological brains move experiences from short-term storage
+into long-term knowledge. The parallels are not superficial; they reflect deep structural
+constraints that any system managing finite working memory over unbounded experience must
+eventually solve.
+
+### The Deepest Parallel
+
+The entire two-phase design mirrors the **Standard Model of Memory Consolidation**:
+
+```
+Experience → Hippocampus (short-lived, detailed)
+                ↓  (sleep / Phase 1)
+           Compressed replay → early neocortex
+                ↓  (deeper sleep / Phase 2)
+           Abstract semantic knowledge → late neocortex
+                ↓
+           Hippocampus no longer needed for retrieval
+```
+
+Replace hippocampus with "action steps", early neocortex with "CompressedHistoryStep",
+late neocortex with "knowledge store" — and you have BPSA's compression pipeline almost
+exactly.
+
+---
+
+### 1. Working Memory vs. Long-Term Memory
+**BPSA:** Recent steps kept in **full detail** (`keep_recent_steps`). Older steps compressed into summaries.
+**Human mind:** The **prefrontal cortex** holds a small working memory buffer (~7±2 items, Miller 1956) in full resolution. Older experiences are consolidated and compressed by the hippocampus over time.
+
+> *"Keep 40 recent steps in full" is literally what your brain does right now — you remember today in detail, last Tuesday as a blur.*
+
+---
+
+### 2. Sleep Consolidation → Phase 1 + Phase 2
+**BPSA:** Two-phase pipeline — Phase 1 compresses live steps + extracts knowledge; Phase 2 merges accumulated compressed steps into deeper knowledge.
+**Human mind:** Sleep has **two consolidation phases** — slow-wave sleep (SWS) replays episodic memories from hippocampus to neocortex (Phase 1 analog), and REM sleep abstracts and integrates those replays into semantic knowledge (Phase 2 analog).
+
+> *Phase 2 in BPSA ("merge_compressed when they accumulate") maps almost perfectly to REM sleep — a second pass that refines, consolidates, and removes raw episodes.*
+
+---
+
+### 3. Episodic vs. Semantic Memory
+**BPSA:** `CompressedHistoryStep` = what happened (events, actions taken). `knowledge` store = what is currently true (facts, beliefs, current state).
+**Human mind:** **Episodic memory** = "I did X at time T." **Semantic memory** = "X is true." The brain explicitly separates these. Old episodic memories gradually convert to semantic ones — exactly what Phase 2 does.
+
+> *"Compressed history = events/changes over time; knowledge = current beliefs/facts" — this is straight from cognitive psychology textbooks.*
+
+---
+
+### 4. Reconstruction vs. Recording
+**BPSA:** Graceful fallback — if the LLM doesn't follow structured format, the whole output becomes the summary anyway. Knowledge is reconstructed, not byte-copied.
+**Human mind:** Bartlett (1932) showed memory is **reconstructive**, not reproductive. We don't record facts — we rebuild them each time from schemas. Compression is lossy by design, and that's *fine*.
+
+---
+
+### 5. Schemas / Semantic Networks → Tagged XML Knowledge
+**BPSA:** Knowledge stored as tagged XML sections (`<plan>`, `<key_findings>`, `<current_status>`). Sections can be added, updated, or deleted via diff operations.
+**Human mind:** Cognitive psychologists call these **schemas** — organised clusters of knowledge with labels and relationships, updated incrementally as new information arrives. The `merge_context()` add/update/delete operations mirror how schemas are revised.
+
+---
+
+### 6. Attention Weight → Knowledge Placement
+**BPSA:** Knowledge injected **near the end of context** — "for high attention weight in transformer models."
+**Human mind:** The **recency effect** — items presented last in a sequence are better recalled. Also, the brain gives elevated attention to currently-active goals and beliefs (**Global Workspace Theory**, Baars 1988). Placing knowledge last is the LLM equivalent.
+
+---
+
+### 7. The Forgetting Curve → `min_compression_chars`
+**BPSA:** Skip compression if content is below 4096 chars — don't waste a compression call on already-tiny content.
+**Human mind:** Ebbinghaus's **forgetting curve** — trivial, low-information experiences are never consolidated at all. The brain applies an implicit threshold: only emotionally or informationally significant events get replayed and stored.
+
+---
+
+### 8. Motivated Forgetting → `preserve_final_answer_steps`
+**BPSA:** Final answer steps are *never* compressed away — flagged as important and preserved unconditionally.
+**Human mind:** The brain prioritises **goal-relevant memories**. We remember outcomes and conclusions far longer than intermediate steps. A chess player remembers the winning move, not every prior calculation.
+
+---
+
+### 9. Metacognition → Agent-Driven Knowledge Updates
+**BPSA:** The `update_knowledge` tool lets the *agent itself* explicitly revise its knowledge store at any point during live execution.
+**Human mind:** **Metacognition** — the ability to consciously reflect on and revise one's own beliefs. This is the highest-level memory operation, reserved for deliberate reasoning — exactly what the live agent does when it calls `update_knowledge`.
