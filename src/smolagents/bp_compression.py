@@ -239,6 +239,7 @@ def create_compression_prompt(
     steps_to_compress: list[MemoryStep],
     knowledge: str = "",
     existing_summaries: list["CompressedHistoryStep"] | None = None,
+    post_steps: list[MemoryStep] | None = None,
 ) -> str:
     """Create the prompt for the compression LLM call.
 
@@ -256,6 +257,8 @@ def create_compression_prompt(
         steps_to_compress: List of memory steps to summarize.
         knowledge: Current knowledge store content (tagged XML). Empty string if none.
         existing_summaries: Already-compressed history steps to avoid duplicating.
+        post_steps: Steps that occurred AFTER the batch being compressed. Shown to the
+            compressor so it can see what is still current vs already superseded.
 
     Returns:
         The prompt string for the compression LLM call.
@@ -314,6 +317,37 @@ The agent has a persistent knowledge store containing current beliefs and facts:
     else:
         knowledge_section = ""
 
+    # Build subsequent steps section (steps AFTER the batch being compressed)
+    if post_steps:
+        post_step_descs = []
+        for step in post_steps:
+            if isinstance(step, ActionStep):
+                desc = f"Step {step.step_number}:"
+                if step.model_output:
+                    output = str(step.model_output)[:500]  # keep brief
+                    desc += f"\n<model_output>{output}</model_output>"
+                if step.observations:
+                    obs = str(step.observations)[:300]
+                    desc += f"\n<result>{obs}</result>"
+                post_step_descs.append('<step>' + desc + '</step>')
+            elif isinstance(step, PlanningStep):
+                plan = (step.plan or "")[:400]
+                post_step_descs.append('<step><plan>' + plan + '</plan></step>')
+        if post_step_descs:
+            post_steps_text = "<\n>".join(post_step_descs)
+            post_steps_section = f"""
+The following steps occurred AFTER the batch you are summarizing. Use them to understand
+what is still current and what has already been superseded. Do NOT summarize these steps —
+they will remain in full detail. Only use them as context to avoid writing stale knowledge.
+<subsequent_steps>
+{post_steps_text}
+</subsequent_steps>
+"""
+        else:
+            post_steps_section = ""
+    else:
+        post_steps_section = ""
+
     # Build deduplication and output instructions
     dedup_parts = []
     if has_history:
@@ -357,7 +391,7 @@ Your concise summary of new events and changes...
     return f"""Hello super-intelligence!
 To your own benefit, please summarize the following agent execution history into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
-{history_section}{knowledge_section}{output_instruction}
+{history_section}{knowledge_section}{post_steps_section}{output_instruction}
 This is the execution history to summarize:
 <execution_history>
 {steps_text}
@@ -705,9 +739,18 @@ class ContextCompressor:
         # Collect existing compressed history for deduplication
         existing_summaries = [s for s in steps if isinstance(s, CompressedHistoryStep)]
 
+        # Steps occurring AFTER the batch being compressed (kept in full detail).
+        # Pass these to the compressor so it can see what is still current and
+        # avoid writing knowledge that was already superseded by later steps.
+        max_to_compress_index = max(to_compress_indices)
+        post_steps = [
+            steps[i] for i in range(max_to_compress_index + 1, len(steps))
+            if not isinstance(steps[i], (TaskStep, CompressedHistoryStep))
+        ]
+
         # Generate summary using LLM (history + knowledge aware)
         compression_prompt = create_compression_prompt(
-            steps_to_compress, knowledge, existing_summaries
+            steps_to_compress, knowledge, existing_summaries, post_steps=post_steps
         )
 
         try:
