@@ -605,6 +605,7 @@ SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
     "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
+    "/compression-set-high", "/compression-set-low", "/compression-set-normal",
     "/compression-model", "/dictation", "/exit", "/help",
     "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
@@ -630,6 +631,9 @@ def print_help():
     table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
     table.add_row("/compression-keep-compressed-steps <N>", "Change keep_compressed_steps")
     table.add_row("/compression-max-compressed-steps <N>", "Change max_compressed_steps")
+    table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
+    table.add_row("/compression-set-normal", "Set compression preset: NORMAL (balanced)")
+    table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
@@ -1265,6 +1269,66 @@ def cmd_compression_max_compressed(agent, args: str):
         console.print(f"[green]max_compressed_steps set to {n}[/]")
     except ValueError:
         console.print("[red]Invalid number. Usage: /compression-max-compressed-steps <N>[/]")
+
+
+def cmd_compression_set_high(agent):
+    """Set compression to HIGH preset (aggressive)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 10
+    config.max_uncompressed_steps = 13
+    config.keep_compressed_steps = 10
+    config.max_compressed_steps = 13
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "HIGH")
+    table.add_row("keep_recent_steps", "10")
+    table.add_row("max_uncompressed_steps", "13")
+    table.add_row("keep_compressed_steps", "10")
+    table.add_row("max_compressed_steps", "13")
+    console.print(table)
+
+
+def cmd_compression_set_normal(agent):
+    """Set compression to NORMAL preset (balanced)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 40
+    config.max_uncompressed_steps = 50
+    config.keep_compressed_steps = 10
+    config.max_compressed_steps = 20
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "NORMAL")
+    table.add_row("keep_recent_steps", "40")
+    table.add_row("max_uncompressed_steps", "50")
+    table.add_row("keep_compressed_steps", "10")
+    table.add_row("max_compressed_steps", "20")
+    console.print(table)
+
+
+def cmd_compression_set_low(agent):
+    """Set compression to LOW preset (conservative)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 90
+    config.max_uncompressed_steps = 100
+    config.keep_compressed_steps = 20
+    config.max_compressed_steps = 40
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "LOW")
+    table.add_row("keep_recent_steps", "90")
+    table.add_row("max_uncompressed_steps", "100")
+    table.add_row("keep_compressed_steps", "20")
+    table.add_row("max_compressed_steps", "40")
+    console.print(table)
 
 
 def cmd_compression_model(agent, args: str):
@@ -2076,6 +2140,15 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/compression-max-compressed-steps":
                 cmd_compression_max_compressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-set-high":
+                cmd_compression_set_high(agent)
+                continue
+            elif cmd == "/compression-set-normal":
+                cmd_compression_set_normal(agent)
+                continue
+            elif cmd == "/compression-set-low":
+                cmd_compression_set_low(agent)
                 continue
             elif cmd == "/compression-model":
                 cmd_compression_model(agent, cmd_args)
