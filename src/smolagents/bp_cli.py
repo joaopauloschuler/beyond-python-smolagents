@@ -603,7 +603,8 @@ def _save_aliases(aliases: dict):
 
 SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
-    "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
+    "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
+    "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
     "/compression-model", "/dictation", "/exit", "/help",
     "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
@@ -627,6 +628,8 @@ def print_help():
     table.add_row(r"/compression \[on|off]", "Toggle compression on/off")
     table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
     table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
+    table.add_row("/compression-keep-compressed-steps <N>", "Change keep_compressed_steps")
+    table.add_row("/compression-max-compressed-steps <N>", "Change max_compressed_steps")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
@@ -1222,6 +1225,46 @@ def cmd_compression_max_uncompressed(agent, args: str):
         console.print(f"[green]max_uncompressed_steps set to {n}[/]")
     except ValueError:
         console.print("[red]Invalid number. Usage: /compression-max-uncompressed-steps <N>[/]")
+
+
+def cmd_compression_keep_compressed(agent, args: str):
+    """Change keep_compressed_steps."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current keep_compressed_steps: {config.keep_compressed_steps}[/]")
+        console.print("[dim]Usage: /compression-keep-compressed-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 0:
+            raise ValueError
+        config.keep_compressed_steps = n
+        console.print(f"[green]keep_compressed_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-keep-compressed-steps <N>[/]")
+
+
+def cmd_compression_max_compressed(agent, args: str):
+    """Change max_compressed_steps."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current max_compressed_steps: {config.max_compressed_steps}[/]")
+        console.print("[dim]Usage: /compression-max-compressed-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 0:
+            raise ValueError
+        config.max_compressed_steps = n
+        console.print(f"[green]max_compressed_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-max-compressed-steps <N>[/]")
 
 
 def cmd_compression_model(agent, args: str):
@@ -2020,6 +2063,12 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/compression-max-uncompressed-steps":
                 cmd_compression_max_uncompressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-keep-compressed-steps":
+                cmd_compression_keep_compressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-max-compressed-steps":
+                cmd_compression_max_compressed(agent, cmd_args)
                 continue
             elif cmd == "/compression-model":
                 cmd_compression_model(agent, cmd_args)
