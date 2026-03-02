@@ -295,7 +295,7 @@ class TestCreateCompressionPrompt:
         assert "<current_knowledge>" in prompt
         assert "plan" in prompt
         assert "architecture" in prompt
-        assert "should NOT repeat" in prompt
+        assert "Do NOT repeat" in prompt
         assert "<knowledge_updates>" in prompt
 
     def test_creates_prompt_without_knowledge(self):
@@ -328,6 +328,55 @@ class TestCreateCompressionPrompt:
         prompt = create_compression_prompt(steps, knowledge="   ")
         assert "<current_knowledge>" not in prompt
 
+
+
+    def test_creates_prompt_with_existing_summaries(self):
+        steps = [
+            ActionStep(
+                step_number=5,
+                model_input_messages=[],
+                model_output="Implemented API endpoint",
+                observations="Tests pass",
+                model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Done"),
+                timing=Timing(start_time=0, end_time=1),
+            ),
+        ]
+        summaries = [
+            CompressedHistoryStep(
+                summary="Set up database and created schema.",
+                compressed_step_numbers=[1, 2],
+                original_step_count=2,
+            ),
+        ]
+        prompt = create_compression_prompt(steps, knowledge="", existing_summaries=summaries)
+        assert "<compressed_history>" in prompt
+        assert "Set up database" in prompt
+        assert "Do NOT repeat" in prompt
+
+    def test_creates_prompt_with_both_history_and_knowledge(self):
+        steps = [
+            ActionStep(
+                step_number=5,
+                model_input_messages=[],
+                model_output="Fixed the bug",
+                observations="All tests pass",
+                model_output_message=ChatMessage(role=MessageRole.ASSISTANT, content="Done"),
+                timing=Timing(start_time=0, end_time=1),
+            ),
+        ]
+        summaries = [
+            CompressedHistoryStep(
+                summary="Explored codebase and found the bug.",
+                compressed_step_numbers=[1, 2, 3],
+                original_step_count=3,
+            ),
+        ]
+        knowledge = "<architecture>REST API with PostgreSQL</architecture>"
+        prompt = create_compression_prompt(steps, knowledge=knowledge, existing_summaries=summaries)
+        assert "<compressed_history>" in prompt
+        assert "<current_knowledge>" in prompt
+        assert "compressed history" in prompt.lower()
+        assert "knowledge" in prompt.lower()
 
 
 

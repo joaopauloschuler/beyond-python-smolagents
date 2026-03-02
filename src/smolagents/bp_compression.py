@@ -238,19 +238,24 @@ def should_preserve_step(step: MemoryStep, config: CompressionConfig) -> bool:
 def create_compression_prompt(
     steps_to_compress: list[MemoryStep],
     knowledge: str = "",
+    existing_summaries: list["CompressedHistoryStep"] | None = None,
 ) -> str:
     """Create the prompt for the compression LLM call.
 
     Builds a structured representation of the steps to compress and asks
     the LLM to generate a concise summary preserving key information.
 
-    When knowledge is provided, the full knowledge store is included so the
-    LLM can avoid redundancy and also propose knowledge updates (corrections,
-    new findings) as part of its output.
+    The prompt provides two types of existing context to avoid duplication:
+    - **Compressed history** (existing_summaries): chronological record of past events
+      and changes. The new summary should complement, not repeat, this history.
+    - **Knowledge** (knowledge): current beliefs and facts. The LLM can propose
+      updates to knowledge when the execution history reveals corrections or
+      important new information.
 
     Args:
         steps_to_compress: List of memory steps to summarize.
         knowledge: Current knowledge store content (tagged XML). Empty string if none.
+        existing_summaries: Already-compressed history steps to avoid duplicating.
 
     Returns:
         The prompt string for the compression LLM call.
@@ -278,17 +283,61 @@ def create_compression_prompt(
 
     steps_text = "<\n>".join(step_descriptions)
 
-    if knowledge and knowledge.strip():
+    # Build compressed history section
+    history_section = ""
+    if existing_summaries:
+        history_parts = []
+        for s in existing_summaries:
+            history_parts.append(s.summary)
+        history_text = "\n---\n".join(history_parts)
+        history_section = f"""
+The following is the compressed history of earlier work (events and changes over time).
+Do NOT repeat any information already captured in the compressed history.
+Your summary should only describe NEW events, actions, and changes from the execution history below.
+
+<compressed_history>
+{history_text}
+</compressed_history>
+"""
+
+    # Build knowledge section
+    has_knowledge = knowledge and knowledge.strip()
+    has_history = bool(existing_summaries)
+
+    if has_knowledge:
         knowledge_section = f"""
-The agent has a persistent knowledge store with the following content:
+The agent has a persistent knowledge store containing current beliefs and facts:
 <current_knowledge>
 {knowledge}
 </current_knowledge>
+"""
+    else:
+        knowledge_section = ""
 
-Your summary should NOT repeat information already in knowledge.
-If the execution history contains corrections or important new information that
-should update the knowledge store, include a <knowledge_updates> section after
-your summary. Use XML tags to add, update, or delete knowledge sections:
+    # Build deduplication and output instructions
+    dedup_parts = []
+    if has_history:
+        dedup_parts.append("the compressed history (past events)")
+    if has_knowledge:
+        dedup_parts.append("the knowledge store (current facts)")
+
+    if dedup_parts:
+        dedup_instruction = f"Do NOT repeat information already in {' or '.join(dedup_parts)}."
+    else:
+        dedup_instruction = ""
+
+    output_instruction = f"""
+{dedup_instruction}
+
+There are two distinct stores:
+- **Compressed history** captures events, changes, and what happened over time.
+- **Knowledge** captures current beliefs, facts, and the latest state of things.
+
+Your summary will be added to the compressed history. It should describe what happened
+(events, actions, outcomes, changes) without repeating prior history entries.
+
+If the execution history reveals important new facts or corrections to existing knowledge,
+include a <knowledge_updates> section. Use XML tags to add, update, or delete sections:
 - To ADD or UPDATE: <tag_name>new content</tag_name>
 - To DELETE an obsolete section: <tag_name/>
 
@@ -296,33 +345,17 @@ If no knowledge updates are needed, omit the <knowledge_updates> section entirel
 
 Output format:
 <summary>
-Your concise summary here...
+Your concise summary of new events and changes...
 </summary>
 <knowledge_updates>
 ...tagged updates if any...
 </knowledge_updates>
 """
-    else:
-        knowledge_section = """
-If the execution history contains important information worth remembering
-long-term, include a <knowledge_updates> section after your summary with
-tagged XML sections (e.g., <plan>...</plan>, <architecture>...</architecture>).
-
-If no knowledge is worth extracting yet, omit the <knowledge_updates> section.
-
-Output format:
-<summary>
-Your concise summary here...
-</summary>
-<knowledge_updates>
-...tagged sections if any...
-</knowledge_updates>
-"""
 
     return f"""Summarize the following agent execution history into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
-{knowledge_section}
-This is the execution history:
+{history_section}{knowledge_section}{output_instruction}
+This is the execution history to summarize:
 <execution_history>
 {steps_text}
 </execution_history>
@@ -666,8 +699,13 @@ class ContextCompressor:
                 logger.info(f"Compression skipped: content ({original_chars} chars) < min_compression_chars ({self.config.min_compression_chars})")
             return steps, knowledge
 
-        # Generate summary using LLM (knowledge-aware: also extracts knowledge updates)
-        compression_prompt = create_compression_prompt(steps_to_compress, knowledge)
+        # Collect existing compressed history for deduplication
+        existing_summaries = [s for s in steps if isinstance(s, CompressedHistoryStep)]
+
+        # Generate summary using LLM (history + knowledge aware)
+        compression_prompt = create_compression_prompt(
+            steps_to_compress, knowledge, existing_summaries
+        )
 
         try:
             summary_message = self.compression_model.generate(
