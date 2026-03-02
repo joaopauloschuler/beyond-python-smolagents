@@ -341,6 +341,8 @@ include a <knowledge_updates> section. Use XML tags to add, update, or delete se
 - To ADD or UPDATE: <tag_name>new content</tag_name>
 - To DELETE an obsolete section: <tag_name/>
 
+You can add/update/delete as many <tag_name>s as you see fit. 
+
 If no knowledge updates are needed, omit the <knowledge_updates> section entirely.
 
 Output format:
@@ -352,7 +354,8 @@ Your concise summary of new events and changes...
 </knowledge_updates>
 """
 
-    return f"""Summarize the following agent execution history into a concise summary.
+    return f"""Hello super-intelligence!
+To your own benefit, please summarize the following agent execution history into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
 {history_section}{knowledge_section}{output_instruction}
 This is the execution history to summarize:
