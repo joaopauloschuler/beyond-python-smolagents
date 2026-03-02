@@ -874,9 +874,9 @@ def print_stats(session_stats: dict, agent=None):
         table.add_row("  Tool descriptions", f"{breakdown['tools']:,} chars")
     if agent:
         knowledge = getattr(agent.memory, "knowledge", "")
-        if knowledge:
-            table.add_row("", "")
-            table.add_row("Knowledge store", f"{len(knowledge):,} chars")
+        knowledge_chars = len(knowledge) if knowledge else 0
+        table.add_row("", "")
+        table.add_row("Knowledge store", f"{knowledge_chars:,} chars")
     console.print(table)
     console.print()
 
