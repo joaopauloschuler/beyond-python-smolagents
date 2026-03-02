@@ -608,7 +608,7 @@ SLASH_COMMANDS = [
     "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
+    "/save-step", "/set-max-steps", "/show-knowledge", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -647,6 +647,7 @@ def print_help():
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
     table.add_row("/show-step <N>", "Show full content of a specific step")
     table.add_row("/show-steps", "Show one-line summary of all memory steps")
+    table.add_row("/show-knowledge", "Show the full content of the knowledge store")
     table.add_row("/show-stats", "Show session statistics")
     table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-tools", "List all loaded tools")
@@ -1502,6 +1503,23 @@ def cmd_show_steps(agent):
     console.print()
 
 
+
+def cmd_show_knowledge(agent):
+    """Show the full content of the knowledge store."""
+    from smolagents.bp_compression import list_xml_tag_names
+
+    knowledge = getattr(agent.memory, "knowledge", "")
+    if not knowledge:
+        console.print("[yellow]Knowledge is empty.[/]")
+        return
+
+    knowledge_tags = list_xml_tag_names(knowledge)
+    sections_info = f"{len(knowledge_tags)} section(s): {', '.join(knowledge_tags)}" if knowledge_tags else "no sections"
+    console.print(Rule(f"[bold]Knowledge[/] [dim]({len(knowledge):,} chars, {sections_info})[/]", style="blue"))
+    console.print(knowledge)
+    console.print()
+
+
 def cmd_undo(agent, args: str):
     """Remove the last N steps from agent memory. Default N=1."""
     from smolagents.memory import SystemPromptStep
@@ -2014,6 +2032,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-steps":
                 cmd_show_steps(agent)
+                continue
+            elif cmd == "/show-knowledge":
+                cmd_show_knowledge(agent)
                 continue
             elif cmd == "/undo-steps":
                 cmd_undo(agent, cmd_args)
