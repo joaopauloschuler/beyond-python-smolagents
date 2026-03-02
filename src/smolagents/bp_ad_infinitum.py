@@ -197,6 +197,8 @@ def print_banner(config: dict):
 
     browser_str = "[green]on[/]" if config.get("browser") else "off"
     gui_str = "[green]on[/]" if config.get("gui") else "off"
+    mcp_count = len(config.get("mcp") or [])
+    mcp_str = f"[green]{mcp_count} server(s)[/]" if mcp_count else "off"
 
     console.print(
         Panel.fit(
@@ -209,7 +211,8 @@ def print_banner(config: dict):
             f"Inject folder: {tree_str} | "
             f"Cooldown: {config['cooldown']}s\n"
             f"Browser: {browser_str} | "
-            f"GUI: {gui_str}",
+            f"GUI: {gui_str} | "
+            f"MCP: {mcp_str}",
             border_style="blue",
         )
     )
@@ -226,9 +229,9 @@ def print_banner(config: dict):
 
 
 def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=False, gui_enabled=False):
+             browser_enabled=False, gui_enabled=False, mcp_servers=None):
     """Core autonomous loop: cycles x tasks, fresh agent per task."""
-    from smolagents.bp_cli import _shutdown_browser, _shutdown_gui, build_agent
+    from smolagents.bp_cli import _shutdown_browser, _shutdown_gui, _shutdown_mcp, build_agent
 
     original_dir = os.getcwd()
     total_start = time.time()
@@ -259,7 +262,7 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                 if tree_folder:
                     prompt += inject_tree(tree_folder)
 
-                agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+                agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
                 if plan_interval:
                     agent.planning_interval = plan_interval
 
@@ -287,6 +290,7 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                     total_tasks_run += 1
                     console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
                 finally:
+                    _shutdown_mcp(agent)
                     _shutdown_browser(agent)
                     _shutdown_gui(agent)
 
@@ -355,6 +359,10 @@ def main():
         "--gui-x11", action="store_true", default=None,
         help="Enable native GUI interaction tools (overrides BPSA_GUI)",
     )
+    parser.add_argument(
+        "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
+        help="MCP server to connect (URL or shell command); repeatable",
+    )
     args = parser.parse_args()
 
     # Install Ctrl+C handler
@@ -381,6 +389,8 @@ def main():
 
     browser_enabled = args.browser if args.browser else get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 if args.gui_x11 else get_env_bool("BPSA_GUI")
+    from smolagents.bp_cli import _parse_mcp_servers
+    mcp_servers = _parse_mcp_servers(args.mcp or []) or None
 
     # Load tasks
     console.print("[dim]Loading tasks...[/]")
@@ -397,6 +407,7 @@ def main():
         "cooldown": cooldown,
         "browser": browser_enabled,
         "gui": gui_enabled,
+        "mcp": mcp_servers,
     }
     print_banner(config)
 
@@ -405,7 +416,7 @@ def main():
 
     # Run the loop
     run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+             browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
 
 
 if __name__ == "__main__":
