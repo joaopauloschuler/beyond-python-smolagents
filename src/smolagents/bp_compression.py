@@ -235,6 +235,53 @@ def should_preserve_step(step: MemoryStep, config: CompressionConfig) -> bool:
     return False
 
 
+def _build_post_steps_section(post_steps: list["MemoryStep"] | None) -> str:
+    """Build a <subsequent_steps> prompt section from steps that follow the compressed batch.
+
+    These steps are shown to the compressor as read-only context so it can avoid
+    writing stale knowledge that has already been superseded by later activity.
+
+    Args:
+        post_steps: Steps occurring after the batch being compressed. May be None or empty.
+
+    Returns:
+        A formatted prompt section string, or empty string if nothing to show.
+    """
+    if not post_steps:
+        return ""
+
+    post_step_descs = []
+    for step in post_steps:
+        if isinstance(step, ActionStep):
+            desc = f"Step {step.step_number}:"
+            if step.model_output:
+                output = str(step.model_output)[:500]
+                desc += f"\n<model_output>{output}</model_output>"
+            if step.observations:
+                obs = str(step.observations)[:300]
+                desc += f"\n<result>{obs}</result>"
+            post_step_descs.append("<step>" + desc + "</step>")
+        elif isinstance(step, PlanningStep):
+            plan = (step.plan or "")[:400]
+            post_step_descs.append("<step><plan>" + plan + "</plan></step>")
+        elif isinstance(step, CompressedHistoryStep):
+            summary = (step.summary or "")[:400]
+            post_step_descs.append(f"<step><compressed_summary>{summary}</compressed_summary></step>")
+
+    if not post_step_descs:
+        return ""
+
+    post_steps_text = "\n".join(post_step_descs)
+    return f"""
+The following steps occurred AFTER the batch you are summarizing. Use them to understand
+what is still current and what has already been superseded. Do NOT summarize these steps --
+they will remain in full detail. Only use them as context to avoid writing stale knowledge.
+<subsequent_steps>
+{post_steps_text}
+</subsequent_steps>
+"""
+
+
 def create_compression_prompt(
     steps_to_compress: list[MemoryStep],
     knowledge: str = "",
@@ -318,35 +365,7 @@ The agent has a persistent knowledge store containing current beliefs and facts:
         knowledge_section = ""
 
     # Build subsequent steps section (steps AFTER the batch being compressed)
-    if post_steps:
-        post_step_descs = []
-        for step in post_steps:
-            if isinstance(step, ActionStep):
-                desc = f"Step {step.step_number}:"
-                if step.model_output:
-                    output = str(step.model_output)[:500]  # keep brief
-                    desc += f"\n<model_output>{output}</model_output>"
-                if step.observations:
-                    obs = str(step.observations)[:300]
-                    desc += f"\n<result>{obs}</result>"
-                post_step_descs.append('<step>' + desc + '</step>')
-            elif isinstance(step, PlanningStep):
-                plan = (step.plan or "")[:400]
-                post_step_descs.append('<step><plan>' + plan + '</plan></step>')
-        if post_step_descs:
-            post_steps_text = "<\n>".join(post_step_descs)
-            post_steps_section = f"""
-The following steps occurred AFTER the batch you are summarizing. Use them to understand
-what is still current and what has already been superseded. Do NOT summarize these steps —
-they will remain in full detail. Only use them as context to avoid writing stale knowledge.
-<subsequent_steps>
-{post_steps_text}
-</subsequent_steps>
-"""
-        else:
-            post_steps_section = ""
-    else:
-        post_steps_section = ""
+    post_steps_section = _build_post_steps_section(post_steps)
 
     # Build deduplication and output instructions
     dedup_parts = []
@@ -546,6 +565,7 @@ def merge_context(existing: str, updates: str) -> str:
 def create_knowledge_extraction_prompt(
     compressed_steps: list[CompressedHistoryStep],
     existing_tag_names: list[str] | None = None,
+    post_steps: list[MemoryStep] | None = None,
 ) -> str:
     """Create a prompt for extracting knowledge from compressed summaries.
 
@@ -555,6 +575,8 @@ def create_knowledge_extraction_prompt(
     Args:
         compressed_steps: List of CompressedHistoryStep instances to extract knowledge from.
         existing_tag_names: List of tag names currently in the knowledge store.
+        post_steps: Steps occurring after the compressed batch. Passed as read-only context
+            so the LLM avoids writing knowledge that has already been superseded.
 
     Returns:
         The prompt string for the knowledge extraction LLM call.
@@ -585,6 +607,8 @@ There are no existing knowledge sections yet. Create new tagged sections for
 the important information found in the summaries below.
 Use descriptive tag names (e.g., <plan>, <architecture>, <key_findings>, <current_status>)."""
 
+    post_steps_section = _build_post_steps_section(post_steps)
+
     return f"""Extract key knowledge from the following {len(compressed_steps)} summaries
 covering {total_steps} total steps of agent execution.
 
@@ -593,7 +617,7 @@ factual information that would be useful for continuing the task.
 {existing_section}
 
 {COMMON_COMPRESSION_INSTRUCTIONS}
-
+{post_steps_section}
 <SUMMARIES>
 {summaries_text}
 </SUMMARIES>
@@ -934,8 +958,15 @@ class ContextCompressor:
             return steps, knowledge
 
         # Build knowledge extraction prompt and call LLM
+        # post_steps: everything NOT being merged (kept compressed + live recent steps)
+        # so the extractor knows what is still current vs already superseded
+        merge_set_ids = set(id(s) for s in steps_to_merge)
+        post_steps = [
+            s for s in steps
+            if id(s) not in merge_set_ids and not isinstance(s, (TaskStep, SystemPromptStep))
+        ]
         existing_tag_names = list_xml_tag_names(knowledge)
-        merge_prompt = create_knowledge_extraction_prompt(steps_to_merge, existing_tag_names)
+        merge_prompt = create_knowledge_extraction_prompt(steps_to_merge, existing_tag_names, post_steps)
 
         try:
             merge_message = self.compression_model.generate(
