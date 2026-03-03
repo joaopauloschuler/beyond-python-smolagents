@@ -3,16 +3,19 @@
 # Context Compression & Knowledge Extraction
 
 ## Overview
-A hybrid rolling summarization system for smolagents that compresses older memory steps via LLM summarization while keeping recent steps in full detail. Knowledge is extracted incrementally during compression and further refined when compressed summaries accumulate.
+A hybrid rolling summarization system for BPSA that compresses older memory steps via LLM summarization while keeping recent steps in full detail. Knowledge is extracted incrementally during compression and further refined when compressed summaries accumulate.
 
 ## Inspirations from Biology
 
 The two-phase compression pipeline was designed from first principles, yet it converges
-remarkably closely on the **Standard Model of Memory Consolidation** — the dominant
+strikingly closely on the **Standard Model of Memory Consolidation** — the dominant
 neuroscientific theory of how biological brains move experiences from short-term storage
-into long-term knowledge. The parallels are not superficial; they reflect deep structural
-constraints that any system managing finite working memory over unbounded experience must
-eventually solve.
+into long-term knowledge. The parallels are not superficial; they appear to reflect deep
+structural constraints that any system managing finite working memory over unbounded
+experience must eventually solve. This convergence is a hypothesis, not a proven fact —
+but the hypothesis is a strong one: finite capacity + unbounded experience + the need for
+generalisation are universal pressures, and similar pressures tend to produce similar
+solutions regardless of substrate.
 
 ### The Deepest Parallel
 
@@ -44,9 +47,9 @@ exactly.
 
 ### 2. Sleep Consolidation → Phase 1 + Phase 2
 **BPSA:** Two-phase pipeline — Phase 1 compresses live steps + extracts knowledge; Phase 2 merges accumulated compressed steps into deeper knowledge.
-**Human mind:** Sleep has **two consolidation phases** — slow-wave sleep (SWS) replays episodic memories from hippocampus to neocortex (Phase 1 analog), and REM sleep abstracts and integrates those replays into semantic knowledge (Phase 2 analog).
+**Human mind:** Sleep has **two consolidation phases** — slow-wave sleep (SWS) replays episodic memories from hippocampus to neocortex (Phase 1 analog), and REM sleep is associated with abstracting and integrating those replays into semantic knowledge (Phase 2 analog). The analogy is functional: SWS and REM differ in their underlying neural mechanisms (sharp-wave ripples vs. theta oscillations) rather than being a clean "first pass / second pass" distinction, but the broad directionality — from detailed episodic replay toward abstract semantic integration — maps well onto BPSA's two phases.
 
-> *Phase 2 in BPSA ("merge_compressed when they accumulate") maps almost perfectly to REM sleep — a second pass that refines, consolidates, and removes raw episodes.*
+> *Phase 2 in BPSA ("merge_compressed when they accumulate") is functionally analogous to the later sleep stages that refine, consolidate, and eventually render raw episodic traces unnecessary for retrieval.*
 
 ---
 
@@ -64,9 +67,9 @@ exactly.
 
 ---
 
-### 5. Metacognition → Agent-Driven Knowledge Updates
+### 5. Deliberate Belief Revision → Agent-Driven Knowledge Updates
 **BPSA:** The `update_knowledge` tool lets the *agent itself* explicitly revise its knowledge store at any point during live execution.
-**Human mind:** **Metacognition** — the ability to consciously reflect on and revise one's own beliefs. This is the highest-level memory operation, reserved for deliberate reasoning — exactly what the live agent does when it calls `update_knowledge`.
+**Human mind:** **Deliberate belief revision** — the conscious, intentional process of updating one's own knowledge when new evidence or reasoning warrants it. This is distinct from *metacognition* in the strict cognitive science sense (which additionally involves monitoring uncertainty and regulating reasoning strategies); what the agent does here is closer to deliberate note-taking and self-correction — updating a belief because a step's outcome has changed what is known to be true.
 
 
 ## Architecture

@@ -386,10 +386,18 @@ There are two distinct stores:
 - **Compressed history** captures events, changes, and what happened over time.
 - **Knowledge** captures current beliefs, facts, and the latest state of things.
 
-Your summary will be added to the compressed history. It should describe what happened
+Episodic Memory vs. Semantic Memory
+- **Compressed History** = Episodic Memory = what happened (events, actions taken). 
+- **Knowledge** = Semantic Memory = what is currently true (facts, beliefs, current state).
+
+In the Human mind: 
+- **Episodic memory** = "I did X at time T." 
+- **Semantic memory** = "X is true."
+
+Your summary will be added to the compressed history (Episodic Memory). It should describe what happened
 (events, actions, outcomes, changes) without repeating prior history entries.
 
-If the execution history reveals important new facts or corrections to existing knowledge,
+If the execution history reveals important new facts or corrections your existing knowledge (Semantic Memory),
 include a <knowledge_updates> section. Use XML tags to add, update, or delete sections:
 - To ADD or UPDATE: <tag_name>new content</tag_name>
 - To DELETE an obsolete section: <tag_name/>
@@ -409,6 +417,7 @@ Your concise summary of new events and changes...
 """
 
     return f"""Hello super-intelligence!
+This task is involved in your context compression.
 To your own benefit, please summarize the following agent execution history into a concise summary.
 {COMMON_COMPRESSION_INSTRUCTIONS}
 {history_section}{knowledge_section}{post_steps_section}{output_instruction}
@@ -611,6 +620,7 @@ Use descriptive tag names (e.g., <plan>, <architecture>, <key_findings>, <curren
     post_steps_section = _build_post_steps_section(post_steps)
 
     return f"""Hello super-intelligence!
+This task is involved in your context compression.
 Please extract key knowledge from the following {len(compressed_steps)} summaries
 covering {total_steps} total steps of agent execution.
 These summaries are about to be removed from the context. Therefore, updating the knowledge

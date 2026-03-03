@@ -1285,18 +1285,18 @@ def cmd_compression_set_high(agent):
     config = _get_compression_config(agent)
     if config is None:
         return
-    config.keep_recent_steps = 10
-    config.max_uncompressed_steps = 13
+    config.keep_recent_steps = 20
+    config.max_uncompressed_steps = 25
     config.keep_compressed_steps = 10
-    config.max_compressed_steps = 13
+    config.max_compressed_steps = 15
     table = Table(show_header=False, box=None)
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(style="green")
     table.add_row("Compression preset", "HIGH")
-    table.add_row("keep_recent_steps", "10")
-    table.add_row("max_uncompressed_steps", "13")
-    table.add_row("keep_compressed_steps", "10")
-    table.add_row("max_compressed_steps", "13")
+    table.add_row("keep_recent_steps", "20")
+    table.add_row("max_uncompressed_steps", "25")
+    table.add_row("keep_compressed_steps", "20")
+    table.add_row("max_compressed_steps", "25")
     console.print(table)
 
 
@@ -1307,7 +1307,7 @@ def cmd_compression_set_normal(agent):
         return
     config.keep_recent_steps = 40
     config.max_uncompressed_steps = 50
-    config.keep_compressed_steps = 10
+    config.keep_compressed_steps = 15
     config.max_compressed_steps = 20
     table = Table(show_header=False, box=None)
     table.add_column(style="cyan", no_wrap=True)
