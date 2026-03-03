@@ -38,38 +38,38 @@ exactly.
 ---
 
 ### 1. Working Memory vs. Long-Term Memory
-**BPSA:** Recent steps kept in **full detail** (`keep_recent_steps`). Older steps compressed into summaries.
-**Human mind:** The **prefrontal cortex** holds a small working memory buffer (~7±2 items, Miller 1956) in full resolution. Older experiences are consolidated and compressed by the hippocampus over time.
+* **BPSA:** Recent steps are kept in **full detail** (`keep_recent_steps`). Older steps are compressed into summaries.
+* **Human mind:** The **prefrontal cortex** holds a small working memory buffer (~7±2 items, Miller 1956) in full resolution. Older experiences are consolidated and compressed by the hippocampus over time.
 
 > *"Keep 40 recent steps in full" is literally what your brain does right now — you remember today in detail, last Tuesday as a blur.*
 
 ---
 
 ### 2. Sleep Consolidation → Phase 1 + Phase 2
-**BPSA:** Two-phase pipeline — Phase 1 compresses live steps + extracts knowledge; Phase 2 merges accumulated compressed steps into deeper knowledge.
-**Human mind:** Sleep has **two consolidation phases** — slow-wave sleep (SWS) replays episodic memories from hippocampus to neocortex (Phase 1 analog), and REM sleep is associated with abstracting and integrating those replays into semantic knowledge (Phase 2 analog). The analogy is functional: SWS and REM differ in their underlying neural mechanisms (sharp-wave ripples vs. theta oscillations) rather than being a clean "first pass / second pass" distinction, but the broad directionality — from detailed episodic replay toward abstract semantic integration — maps well onto BPSA's two phases.
+* **BPSA:** Two-phase pipeline — Phase 1 compresses live steps + extracts knowledge; Phase 2 merges accumulated compressed steps into deeper knowledge.
+* **Human mind:** Sleep has **two consolidation phases** — slow-wave sleep (SWS) replays episodic memories from hippocampus to neocortex (Phase 1 analog), and REM sleep is associated with abstracting and integrating those replays into semantic knowledge (Phase 2 analog). The analogy is functional: SWS and REM differ in their underlying neural mechanisms (sharp-wave ripples vs. theta oscillations) rather than being a clean "first pass / second pass" distinction, but the broad directionality — from detailed episodic replay toward abstract semantic integration — maps well onto BPSA's two phases.
 
 > *Phase 2 in BPSA ("merge_compressed when they accumulate") is functionally analogous to the later sleep stages that refine, consolidate, and eventually render raw episodic traces unnecessary for retrieval.*
 
 ---
 
 ### 3. Episodic vs. Semantic Memory
-**BPSA:** `CompressedHistoryStep` = what happened (events, actions taken). `knowledge` store = what is currently true (facts, beliefs, current state).
-**Human mind:** **Episodic memory** = "I did X at time T." **Semantic memory** = "X is true." The brain explicitly separates these. Old episodic memories gradually convert to semantic ones — exactly what Phase 2 does.
+* **BPSA:** `CompressedHistoryStep` = what happened (events, actions taken). `knowledge` store = what is currently true (facts, beliefs, current state).
+* **Human mind:** **Episodic memory** = "I did X at time T." **Semantic memory** = "X is true." The brain explicitly separates these. Old episodic memories gradually convert to semantic ones — exactly what Phase 2 does.
 
 > *"Compressed history = events/changes over time; knowledge = current beliefs/facts" — this is straight from cognitive psychology textbooks.*
 
 ---
 
 ### 4. Schemas / Semantic Networks → Tagged XML Knowledge
-**BPSA:** Knowledge stored as tagged XML sections (`<plan>`, `<key_findings>`, `<current_status>`). Sections can be added, updated, or deleted via diff operations.
-**Human mind:** Cognitive psychologists call these **schemas** — organised clusters of knowledge with labels and relationships, updated incrementally as new information arrives. The `merge_context()` add/update/delete operations mirror how schemas are revised.
+* **BPSA:** Knowledge stored as tagged XML sections (`<plan>`, `<key_findings>`, `<current_status>`). Sections (tags) can be added, updated, or deleted via diff operations.
+* **Human mind:** Cognitive psychologists call these **schemas** — organised clusters of knowledge with labels and relationships, updated incrementally as new information arrives. The `merge_context()` add/update/delete operations mirror how schemas are revised.
 
 ---
 
 ### 5. Deliberate Belief Revision → Agent-Driven Knowledge Updates
-**BPSA:** The `update_knowledge` tool lets the *agent itself* explicitly revise its knowledge store at any point during live execution.
-**Human mind:** **Deliberate belief revision** — the conscious, intentional process of updating one's own knowledge when new evidence or reasoning warrants it. This is distinct from *metacognition* in the strict cognitive science sense (which additionally involves monitoring uncertainty and regulating reasoning strategies); what the agent does here is closer to deliberate note-taking and self-correction — updating a belief because a step's outcome has changed what is known to be true.
+* **BPSA:** The `update_knowledge` tool lets the *agent itself* explicitly revise its knowledge store at any point during live execution.
+* **Human mind:** **Deliberate belief revision** — the conscious, intentional process of updating one's own knowledge when new evidence or reasoning warrants it. This is distinct from *metacognition* in the strict cognitive science sense (which additionally involves monitoring uncertainty and regulating reasoning strategies); what the agent does here is closer to deliberate note-taking and self-correction — updating a belief because a step's outcome has changed what is known to be true.
 
 
 ## Architecture
