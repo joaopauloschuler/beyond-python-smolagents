@@ -25,7 +25,7 @@ The entire two-phase design mirrors the **Standard Model of Memory Consolidation
 Experience → Hippocampus (short-lived, detailed)
                 ↓  (sleep / Phase 1)
            Compressed replay → early neocortex
-                ↓  (deeper sleep / Phase 2)
+                ↓  (later consolidation / Phase 2)
            Abstract semantic knowledge → late neocortex
                 ↓
            Hippocampus no longer needed for retrieval
@@ -35,11 +35,17 @@ Replace hippocampus with "action steps", early neocortex with "CompressedHistory
 late neocortex with "knowledge store" — and you have BPSA's compression pipeline almost
 exactly.
 
+> *Note: the Standard Model's claim that the hippocampus becomes unnecessary for retrieval
+> is contested by Multiple Trace Theory (Nadel & Moscovitch, 1997), which argues the
+> hippocampus remains involved in detailed episodic retrieval indefinitely. BPSA's
+> architecture — which does eventually discard original steps — maps onto the Standard
+> Model regardless of which biological theory proves correct.*
+
 ---
 
 ### 1. Working Memory vs. Long-Term Memory
 * **BPSA:** Recent steps are kept in **full detail** (`keep_recent_steps`). Older steps are compressed into summaries.
-* **Human mind:** The **prefrontal cortex** holds a small working memory buffer (~7±2 items, Miller 1956) in full resolution. Older experiences are consolidated and compressed by the hippocampus over time.
+* **Human mind:** The **prefrontal cortex** holds a small working memory buffer (~7±2 items, Miller 1956) in full resolution. Older experiences are consolidated over time: the hippocampus holds the initial detailed trace and orchestrates its gradual transfer to the neocortex, where a compressed, generalised form eventually lives independently.
 
 > *"Keep 40 recent steps in full" is literally what your brain does right now — you remember today in detail, last Tuesday as a blur.*
 
@@ -55,7 +61,7 @@ exactly.
 
 ### 3. Episodic vs. Semantic Memory
 * **BPSA:** `CompressedHistoryStep` = what happened (events, actions taken). `knowledge` store = what is currently true (facts, beliefs, current state).
-* **Human mind:** **Episodic memory** = "I did X at time T." **Semantic memory** = "X is true." The brain explicitly separates these. Old episodic memories gradually convert to semantic ones — exactly what Phase 2 does.
+* **Human mind:** **Episodic memory** = "I did X at time T." **Semantic memory** = "X is true." Neuroscience has identified these as distinct systems with different neural substrates. Old episodic memories gradually convert to semantic ones — exactly what Phase 2 does.
 
 > *"Compressed history = events/changes over time; knowledge = current beliefs/facts" — this is straight from cognitive psychology textbooks.*
 
