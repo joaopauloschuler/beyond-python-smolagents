@@ -18,7 +18,7 @@ limitations under the License.
 
 * 💻 **Interactive CLI ([`bpsa`](#cli-bpsa)):** Multi-turn REPL with slash commands, command history, tab completion, session stats, and auto-approve mode.
 * 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
-* 🗜️ **Context compression**: Biologically inspired [Automatic LLM-based summarization](docs/compression.md) of older memory steps to manage context window size during long-running tasks.
+* 🗜️ **Context compression**: Biologically inspired [automatic LLM-based summarization](docs/compression.md) of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui-x11` flag).
 * 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
