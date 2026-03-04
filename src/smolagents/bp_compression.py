@@ -418,7 +418,8 @@ Your concise summary of new events and changes...
 
     return f"""Hello super-intelligence!
 This task is involved in your context compression.
-To your own benefit, please summarize the following agent execution history into a concise summary.
+Please summarize the following agent execution history into a concise summary.
+Note: after compression, the original steps will be permanently removed from context. Write as if the reader will never see the originals.
 {COMMON_COMPRESSION_INSTRUCTIONS}
 {history_section}{knowledge_section}{post_steps_section}{output_instruction}
 This is the execution history to summarize:
@@ -461,7 +462,14 @@ These summaries cover {total_steps} total steps of agent execution.
 {summaries_text}
 </SUMMARIES_TO_MERGE>
 
-CONSOLIDATED SUMMARY:"""
+Output format:
+<summary>
+Your consolidated summary of all events and changes...
+</summary>
+<knowledge_updates>
+...tagged updates if any...
+</knowledge_updates>
+"""
 
 
 
@@ -621,6 +629,7 @@ Use descriptive tag names (e.g., <plan>, <architecture>, <key_findings>, <curren
 
     return f"""Hello super-intelligence!
 This task is involved in your context compression.
+Note: after compression, the original summaries will be permanently removed from context. Write as if the reader will never see the originals.
 Please extract key knowledge from the following {len(compressed_steps)} summaries
 covering {total_steps} total steps of agent execution.
 These summaries are about to be removed from the context. Therefore, updating the knowledge

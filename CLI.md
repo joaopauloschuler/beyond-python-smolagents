@@ -60,6 +60,7 @@ All prefixed with `BPSA_`:
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
+| `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 
 ### Context Compression Variables
 
@@ -185,6 +186,34 @@ Use `prompt_toolkit` for:
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
 | `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
+
+## MCP Server Integration
+
+The `--mcp` flag connects [Model Context Protocol](https://modelcontextprotocol.io) servers as additional tool sources. Tools exposed by MCP servers are automatically available to the agent alongside the built-in tools.
+
+```bash
+# HTTP-based MCP server (Streamable HTTP transport)
+bpsa --mcp http://localhost:8000/mcp
+
+# stdio-based MCP server (shell command)
+bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'
+
+# Multiple MCP servers (flag can be repeated)
+bpsa --mcp http://server1/mcp --mcp http://server2/mcp
+```
+
+The flag can be repeated to connect multiple servers simultaneously. Each server's tools are merged into the agent's tool list. MCP connections are automatically closed when the session ends.
+
+You can also set MCP servers persistently via the `BPSA_MCP` environment variable (one entry per line):
+
+```bash
+export BPSA_MCP="http://localhost:8000/mcp"
+# or multiple servers:
+export BPSA_MCP="http://server1/mcp
+npx -y @modelcontextprotocol/server-filesystem /"
+```
+
+CLI `--mcp` entries and `BPSA_MCP` entries are merged, so both can be used simultaneously.
 
 ## Configuration Layering
 
