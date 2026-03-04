@@ -325,7 +325,7 @@ def build_model(override_model_id=None):
     return model
 
 
-def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False):
+def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, mcp_servers=None):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -337,6 +337,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     tools = list(DEFAULT_THINKER_TOOLS)
     browser_manager = None
     gui_manager = None
+    mcp_client = None
 
     # Image tools — always available (Pillow only; tesseract optional for OCR)
     from smolagents.bp_tools import LoadImageTool, load_image_callback
@@ -355,6 +356,11 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         from smolagents.bp_tools_gui import create_gui_tools
         gui_manager, gui_tools = create_gui_tools()
         tools.extend(gui_tools)
+
+    if mcp_servers:
+        from smolagents import MCPClient
+        mcp_client = MCPClient(mcp_servers, structured_output=True)
+        tools.extend(mcp_client.__enter__())
 
     step_cbs = [_compact_step_callback, load_image_callback]
     if gui_manager:
@@ -391,6 +397,9 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
 
     if gui_manager:
         agent._gui_manager = gui_manager
+
+    if mcp_client:
+        agent._mcp_client = mcp_client
 
     return agent
 
@@ -530,6 +539,9 @@ def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_
         ctx_chars = agent.get_context_char_size()
         if ctx_chars > 0:
             line += f" | Context: {format_tokens(ctx_chars)} chars"
+        knowledge = getattr(agent.memory, "knowledge", "")
+        if knowledge:
+            line += f" | Knowledge: {format_tokens(len(knowledge))} chars"
     line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)
@@ -600,12 +612,14 @@ def _save_aliases(aliases: dict):
 
 SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
-    "/compression-keep-recent-steps", "/compression-max-uncompressed-steps",
+    "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
+    "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
+    "/compression-set-high", "/compression-set-low", "/compression-set-medium",
     "/compression-model", "/dictation", "/exit", "/help",
-    "/load-instructions", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
+    "/instructions-load", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
     "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/save-step", "/set-max-steps", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
+    "/save-step", "/set-max-steps", "/show-knowledge", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -617,19 +631,24 @@ def print_help():
     table.add_row("!!<command>", "Run an OS command; output is appended to the next prompt sent to the agent")
     table.add_row("!!!<command>", "Run an OS command and immediately send the output to the agent for analysis")
     table.add_row("/alias <name> <value>", "Define alias (saved to ~/.bpsa_aliases). No args=list, -d <name>=delete")
-    table.add_row("/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
+    table.add_row(r"/auto-approve \[on|off]", "Toggle or set auto-approve for tag execution")
     table.add_row("/cd <dir>", "Change working directory")
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
-    table.add_row("/compress \[N]", "Force compression now, or compress a specific step N")
-    table.add_row("/compression \[on|off]", "Toggle compression on/off")
+    table.add_row(r"/compress \[N]", "Force compression now, or compress a specific step N")
+    table.add_row(r"/compression \[on|off]", "Toggle compression on/off")
     table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
     table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
+    table.add_row("/compression-keep-compressed-steps <N>", "Change keep_compressed_steps")
+    table.add_row("/compression-max-compressed-steps <N>", "Change max_compressed_steps")
+    table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
+    table.add_row("/compression-set-medium", "Set compression preset: MEDIUM (balanced)")
+    table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/help", "Show this help message")
-    table.add_row("/load-instructions", "Load agent instruction files into next prompt")
-    table.add_row("/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
+    table.add_row("/instructions-load", "Load agent instruction files into next prompt")
+    table.add_row(r"/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/redo", "Re-run the last prompt (undo last steps and run again)")
     table.add_row("/repeat <N> <prompt>", "Run the same prompt N times, each on a fresh agent with current context")
@@ -644,10 +663,11 @@ def print_help():
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
     table.add_row("/show-step <N>", "Show full content of a specific step")
     table.add_row("/show-steps", "Show one-line summary of all memory steps")
+    table.add_row("/show-knowledge", "Show the full content of the knowledge store")
     table.add_row("/show-stats", "Show session statistics")
     table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-tools", "List all loaded tools")
-    table.add_row("/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
+    table.add_row(r"/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
     console.print(table)
     console.print()
@@ -869,6 +889,11 @@ def print_stats(session_stats: dict, agent=None):
         table.add_row("System prompt", f"{breakdown['total']:,} chars")
         table.add_row("  Instructions", f"{breakdown['instructions']:,} chars")
         table.add_row("  Tool descriptions", f"{breakdown['tools']:,} chars")
+    if agent:
+        knowledge = getattr(agent.memory, "knowledge", "")
+        knowledge_chars = len(knowledge) if knowledge else 0
+        table.add_row("", "")
+        table.add_row("Knowledge", f"{knowledge_chars:,} chars")
     console.print(table)
     console.print()
 
@@ -1013,6 +1038,12 @@ def cmd_compression_stats(agent):
     total_chars = sum(len(s.summary) for s in steps if isinstance(s, CompressedHistoryStep))
     compression_count = compressor._compression_count if compressor else 0
 
+    # Knowledge store info
+    knowledge = getattr(agent.memory, "knowledge", "")
+    knowledge_chars = len(knowledge)
+    from smolagents.bp_compression import list_xml_tag_names
+    knowledge_tags = list_xml_tag_names(knowledge) if knowledge else []
+
     console.print()
     console.print(Rule("[bold]Compression Stats", style="blue"))
     stats_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -1023,6 +1054,8 @@ def cmd_compression_stats(agent):
     stats_table.add_row("Original steps compressed", str(compressed_original))
     stats_table.add_row("Compression runs", str(compression_count))
     stats_table.add_row("Compressed summary chars", f"{total_chars:,}")
+    stats_table.add_row("Knowledge chars", f"{knowledge_chars:,}")
+    stats_table.add_row("Knowledge sections", f"{len(knowledge_tags)} ({', '.join(knowledge_tags)})" if knowledge_tags else "0")
     console.print(stats_table)
     console.print()
 
@@ -1061,8 +1094,12 @@ def cmd_memory_stats(agent):
     table.add_row("Total memory steps", str(total_steps))
     for type_name, count in sorted(type_counts.items()):
         table.add_row(f"  {type_name}", str(count))
+    # Knowledge store
+    knowledge = getattr(agent.memory, "knowledge", "")
+    knowledge_chars = len(knowledge)
     table.add_row("Total chars", f"{total_chars:,}")
     table.add_row("Estimated tokens", f"{total_tokens:,}")
+    table.add_row("Knowledge chars", f"{knowledge_chars:,}")
     console.print(table)
     console.print()
 
@@ -1135,7 +1172,7 @@ def cmd_compress(agent, args: str):
         old_threshold = compressor.config.max_uncompressed_steps
         compressor.config.max_uncompressed_steps = 0  # Force trigger
         original_len = len(agent.memory.steps)
-        agent.memory.steps = compressor.compress(agent.memory.steps)
+        agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
         compressor.config.max_uncompressed_steps = old_threshold
         new_len = len(agent.memory.steps)
         if new_len < original_len:
@@ -1201,6 +1238,106 @@ def cmd_compression_max_uncompressed(agent, args: str):
         console.print(f"[green]max_uncompressed_steps set to {n}[/]")
     except ValueError:
         console.print("[red]Invalid number. Usage: /compression-max-uncompressed-steps <N>[/]")
+
+
+def cmd_compression_keep_compressed(agent, args: str):
+    """Change keep_compressed_steps."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current keep_compressed_steps: {config.keep_compressed_steps}[/]")
+        console.print("[dim]Usage: /compression-keep-compressed-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 0:
+            raise ValueError
+        config.keep_compressed_steps = n
+        console.print(f"[green]keep_compressed_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-keep-compressed-steps <N>[/]")
+
+
+def cmd_compression_max_compressed(agent, args: str):
+    """Change max_compressed_steps."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    args = args.strip()
+    if not args:
+        console.print(f"[cyan]Current max_compressed_steps: {config.max_compressed_steps}[/]")
+        console.print("[dim]Usage: /compression-max-compressed-steps <N>[/]")
+        return
+    try:
+        n = int(args)
+        if n < 0:
+            raise ValueError
+        config.max_compressed_steps = n
+        console.print(f"[green]max_compressed_steps set to {n}[/]")
+    except ValueError:
+        console.print("[red]Invalid number. Usage: /compression-max-compressed-steps <N>[/]")
+
+
+def cmd_compression_set_high(agent):
+    """Set compression to HIGH preset (aggressive)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 20
+    config.max_uncompressed_steps = 25
+    config.keep_compressed_steps = 10
+    config.max_compressed_steps = 15
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "HIGH")
+    table.add_row("keep_recent_steps", "20")
+    table.add_row("max_uncompressed_steps", "25")
+    table.add_row("keep_compressed_steps", "20")
+    table.add_row("max_compressed_steps", "25")
+    console.print(table)
+
+
+def cmd_compression_set_normal(agent):
+    """Set compression to NORMAL preset (balanced)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 40
+    config.max_uncompressed_steps = 50
+    config.keep_compressed_steps = 15
+    config.max_compressed_steps = 20
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "NORMAL")
+    table.add_row("keep_recent_steps", "40")
+    table.add_row("max_uncompressed_steps", "50")
+    table.add_row("keep_compressed_steps", "10")
+    table.add_row("max_compressed_steps", "20")
+    console.print(table)
+
+
+def cmd_compression_set_low(agent):
+    """Set compression to LOW preset (conservative)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 90
+    config.max_uncompressed_steps = 100
+    config.keep_compressed_steps = 20
+    config.max_compressed_steps = 40
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "LOW")
+    table.add_row("keep_recent_steps", "90")
+    table.add_row("max_uncompressed_steps", "100")
+    table.add_row("keep_compressed_steps", "20")
+    table.add_row("max_compressed_steps", "40")
+    console.print(table)
 
 
 def cmd_compression_model(agent, args: str):
@@ -1270,7 +1407,9 @@ def cmd_session_save(agent, session_stats: dict, args: str):
         filename += ".json"
     try:
         count = save_session(filename, agent, session_stats)
-        console.print(f"[green]Session saved to {filename} ({count} steps).[/]")
+        knowledge = getattr(agent.memory, "knowledge", "")
+        knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
+        console.print(f"[green]Session saved to {filename} ({count} steps{knowledge_info}).[/]")
     except Exception as e:
         console.print(f"[red]Failed to save session: {e}[/]")
 
@@ -1286,12 +1425,21 @@ def cmd_session_load(agent, args: str) -> dict | None:
         console.print("[yellow]Usage: /session-load <filename>[/]")
         return None
     if not os.path.isfile(filename):
-        console.print(f"[red]File not found: {filename}[/]")
-        return None
+        # Try appending .json if no extension was given
+        if not os.path.splitext(filename)[1] and os.path.isfile(filename + ".json"):
+            filename = filename + ".json"
+        else:
+            if not os.path.splitext(filename)[1]:
+                console.print(f"[red]File not found: {filename} (also tried {filename}.json)[/]")
+            else:
+                console.print(f"[red]File not found: {filename}[/]")
+            return None
     try:
         stats = load_session(filename, agent)
         step_count = len(agent.memory.steps)
-        console.print(f"[green]Session loaded from {filename} ({step_count} steps).[/]")
+        knowledge = getattr(agent.memory, "knowledge", "")
+        knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
+        console.print(f"[green]Session loaded from {filename} ({step_count} steps{knowledge_info}).[/]")
         return stats
     except Exception as e:
         console.print(f"[red]Failed to load session: {e}[/]")
@@ -1478,6 +1626,23 @@ def cmd_show_steps(agent):
     console.print()
 
 
+
+def cmd_show_knowledge(agent):
+    """Show the full content of the knowledge store."""
+    from smolagents.bp_compression import list_xml_tag_names
+
+    knowledge = getattr(agent.memory, "knowledge", "")
+    if not knowledge:
+        console.print("[yellow]Knowledge is empty.[/]")
+        return
+
+    knowledge_tags = list_xml_tag_names(knowledge)
+    sections_info = f"{len(knowledge_tags)} section(s): {', '.join(knowledge_tags)}" if knowledge_tags else "no sections"
+    console.print(Rule(f"[bold]Knowledge[/] [dim]({len(knowledge):,} chars, {sections_info})[/]", style="blue"))
+    console.print(knowledge)
+    console.print()
+
+
 def cmd_undo(agent, args: str):
     """Remove the last N steps from agent memory. Default N=1."""
     from smolagents.memory import SystemPromptStep
@@ -1621,6 +1786,38 @@ def _shutdown_gui(agent):
         manager.shutdown()
 
 
+def _parse_mcp_servers(mcp_list: list[str]):
+    """Parse a list of MCP server strings into server_parameters dicts/objects.
+
+    Each entry is either:
+      - An HTTP URL: {"url": "...", "transport": "streamable-http"}
+      - A command string: StdioServerParameters(command, args=[...])
+    """
+    import shlex
+    from mcp import StdioServerParameters
+    result = []
+    for spec in mcp_list:
+        spec = spec.strip()
+        if not spec:
+            continue
+        if spec.startswith("http://") or spec.startswith("https://"):
+            result.append({"url": spec, "transport": "streamable-http"})
+        else:
+            parts = shlex.split(spec)
+            result.append(StdioServerParameters(command=parts[0], args=parts[1:]))
+    return result
+
+
+def _shutdown_mcp(agent):
+    """Disconnect MCP client if one exists on the agent."""
+    client = getattr(agent, "_mcp_client", None)
+    if client:
+        try:
+            client.__exit__(None, None, None)
+        except Exception:
+            pass
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -1629,13 +1826,13 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -1657,16 +1854,17 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         if manager:
             manager.shutdown()
         _shutdown_gui(agent)
+        _shutdown_mcp(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -1788,6 +1986,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             _shutdown_voice()
             _shutdown_browser(agent)
             _shutdown_gui(agent)
+            _shutdown_mcp(agent)
             console.print("[dim]Goodbye![/]")
             break
 
@@ -1843,6 +2042,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 _shutdown_voice()
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
+                _shutdown_mcp(agent)
                 console.print("[dim]Goodbye![/]")
                 break
             elif cmd == "/help":
@@ -1884,7 +2084,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/clear":
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+                _shutdown_mcp(agent)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -1930,7 +2131,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/pwd":
                 console.print(f"[cyan]{os.getcwd()}[/]")
                 continue
-            elif cmd == "/load-instructions":
+            elif cmd == "/instructions-load":
                 console.print("[dim]Loading agent instructions...[/]")
                 instructions = load_agent_instructions()
                 if instructions:
@@ -1979,6 +2180,21 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elif cmd == "/compression-max-uncompressed-steps":
                 cmd_compression_max_uncompressed(agent, cmd_args)
                 continue
+            elif cmd == "/compression-keep-compressed-steps":
+                cmd_compression_keep_compressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-max-compressed-steps":
+                cmd_compression_max_compressed(agent, cmd_args)
+                continue
+            elif cmd == "/compression-set-high":
+                cmd_compression_set_high(agent)
+                continue
+            elif cmd == "/compression-set-medium":
+                cmd_compression_set_normal(agent)
+                continue
+            elif cmd == "/compression-set-low":
+                cmd_compression_set_low(agent)
+                continue
             elif cmd == "/compression-model":
                 cmd_compression_model(agent, cmd_args)
                 continue
@@ -1990,6 +2206,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-steps":
                 cmd_show_steps(agent)
+                continue
+            elif cmd == "/show-knowledge":
+                cmd_show_knowledge(agent)
                 continue
             elif cmd == "/undo-steps":
                 cmd_undo(agent, cmd_args)
@@ -2173,6 +2392,10 @@ def main():
         "--gui-x11", action="store_true",
         help="Enable native GUI interaction tools (screenshot, click, type, key via xdotool/ImageMagick on X11)",
     )
+    parser.add_argument(
+        "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
+        help="Connect an MCP server. Use a URL for HTTP servers or a shell command for stdio servers. Can be repeated for multiple servers.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
@@ -2184,20 +2407,21 @@ def main():
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")
+    mcp_servers = _parse_mcp_servers(args.mcp or []) or None
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
 
 
 if __name__ == "__main__":

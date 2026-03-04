@@ -2541,6 +2541,7 @@ class PlanningTool(Tool):
     """
 
     name = "plan"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Call this tool whenever you need help to create or update your plan. "
         "Use it when starting a complex task, when your current approach is failing, "
@@ -2647,6 +2648,7 @@ class MoveActionStepToMemory(Tool):
     """
 
     name = "move_actionstep_to_memory"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Move content from a specific ActionStep out of the active context into memory. "
         "This reduces context size while preserving the original content for later retrieval. "
@@ -2726,6 +2728,7 @@ class RetrieveActionStepFromMemory(Tool):
     """
 
     name = "move_actionstep_from_memory"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Restore content that was previously moved to memory back into the active context. "
         "Use this when you need to re-examine a step's response or model_output that was archived. "
@@ -2802,6 +2805,7 @@ class SummarizeActionStep(Tool):
     """
 
     name = "summarize_actionstep"
+    should_add_tool_description_into_system_prompt = True
     description = (
         "Summarize content from a specific ActionStep using custom instructions. "
         "This replaces the content with an LLM-generated summary while archiving the original for later retrieval. "
@@ -2991,6 +2995,66 @@ def load_image_callback(memory_step, agent=None):
     memory_step.observations = (
         info if memory_step.observations is None else memory_step.observations + info
     )
+
+
+class UpdateKnowledge(Tool):
+    """A tool that allows the agent to update its persistent knowledge store.
+
+    The knowledge store is a tagged XML string that survives compression cycles
+    and is injected into the agent's context near the end of each turn.
+    Updates use a tag-based merge: existing tags are updated, empty/self-closing
+    tags are deleted, and new tags are appended.
+
+    Must be bound to an agent via ``set_agent`` before use.
+    """
+
+    name = "update_knowledge"
+    should_add_tool_description_into_system_prompt = True
+    description = (
+        "Update your persistent knowledge store with tagged XML sections.\n\n"
+        "You have a <knowledge> section in your context containing your long-term notes. "
+        "It survives context compression and is always visible to you.\n\n"
+        "Usage: update_knowledge(updates='<tag_name>content</tag_name>')\n\n"
+        "Rules:\n"
+        "- To ADD a new section: use a new descriptive tag name\n"
+        "- To UPDATE an existing section: use the same tag name with new content\n"
+        "- To DELETE a section no longer relevant: use a self-closing tag <tag_name/>\n"
+        "- Tag names are free: use descriptive names like <plan>, <findings>, <codebase>, <decisions>\n"
+        "- Only include sections you want to change\n\n"
+        "Example:\n"
+        "  update_knowledge('<plan>1. Setup done\\n2. Now implementing API</plan><old_notes/>')\n\n"
+        "Use this to note important discoveries, track your plan, or remove stale information."
+    )
+    inputs = {
+        "updates": {
+            "type": "string",
+            "description": "Tagged XML with sections to add, update, or delete. "
+            "Use <tagname>content</tagname> to add/update, <tagname/> to delete.",
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._agent = None
+
+    def set_agent(self, agent):
+        """Bind this tool to an agent so it can access the knowledge store."""
+        self._agent = agent
+
+    def forward(self, updates: str) -> str:
+        if self._agent is None:
+            return "Error: UpdateKnowledge is not bound to an agent. Call set_agent() first."
+
+        if not updates or not updates.strip():
+            return "Error: No updates provided."
+
+        from smolagents.bp_compression import merge_context, list_xml_tag_names
+
+        old_knowledge = self._agent.memory.knowledge or ""
+        self._agent.memory.knowledge = merge_context(old_knowledge, updates)
+        tag_names = list_xml_tag_names(self._agent.memory.knowledge)
+        return f"Knowledge updated. Current sections: {tag_names}"
 
 
 class GetToolDescriptionsTool(Tool):

@@ -31,7 +31,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, GetToolDescriptionsTool
+from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
 from .bp_utils import is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -366,7 +366,7 @@ class MultiStepAgent(ABC):
         else:
             self.logger = logger
 
-        self.monitor = Monitor(self.model, self.logger)
+        self.monitor = Monitor(self.model, self.logger, memory=self.memory)
         self._setup_step_callbacks(step_callbacks)
         self._setup_compression(compression_config)
         self.stream_outputs = False
@@ -446,6 +446,10 @@ class MultiStepAgent(ABC):
             tool = SummarizeActionStep()
             tool.set_agent(self)
             self.tools["summarize_actionstep"] = tool
+        if "update_knowledge" not in self.tools:
+            tool = UpdateKnowledge()
+            tool.set_agent(self)
+            self.tools["update_knowledge"] = tool
 
     def _bind_tool_descriptions(self):
         """Add get_tool_descriptions tool and populate it with full docs from all other tools."""
@@ -558,11 +562,20 @@ You have been provided with these additional arguments, that you can access dire
             title=self.name if hasattr(self, "name") else None,
         )
         breakdown = self.get_prompt_char_breakdown()
+        ctx_chars = self.get_context_char_size()
+        knowledge = getattr(self.memory, "knowledge", "")
+        knowledge_chars = len(knowledge) if knowledge else 0
+        extras = ""
+        if ctx_chars > 0:
+            extras += f" | Context: {ctx_chars:,} chars"
+        if knowledge_chars > 0:
+            extras += f" | Knowledge: {knowledge_chars:,} chars"
         self.logger.log(
             Text(
                 f"[System prompt: {breakdown['total']:,} chars"
                 f" | Instructions: {breakdown['instructions']:,} chars"
-                f" | Tool descriptions: {breakdown['tools']:,} chars]",
+                f" | Tool descriptions: {breakdown['tools']:,} chars"
+                f"{extras}]",
                 style="dim",
             ),
             level=LogLevel.INFO,
@@ -855,11 +868,23 @@ You have been provided with these additional arguments, that you can access dire
         """
         Reads past llm_outputs, actions, and observations or errors from the memory into a series of messages
         that can be used as input to the LLM. Adds a number of keywords (such as PLAN, error, etc) to help
-        the LLM.
+        the LLM. If the agent has accumulated knowledge, it is injected just before the last message.
         """
         messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
         for memory_step in self.memory.steps:
             messages.extend(memory_step.to_messages(summary_mode=summary_mode))
+
+        # Inject knowledge near the end of context (just before the last message)
+        if self.memory.knowledge and self.memory.knowledge.strip():
+            knowledge_msg = ChatMessage(
+                role=MessageRole.USER,
+                content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
+            )
+            if len(messages) > 1:
+                messages.insert(len(messages) - 1, knowledge_msg)
+            else:
+                messages.append(knowledge_msg)
+
         return messages
 
     def get_context_char_size(self) -> int:

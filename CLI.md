@@ -164,7 +164,7 @@ Use `prompt_toolkit` for:
 | `/compression-model <model>` | Switch compression model |
 | `/exit` | Exit the REPL |
 | `/help` | Show available commands and brief descriptions |
-| `/load-instructions` | Load agent instruction files into next prompt |
+| `/instructions-load` | Load agent instruction files into next prompt |
 | `/plan [on\|off\|N]` | Toggle or set planning interval (default: 22) |
 | `/pwd` | Show current working directory |
 | `/repeat <N> <prompt>` | Run the same prompt N times, each on a fresh agent with current context |
