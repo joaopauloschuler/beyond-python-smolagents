@@ -882,7 +882,7 @@ You have been provided with these additional arguments, that you can access dire
             messages.extend(self.memory.system_prompt.to_messages(summary_mode=summary_mode))
             if self.memory.knowledge and self.memory.knowledge.strip():
                 messages.append(ChatMessage(
-                    role=MessageRole.USER,
+                    role=MessageRole.SYSTEM,
                     content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
                 ))
             messages.append(last_message)
@@ -890,7 +890,7 @@ You have been provided with these additional arguments, that you can access dire
             messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
             if self.memory.knowledge and self.memory.knowledge.strip():
                 messages.append(ChatMessage(
-                    role=MessageRole.USER,
+                    role=MessageRole.SYSTEM,
                     content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
                 ))
 
