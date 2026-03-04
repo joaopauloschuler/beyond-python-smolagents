@@ -870,20 +870,29 @@ You have been provided with these additional arguments, that you can access dire
         that can be used as input to the LLM. Adds a number of keywords (such as PLAN, error, etc) to help
         the LLM. If the agent has accumulated knowledge, it is injected just before the last message.
         """
-        messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
+        # Collect all memory step messages
+        step_messages = []
         for memory_step in self.memory.steps:
-            messages.extend(memory_step.to_messages(summary_mode=summary_mode))
+            step_messages.extend(memory_step.to_messages(summary_mode=summary_mode))
 
-        # Inject knowledge near the end of context (just before the last message)
-        if self.memory.knowledge and self.memory.knowledge.strip():
-            knowledge_msg = ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
-            )
-            if len(messages) > 1:
-                messages.insert(len(messages) - 1, knowledge_msg)
-            else:
-                messages.append(knowledge_msg)
+        # New order: memory steps, system prompt, knowledge, last message
+        if step_messages:
+            last_message = step_messages[-1]
+            messages = step_messages[:-1]
+            messages.extend(self.memory.system_prompt.to_messages(summary_mode=summary_mode))
+            if self.memory.knowledge and self.memory.knowledge.strip():
+                messages.append(ChatMessage(
+                    role=MessageRole.USER,
+                    content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
+                ))
+            messages.append(last_message)
+        else:
+            messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
+            if self.memory.knowledge and self.memory.knowledge.strip():
+                messages.append(ChatMessage(
+                    role=MessageRole.USER,
+                    content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
+                ))
 
         return messages
 
