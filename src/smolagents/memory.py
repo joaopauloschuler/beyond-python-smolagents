@@ -114,13 +114,19 @@ class ActionStep(MemoryStep):
             )
 
         if self.tool_calls is not None:
+            # For a single python_interpreter call, use a short message since
+            # the code is already present in model_output above.
+            if len(self.tool_calls) == 1 and self.tool_calls[0].name == "python_interpreter":
+                tool_call_text = "<runcode>" + str(self.tool_calls[0].arguments) + "</runcode>"
+            else:
+                tool_call_text = "Calling tools:\n" + str([tc.dict() for tc in self.tool_calls])
             messages.append(
                 ChatMessage(
                     role=MessageRole.TOOL_CALL,
                     content=[
                         {
                             "type": "text",
-                            "text": "Calling tools:\n" + str([tc.dict() for tc in self.tool_calls]),
+                            "text": tool_call_text,
                         }
                     ],
                 )

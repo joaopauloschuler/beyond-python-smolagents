@@ -3061,6 +3061,7 @@ class GetToolDescriptionsTool(Tool):
     """Tool that returns full descriptions for specified tools, enabling compact tool listings in the system prompt."""
 
     name = "get_tool_descriptions"
+    should_add_tool_description_into_system_prompt = True
     description = "Returns full documentation, argument descriptions, and usage examples for the specified tools. Call this before using any tool whose behavior is not clear from its signature."
     inputs = {
         "tool_list": {
