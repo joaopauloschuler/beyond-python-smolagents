@@ -861,6 +861,23 @@ You have been provided with these additional arguments, that you can access dire
         """Interrupts the agent execution."""
         self.interrupt_switch = True
 
+    def _debug_save_context(self, messages: list) -> None:
+        """Save context messages to /tmp/bpsa_debug_context.txt if BPSA_DEBUG_CONTEXT is set."""
+        import os, json
+        if not os.environ.get("BPSA_DEBUG_CONTEXT"):
+            return
+        lines = []
+        for i, msg in enumerate(messages):
+            lines.append(f"=== Message {i} | role={msg.role} ===")
+            if isinstance(msg.content, list):
+                for part in msg.content:
+                    lines.append(str(part))
+            else:
+                lines.append(str(msg.content) if msg.content else "")
+            lines.append("")
+        with open("/tmp/bpsa_debug_context.txt", "w") as f:
+            f.write("\n".join(lines))
+
     def write_memory_to_messages(
         self,
         summary_mode: bool = False,
@@ -1553,6 +1570,7 @@ class ToolCallingAgent(MultiStepAgent):
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()
+        self._debug_save_context(input_messages)
 
         # Add new step in logs
         memory_step.model_input_messages = input_messages
@@ -1934,6 +1952,7 @@ class CodeAgent(MultiStepAgent):
         memory_messages = self.write_memory_to_messages()
 
         input_messages = memory_messages.copy()
+        self._debug_save_context(input_messages)
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
         stop_sequences = STOP_SEQUENCES
