@@ -871,19 +871,17 @@ You have been provided with these additional arguments, that you can access dire
         the LLM. If the agent has accumulated knowledge, it is injected just before the last message.
         """
         messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
-        for memory_step in self.memory.steps:
-            messages.extend(memory_step.to_messages(summary_mode=summary_mode))
 
-        # Inject knowledge near the end of context (just before the last message)
+        # Inject knowledge as a SYSTEM message right after the system prompt
         if self.memory.knowledge and self.memory.knowledge.strip():
             knowledge_msg = ChatMessage(
-                role=MessageRole.USER,
+                role=MessageRole.SYSTEM,
                 content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
             )
-            if len(messages) > 1:
-                messages.insert(len(messages) - 1, knowledge_msg)
-            else:
-                messages.append(knowledge_msg)
+            messages.append(knowledge_msg)
+
+        for memory_step in self.memory.steps:
+            messages.extend(memory_step.to_messages(summary_mode=summary_mode))
 
         return messages
 
