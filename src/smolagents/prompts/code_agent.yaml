@@ -113,8 +113,7 @@ system_prompt: |-
     {%- endfor %}
     ```
     {%- for tool in tools.values() if tool.should_add_tool_description_into_system_prompt %}
-
-    {{ tool.name }}: {{ tool.description }}
+    {{ tool.to_code_prompt() }}
     {%- endfor %}
 
     {%- if managed_agents and managed_agents.values() | list %}

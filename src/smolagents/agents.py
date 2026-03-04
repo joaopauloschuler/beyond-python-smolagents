@@ -1018,7 +1018,8 @@ You have been provided with these additional arguments, that you can access dire
                 ],
             )
         ]
-        messages += [m for m in self.write_memory_to_messages() if m.role != MessageRole.SYSTEM]
+        messages += self.write_memory_to_messages()[1:]
+        # messages += [m for m in self.write_memory_to_messages() if m.role != MessageRole.SYSTEM]
         messages.append(
             ChatMessage(
                 role=MessageRole.USER,
