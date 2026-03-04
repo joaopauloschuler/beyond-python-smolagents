@@ -21,6 +21,7 @@ limitations under the License.
 * 🗜️ **Context compression**: Biologically inspired [automatic LLM-based summarization](docs/compression.md) of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
 * 🖥️ **GUI interaction:** Launch, screenshot, click, type, and send keys to native GUI applications on X11 via xdotool/ImageMagick (`--gui-x11` flag).
+* 🔌 **MCP server integration:** Connect any [Model Context Protocol](https://modelcontextprotocol.io) server as a tool source via the `--mcp` CLI flag. Supports both HTTP (Streamable HTTP) and stdio-based servers.
 * 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
 * 🎨 **Image tools:** Visual image diffing (`diff_images`), OCR text extraction from images (`screen_ocr`), and a canvas for drawing shapes, text, and annotations (`canvas_create`, `canvas_draw`) — always available.
 * 🎤 **Dictation input:** Dictate prompts via microphone using Whisper or ElevenLabs transcription (`/dictation` command, requires `BPSA_DICTATION_TRANSCRIBER` env var).
@@ -89,6 +90,8 @@ $ echo "task" | bpsa                # Piped input
 $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
 $ bpsa --gui-x11                     # Enable native GUI interaction (xdotool/ImageMagick)
+$ bpsa --mcp http://localhost:8000/mcp  # Connect an HTTP MCP server
+$ bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'  # Connect a stdio MCP server
 ```
 
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.

@@ -186,6 +186,23 @@ Use `prompt_toolkit` for:
 | `/verbose` | Toggle verbose output |
 | `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
 
+## MCP Server Integration
+
+The `--mcp` flag connects [Model Context Protocol](https://modelcontextprotocol.io) servers as additional tool sources. Tools exposed by MCP servers are automatically available to the agent alongside the built-in tools.
+
+```bash
+# HTTP-based MCP server (Streamable HTTP transport)
+bpsa --mcp http://localhost:8000/mcp
+
+# stdio-based MCP server (shell command)
+bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'
+
+# Multiple MCP servers (flag can be repeated)
+bpsa --mcp http://server1/mcp --mcp http://server2/mcp
+```
+
+The flag can be repeated to connect multiple servers simultaneously. Each server's tools are merged into the agent's tool list. MCP connections are automatically closed when the session ends.
+
 ## Configuration Layering
 
 Priority (highest to lowest):
