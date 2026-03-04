@@ -877,7 +877,7 @@ You have been provided with these additional arguments, that you can access dire
         # Inject knowledge near the end of context (just before the last message)
         if self.memory.knowledge and self.memory.knowledge.strip():
             knowledge_msg = ChatMessage(
-                role=MessageRole.USER,
+                role=MessageRole.SYSTEM,
                 content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
             )
             if len(messages) > 1:
