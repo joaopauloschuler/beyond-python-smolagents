@@ -2407,7 +2407,9 @@ def main():
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")
-    mcp_servers = _parse_mcp_servers(args.mcp or []) or None
+    env_mcp = get_env("BPSA_MCP", "")
+    env_mcp_list = [s.strip() for s in env_mcp.splitlines() if s.strip()]
+    mcp_servers = _parse_mcp_servers((args.mcp or []) + env_mcp_list) or None
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
