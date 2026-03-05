@@ -2665,6 +2665,11 @@ class MoveActionStepToMemory(Tool):
             "description": "What to move: 'response' (observations/results), 'model_output' (the model's own output), or 'both'.",
             "enum": ["response", "model_output", "both"],
         },
+        "short_description": {
+            "type": "string",
+            "description": "A brief label describing what the archived content contains. Shown as a visible placeholder so you can know what is in memory without restoring it, and avoid repeating work. Example: 'List of 12 Python files found in /src'.",
+            "nullable": True,
+        },
     }
     output_type = "string"
 
@@ -2684,7 +2689,7 @@ class MoveActionStepToMemory(Tool):
                 return step
         return None
 
-    def forward(self, actionstep_id: int, content: str) -> str:
+    def forward(self, actionstep_id: int, content: str, short_description: str = "") -> str:
         if self._agent is None:
             return "Error: MoveActionStepToMemory is not bound to an agent. Call set_agent() first."
 
@@ -2696,7 +2701,7 @@ class MoveActionStepToMemory(Tool):
             return f"Error: content must be 'response', 'model_output', or 'both'. Got '{content}'."
 
         moved = []
-        placeholder = f"[Moved to memory]"
+        placeholder = f"[Moved to memory: {short_description}]" if short_description else "[Moved to memory]"
 
         if content in ("response", "both"):
             if step._archived_observations is not None:
