@@ -114,15 +114,15 @@ All compression and knowledge logic:
 @dataclass
 class CompressionConfig:
     enabled: bool = True
-    keep_recent_steps: int = 5            # Recent steps to keep in full
-    max_uncompressed_steps: int = 10      # Compress when exceeds this
+    keep_recent_steps: int = 40           # Recent steps to keep in full
+    max_uncompressed_steps: int = 50      # Compress when exceeds this
     estimated_token_threshold: int = 0    # Token-based trigger (0=disabled)
     compression_model: Model | None = None  # Separate model for compression (None=use main)
     max_summary_tokens: int = 50000       # Max tokens for generated summary
     preserve_error_steps: bool = False    # Keep error steps uncompressed
     preserve_final_answer_steps: bool = True  # Keep final_answer steps uncompressed
-    max_compressed_steps: int = 32        # Merge compressed steps when exceeds this
-    keep_compressed_steps: int = 22       # Recent compressed steps to keep during merge
+    max_compressed_steps: int = 20        # Merge compressed steps when exceeds this
+    keep_compressed_steps: int = 25       # Recent compressed steps to keep during merge
     min_compression_chars: int = 4096     # Skip compression if content below this
 
 @dataclass

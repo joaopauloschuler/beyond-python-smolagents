@@ -100,15 +100,15 @@ class CompressionConfig:
     """
 
     enabled: bool = True
-    keep_recent_steps: int = 5
-    max_uncompressed_steps: int = 10
+    keep_recent_steps: int = 40
+    max_uncompressed_steps: int = 50
     estimated_token_threshold: int = 0
     compression_model: "Model | None" = None
     max_summary_tokens: int = 50000
     preserve_error_steps: bool = False
     preserve_final_answer_steps: bool = True
-    max_compressed_steps: int = 32
-    keep_compressed_steps: int = 22
+    max_compressed_steps: int = 20
+    keep_compressed_steps: int = 25
     min_compression_chars: int = 4096
 
 
