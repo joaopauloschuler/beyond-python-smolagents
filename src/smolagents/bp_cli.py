@@ -1019,16 +1019,16 @@ def cmd_compression_stats(agent):
     table.add_column("Setting", style="bold")
     table.add_column("Value", style="cyan")
     table.add_row("enabled", str(config.enabled))
-    table.add_row("keep_recent_steps", str(config.keep_recent_steps))
-    table.add_row("max_uncompressed_steps", str(config.max_uncompressed_steps))
-    table.add_row("estimated_token_threshold", str(config.estimated_token_threshold))
-    table.add_row("max_summary_tokens", str(config.max_summary_tokens))
+    table.add_row("compression_model", str(getattr(comp_model, "model_id", "same as main")) if comp_model else "same as main")
     table.add_row("preserve_error_steps", str(config.preserve_error_steps))
     table.add_row("preserve_final_answer_steps", str(config.preserve_final_answer_steps))
-    table.add_row("max_compressed_steps", str(config.max_compressed_steps))
+    table.add_row("keep_recent_steps", str(config.keep_recent_steps))
+    table.add_row("max_uncompressed_steps", str(config.max_uncompressed_steps))
     table.add_row("keep_compressed_steps", str(config.keep_compressed_steps))
+    table.add_row("max_compressed_steps", str(config.max_compressed_steps))
+    table.add_row("estimated_token_threshold", str(config.estimated_token_threshold))
+    table.add_row("max_summary_tokens", str(config.max_summary_tokens))
     comp_model = config.compression_model
-    table.add_row("compression_model", str(getattr(comp_model, "model_id", "same as main")) if comp_model else "same as main")
     console.print(table)
 
     # Stats
