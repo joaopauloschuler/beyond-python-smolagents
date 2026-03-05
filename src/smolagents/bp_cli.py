@@ -1281,84 +1281,44 @@ def cmd_compression_max_compressed(agent, args: str):
         console.print("[red]Invalid number. Usage: /compression-max-compressed-steps <N>[/]")
 
 
-def cmd_compression_set_high(agent):
-    """Set compression to HIGH preset (aggressive)."""
+def _apply_compression_preset(agent, preset_name: str, keep_recent: int, max_uncompressed: int, keep_compressed: int, max_compressed: int):
+    """Apply a named compression preset and display the result."""
     config = _get_compression_config(agent)
     if config is None:
         return
-    config.keep_recent_steps = 20
-    config.max_uncompressed_steps = 25
-    config.keep_compressed_steps = 10
-    config.max_compressed_steps = 15
+    config.keep_recent_steps = keep_recent
+    config.max_uncompressed_steps = max_uncompressed
+    config.keep_compressed_steps = keep_compressed
+    config.max_compressed_steps = max_compressed
     table = Table(show_header=False, box=None)
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(style="green")
-    table.add_row("Compression preset", "HIGH")
-    table.add_row("keep_recent_steps", "20")
-    table.add_row("max_uncompressed_steps", "25")
-    table.add_row("keep_compressed_steps", "20")
-    table.add_row("max_compressed_steps", "25")
+    table.add_row("Compression preset", preset_name)
+    table.add_row("keep_recent_steps", str(keep_recent))
+    table.add_row("max_uncompressed_steps", str(max_uncompressed))
+    table.add_row("keep_compressed_steps", str(keep_compressed))
+    table.add_row("max_compressed_steps", str(max_compressed))
     console.print(table)
 
+
+def cmd_compression_set_high(agent):
+    """Set compression to HIGH preset (aggressive)."""
+    _apply_compression_preset(agent, "HIGH", 20, 25, 10, 15)
 
 
 def cmd_compression_set_ultra(agent):
     """Set compression to ULTRA preset (maximum compression)."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    config.keep_recent_steps = 10
-    config.max_uncompressed_steps = 12
-    config.keep_compressed_steps = 10
-    config.max_compressed_steps = 12
-    table = Table(show_header=False, box=None)
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column(style="green")
-    table.add_row("Compression preset", "ULTRA")
-    table.add_row("keep_recent_steps", "10")
-    table.add_row("max_uncompressed_steps", "12")
-    table.add_row("keep_compressed_steps", "10")
-    table.add_row("max_compressed_steps", "12")
-    console.print(table)
+    _apply_compression_preset(agent, "ULTRA", 10, 12, 10, 12)
+
 
 def cmd_compression_set_normal(agent):
     """Set compression to NORMAL preset (balanced)."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    config.keep_recent_steps = 40
-    config.max_uncompressed_steps = 50
-    config.keep_compressed_steps = 15
-    config.max_compressed_steps = 20
-    table = Table(show_header=False, box=None)
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column(style="green")
-    table.add_row("Compression preset", "NORMAL")
-    table.add_row("keep_recent_steps", "40")
-    table.add_row("max_uncompressed_steps", "50")
-    table.add_row("keep_compressed_steps", "10")
-    table.add_row("max_compressed_steps", "20")
-    console.print(table)
+    _apply_compression_preset(agent, "NORMAL", 40, 50, 15, 20)
 
 
 def cmd_compression_set_low(agent):
     """Set compression to LOW preset (conservative)."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    config.keep_recent_steps = 90
-    config.max_uncompressed_steps = 100
-    config.keep_compressed_steps = 20
-    config.max_compressed_steps = 40
-    table = Table(show_header=False, box=None)
-    table.add_column(style="cyan", no_wrap=True)
-    table.add_column(style="green")
-    table.add_row("Compression preset", "LOW")
-    table.add_row("keep_recent_steps", "90")
-    table.add_row("max_uncompressed_steps", "100")
-    table.add_row("keep_compressed_steps", "20")
-    table.add_row("max_compressed_steps", "40")
-    console.print(table)
+    _apply_compression_preset(agent, "LOW", 90, 100, 20, 40)
 
 
 def cmd_compression_model(agent, args: str):
