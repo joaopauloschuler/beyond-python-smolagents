@@ -2180,7 +2180,9 @@ You can combine the above to be able to run very large portions of python code i
             id=f"call_{len(self.memory.steps)}",
         )
         yield tool_call
-        memory_step.tool_calls = [tool_call]
+
+        # The below makes sense only for debug
+        # memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
         if skip_next_approval:
