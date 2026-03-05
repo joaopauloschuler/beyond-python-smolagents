@@ -1200,85 +1200,44 @@ def cmd_compression_toggle(agent, args: str):
     console.print(f"[cyan]Compression: {'on' if config.enabled else 'off'}[/]")
 
 
-def cmd_compression_keep_recent(agent, args: str):
-    """Change keep_recent_steps."""
+def _cmd_compression_set_param(agent, args: str, attr_name: str, cmd_name: str, min_value: int):
+    """Generic setter for a single compression config integer parameter."""
     config = _get_compression_config(agent)
     if config is None:
         return
     args = args.strip()
     if not args:
-        console.print(f"[cyan]Current keep_recent_steps: {config.keep_recent_steps}[/]")
-        console.print("[dim]Usage: /compression-keep-recent-steps <N>[/]")
+        console.print(f"[cyan]Current {attr_name}: {getattr(config, attr_name)}[/]")
+        console.print(f"[dim]Usage: /{cmd_name} <N>[/]")
         return
     try:
         n = int(args)
-        if n < 0:
+        if n < min_value:
             raise ValueError
-        config.keep_recent_steps = n
-        console.print(f"[green]keep_recent_steps set to {n}[/]")
+        setattr(config, attr_name, n)
+        console.print(f"[green]{attr_name} set to {n}[/]")
     except ValueError:
-        console.print("[red]Invalid number. Usage: /compression-keep-recent-steps <N>[/]")
+        console.print(f"[red]Invalid number. Usage: /{cmd_name} <N>[/]")
+
+
+def cmd_compression_keep_recent(agent, args: str):
+    """Change keep_recent_steps."""
+    _cmd_compression_set_param(agent, args, "keep_recent_steps", "compression-keep-recent-steps", 0)
 
 
 def cmd_compression_max_uncompressed(agent, args: str):
     """Change max_uncompressed_steps."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    args = args.strip()
-    if not args:
-        console.print(f"[cyan]Current max_uncompressed_steps: {config.max_uncompressed_steps}[/]")
-        console.print("[dim]Usage: /compression-max-uncompressed-steps <N>[/]")
-        return
-    try:
-        n = int(args)
-        if n < 1:
-            raise ValueError
-        config.max_uncompressed_steps = n
-        console.print(f"[green]max_uncompressed_steps set to {n}[/]")
-    except ValueError:
-        console.print("[red]Invalid number. Usage: /compression-max-uncompressed-steps <N>[/]")
+    _cmd_compression_set_param(agent, args, "max_uncompressed_steps", "compression-max-uncompressed-steps", 1)
 
 
 def cmd_compression_keep_compressed(agent, args: str):
     """Change keep_compressed_steps."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    args = args.strip()
-    if not args:
-        console.print(f"[cyan]Current keep_compressed_steps: {config.keep_compressed_steps}[/]")
-        console.print("[dim]Usage: /compression-keep-compressed-steps <N>[/]")
-        return
-    try:
-        n = int(args)
-        if n < 0:
-            raise ValueError
-        config.keep_compressed_steps = n
-        console.print(f"[green]keep_compressed_steps set to {n}[/]")
-    except ValueError:
-        console.print("[red]Invalid number. Usage: /compression-keep-compressed-steps <N>[/]")
+    _cmd_compression_set_param(agent, args, "keep_compressed_steps", "compression-keep-compressed-steps", 0)
 
 
 def cmd_compression_max_compressed(agent, args: str):
     """Change max_compressed_steps."""
-    config = _get_compression_config(agent)
-    if config is None:
-        return
-    args = args.strip()
-    if not args:
-        console.print(f"[cyan]Current max_compressed_steps: {config.max_compressed_steps}[/]")
-        console.print("[dim]Usage: /compression-max-compressed-steps <N>[/]")
-        return
-    try:
-        n = int(args)
-        if n < 0:
-            raise ValueError
-        config.max_compressed_steps = n
-        console.print(f"[green]max_compressed_steps set to {n}[/]")
-    except ValueError:
-        console.print("[red]Invalid number. Usage: /compression-max-compressed-steps <N>[/]")
-
+    _cmd_compression_set_param(agent, args, "max_compressed_steps", "compression-max-compressed-steps", 0)
 
 def _apply_compression_preset(agent, preset_name: str, keep_recent: int, max_uncompressed: int, keep_compressed: int, max_compressed: int):
     """Apply a named compression preset and display the result."""
