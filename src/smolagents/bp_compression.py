@@ -161,7 +161,7 @@ class CompressedHistoryStep(MemoryStep):
 
         return [
             ChatMessage(
-                role=MessageRole.USER,
+                role=MessageRole.ASSISTANT,
                 content=[{"type": "text", "text": content}],
             )
         ]
