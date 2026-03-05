@@ -1013,7 +1013,7 @@ def cmd_compression_stats(agent):
     config = _get_compression_config(agent)
     if config is None:
         return
-
+    comp_model = config.compression_model
     console.print(Rule("[bold]Compression Configuration", style="blue"))
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Setting", style="bold")
@@ -1028,7 +1028,6 @@ def cmd_compression_stats(agent):
     table.add_row("max_compressed_steps", str(config.max_compressed_steps))
     table.add_row("estimated_token_threshold", str(config.estimated_token_threshold))
     table.add_row("max_summary_tokens", str(config.max_summary_tokens))
-    comp_model = config.compression_model
     console.print(table)
 
     # Stats
