@@ -20,8 +20,8 @@ Environment variables:
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
     BPSA_COMPRESSION_KEEP_RECENT_STEPS        - Recent steps to keep uncompressed (default: 40)
     BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS   - Trigger threshold for compression (default: 50)
-    BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS    - Compressed steps to keep on merge (default: 80)
-    BPSA_COMPRESSION_MAX_COMPRESSED_STEPS     - Trigger threshold for merge (default: 120)
+    BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS    - Compressed steps to keep on merge (default: 20)
+    BPSA_COMPRESSION_MAX_COMPRESSED_STEPS     - Trigger threshold for merge (default: 25)
     BPSA_COMPRESSION_TOKEN_THRESHOLD          - Token-based trigger (default: 0 = disabled)
     BPSA_COMPRESSION_MODEL                    - Model ID for compression (default: same as main)
     BPSA_COMPRESSION_MAX_SUMMARY_TOKENS       - Max tokens in summary (default: 50000)
@@ -614,7 +614,7 @@ SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
     "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
     "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
-    "/compression-set-high", "/compression-set-low", "/compression-set-medium",
+    "/compression-set-high", "/compression-set-low", "/compression-set-medium", "/compression-set-ultra",
     "/compression-model", "/dictation", "/exit", "/help",
     "/instructions-load", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
     "/session-load", "/session-save",
@@ -643,6 +643,7 @@ def print_help():
     table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
     table.add_row("/compression-set-medium", "Set compression preset: MEDIUM (balanced)")
     table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
+    table.add_row("/compression-set-ultra", "Set compression preset: ULTRA (maximum)")
     table.add_row("/compression-model <model>", "Switch compression model")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
@@ -1299,6 +1300,26 @@ def cmd_compression_set_high(agent):
     table.add_row("max_compressed_steps", "25")
     console.print(table)
 
+
+
+def cmd_compression_set_ultra(agent):
+    """Set compression to ULTRA preset (maximum compression)."""
+    config = _get_compression_config(agent)
+    if config is None:
+        return
+    config.keep_recent_steps = 10
+    config.max_uncompressed_steps = 12
+    config.keep_compressed_steps = 10
+    config.max_compressed_steps = 12
+    table = Table(show_header=False, box=None)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="green")
+    table.add_row("Compression preset", "ULTRA")
+    table.add_row("keep_recent_steps", "10")
+    table.add_row("max_uncompressed_steps", "12")
+    table.add_row("keep_compressed_steps", "10")
+    table.add_row("max_compressed_steps", "12")
+    console.print(table)
 
 def cmd_compression_set_normal(agent):
     """Set compression to NORMAL preset (balanced)."""
@@ -2188,6 +2209,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/compression-set-high":
                 cmd_compression_set_high(agent)
+                continue
+            elif cmd == "/compression-set-ultra":
+                cmd_compression_set_ultra(agent)
                 continue
             elif cmd == "/compression-set-medium":
                 cmd_compression_set_normal(agent)

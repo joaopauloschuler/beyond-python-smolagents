@@ -71,8 +71,8 @@ All optional. Configure `CompressionConfig` without touching code:
 | `BPSA_COMPRESSION_ENABLED` | `1` | Enable/disable compression (`0` or `1`) |
 | `BPSA_COMPRESSION_KEEP_RECENT_STEPS` | `40` | Recent steps kept in full detail |
 | `BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS` | `50` | Trigger compression when uncompressed step count exceeds this |
-| `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `80` | Compressed steps to keep during a merge |
-| `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `120` | Trigger merge when compressed step count exceeds this |
+| `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `20` | Compressed steps to keep during a merge |
+| `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `25` | Trigger merge when compressed step count exceeds this |
 | `BPSA_COMPRESSION_TOKEN_THRESHOLD` | `0` | Token-based compression trigger (`0` = disabled) |
 | `BPSA_COMPRESSION_MODEL` | _(main model)_ | Model ID for compression (uses main model if unset) |
 | `BPSA_COMPRESSION_MAX_SUMMARY_TOKENS` | `50000` | Max tokens in a generated summary |

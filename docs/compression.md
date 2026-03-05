@@ -242,8 +242,8 @@ Environment variables (with defaults used by the CLI):
 | `BPSA_COMPRESSION_ENABLED` | `1` | Enable compression |
 | `BPSA_COMPRESSION_KEEP_RECENT_STEPS` | `40` | Recent steps to keep uncompressed |
 | `BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS` | `50` | Trigger threshold for compression |
-| `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `80` | Compressed steps to keep on merge |
-| `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `120` | Trigger threshold for merge |
+| `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `20` | Compressed steps to keep on merge |
+| `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `25` | Trigger threshold for merge |
 | `BPSA_COMPRESSION_TOKEN_THRESHOLD` | `0` | Token-based trigger (0=disabled) |
 | `BPSA_COMPRESSION_MODEL` | same as main | Model ID for compression |
 | `BPSA_COMPRESSION_MAX_SUMMARY_TOKENS` | `50000` | Max tokens in summary |
