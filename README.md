@@ -61,7 +61,7 @@ BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
 
-Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](CLI.md) for the full list.
+Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](docs/CLI.md) for the full list.
 
 #### Dictation Input
 
@@ -112,7 +112,7 @@ Define command aliases with `/alias <name> <value>` (e.g., `/alias gs !!git stat
 
 Sessions are automatically saved every 5 turns to `~/.bpsa_autosave.json`. Configure the interval with the `BPSA_AUTOSAVE_INTERVAL` environment variable (set to 0 to disable).
 
-Find more about bpsa CLI at [CLI.md](CLI.md).
+Find more about bpsa CLI at [CLI.md](docs/CLI.md).
 
 ## CLI (`ad-infinitum`)
 
@@ -331,7 +331,7 @@ agent = CodeAgent(
 | `preserve_final_answer_steps` | `True` | Always keep final answer steps |
 | `min_compression_chars` | `4096` | Minimum chars before compression LLM call is made (0 = disabled) |
 
-When using `bpsa` or `ad-infinitum`, all of the above can be configured via environment variables (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`) without changing any code. See [CLI.md](CLI.md) for the full list.
+When using `bpsa` or `ad-infinitum`, all of the above can be configured via environment variables (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`) without changing any code. See [CLI.md](docs/CLI.md) for the full list.
 
 
 ### What Gets Preserved
