@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Unio
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
 from .bp_utils import bp_parse_code_blobs, fix_nested_tags
-from .bp_utils import is_valid_python_code
+from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
 import yaml
@@ -892,14 +892,19 @@ You have been provided with these additional arguments, that you can access dire
         for memory_step in self.memory.steps:
             step_messages.extend(memory_step.to_messages(summary_mode=summary_mode))
 
-        # New order: memory steps, system prompt, knowledge, last message
+        # Message ordering: system prompt position depends on BPSA_SYSTEM_PROMPT_FIRST
+        system_prompt_first = get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", False)
         if step_messages:
             last_message = step_messages[-1]
-            messages = step_messages[:-1]
-            messages.extend(self.memory.system_prompt.to_messages(summary_mode=summary_mode))
+            if system_prompt_first:
+                messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
+                messages.extend(step_messages[:-1])
+            else:
+                messages = step_messages[:-1]
+                messages.extend(self.memory.system_prompt.to_messages(summary_mode=summary_mode))
             if self.memory.knowledge and self.memory.knowledge.strip():
                 messages.append(ChatMessage(
-                    role=MessageRole.SYSTEM,
+                    role=MessageRole.ASSISTANT,
                     content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
                 ))
             messages.append(last_message)
@@ -907,7 +912,7 @@ You have been provided with these additional arguments, that you can access dire
             messages = self.memory.system_prompt.to_messages(summary_mode=summary_mode)
             if self.memory.knowledge and self.memory.knowledge.strip():
                 messages.append(ChatMessage(
-                    role=MessageRole.SYSTEM,
+                    role=MessageRole.ASSISTANT,
                     content=[{"type": "text", "text": f"<knowledge>\n{self.memory.knowledge}\n</knowledge>"}],
                 ))
 

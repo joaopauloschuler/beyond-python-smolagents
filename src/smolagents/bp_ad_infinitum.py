@@ -24,7 +24,7 @@ Folder convention:
 Files starting with '_' are modifiers, not tasks. All other task files are
 loaded in alphabetical order. Each becomes one element in the task array.
 
-Environment variables (same BPSA_* as bpsa, plus):
+Environment variables (same BPSA_* as bpsa — including BPSA_SYSTEM_PROMPT_FIRST — plus):
     BPSA_CYCLES         - Number of cycles, 0 = infinite (default: 1)
     BPSA_PLAN_INTERVAL  - Planning interval (default: None = off)
     BPSA_MAX_STEPS      - Max steps per agent run (default: 200)

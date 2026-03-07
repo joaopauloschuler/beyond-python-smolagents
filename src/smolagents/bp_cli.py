@@ -15,6 +15,7 @@ Environment variables:
     BPSA_GLOBAL_EXECUTOR - Executor type (default: exec)
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
+    BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: false)
 
     Context compression parameters (see CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
