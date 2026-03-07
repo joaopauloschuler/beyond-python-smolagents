@@ -7,15 +7,14 @@ A hybrid rolling summarization system for BPSA that compresses older memory step
 
 ## Inspirations from Biology
 
-The two-phase compression pipeline was designed from first principles, yet it converges
-strikingly closely on the **Standard Model of Memory Consolidation** — the dominant
-neuroscientific theory of how biological brains move experiences from short-term storage
-into long-term knowledge. The parallels are not superficial; they appear to reflect deep
-structural constraints that any system managing finite working memory over unbounded
-experience must eventually solve. This convergence is a hypothesis, not a proven fact —
-but the hypothesis is a strong one: finite capacity + unbounded experience + the need for
-generalisation are universal pressures, and similar pressures tend to produce similar
-solutions regardless of substrate.
+The two-phase compression pipeline converges strikingly closely on the **Standard Model 
+of Memory Consolidation** — the dominant neuroscientific theory of how biological brains
+move experiences from short-term storage into long-term knowledge. The parallels are not
+superficial; they appear to reflect deep structural constraints that any system managing
+finite working memory over unbounded experience must eventually solve. This convergence
+is a hypothesis, not a proven fact — but the hypothesis is a strong one: finite capacity, 
+unbounded experience and the need for generalisation are universal pressures, and similar
+pressures tend to produce similar solutions regardless of substrate.
 
 ### The Deepest Parallel
 
