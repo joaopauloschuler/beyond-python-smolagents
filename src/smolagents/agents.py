@@ -2088,7 +2088,14 @@ class CodeAgent(MultiStepAgent):
             skip_next_approval = False
             if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
                 skip_next_approval = True  # system-generated reminders, no approval needed
-                model_output_for_parsing = model_output_for_parsing + """
+                if ( (len(saved_files)>0) or (len(appended_files)>0)):
+                    model_output_for_parsing = model_output_for_parsing + """
+```py
+print(\"Files have been updated.\")
+```<end_code>
+"""
+                else:
+                    model_output_for_parsing = model_output_for_parsing + """
 
 ```py
 print(\"\"\"
