@@ -66,8 +66,10 @@ from .memory import (
     Timing,
     TokenUsage,
     ToolCall,
+    count_messages_chars,
 )
 from .models import (
+    CHARS_PER_TOKEN,
     CODEAGENT_RESPONSE_FORMAT,
     ChatMessage,
     ChatMessageStreamDelta,
@@ -920,7 +922,6 @@ You have been provided with these additional arguments, that you can access dire
 
     def get_context_char_size(self) -> int:
         """Return the character count of the last context sent to the LLM."""
-        from smolagents.memory import ActionStep, count_messages_chars
         for step in reversed(self.memory.steps):
             if isinstance(step, ActionStep):
                 if step.context_chars is not None:
@@ -953,9 +954,8 @@ You have been provided with these additional arguments, that you can access dire
 
     def cleanup_model_input_messages(self, keep_last: int = 2):
         """Clear model_input_messages from all steps except the last `keep_last` that have them."""
-        # action_output - Safe to clean (not used in next run)                                                                                   
-        # model_output_message - Safe to clean (not used in next run) 
-        from smolagents.memory import ActionStep, PlanningStep
+        # action_output - Safe to clean (not used in next run)
+        # model_output_message - Safe to clean (not used in next run)
         steps_with_messages = [
             s for s in self.memory.steps
             if isinstance(s, (ActionStep, PlanningStep)) and s.model_input_messages
@@ -1994,11 +1994,16 @@ class CodeAgent(MultiStepAgent):
                         output_text = chat_message.content
 
                         model_output = output_text
-                        #TODO: fix input and output token count
+                        # Use token counts from stream if available, otherwise estimate from chars
+                        stream_input = chat_message.token_usage.input_tokens if chat_message.token_usage else 0
+                        stream_output = chat_message.token_usage.output_tokens if chat_message.token_usage else 0
+                        if stream_input == 0 and stream_output == 0:
+                            stream_input = count_messages_chars(input_messages) // CHARS_PER_TOKEN
+                            stream_output = len(output_text) // CHARS_PER_TOKEN if output_text else 0
                         chat_message = ChatMessage(
                             role="assistant",
                             content=output_text,
-                            token_usage=TokenUsage(input_tokens=0, output_tokens=0),
+                            token_usage=TokenUsage(input_tokens=stream_input, output_tokens=stream_output),
                         )
                         memory_step.model_output_message = chat_message
                         model_output = chat_message.content
