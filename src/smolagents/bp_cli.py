@@ -172,6 +172,8 @@ def _compact_step_callback(step):
         return
 
     _spinner.stop()
+    # Reset the spinner message for next step (token counter restarts per step)
+    _spinner.spinner.text = f"[{_spinner.color}]Agent is thinking...[/{_spinner.color}]"
 
     step_num = getattr(step, "step_number", "?")
     duration = ""
@@ -377,6 +379,9 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         compression_cfg = copy(DEFAULT_THINKER_COMPRESSION)
         compression_cfg.compression_model = compression_model
 
+    # Enable streaming if the model supports it (for token counter on spinner)
+    can_stream = hasattr(model, "generate_stream")
+
     agent = CodeAgent(
         tools=tools,
         model=model,
@@ -388,8 +393,22 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         planning_interval=None,
         step_callbacks=step_cbs,
         approval_callback=approval_callback,
+        stream_outputs=can_stream,
     )
     agent.add_planning_tool()
+
+    # Set stream callback: updates spinner with chunk count
+    if can_stream:
+        _token_counter = {"count": 0}
+
+        def _stream_delta_cb(delta):
+            _token_counter["count"] += 1
+            if not _spinner.live:
+                _spinner.start()
+            _spinner.update(f"Agent is thinking... ({_token_counter['count']} chunks)")
+
+        agent.stream_delta_callback = _stream_delta_cb
+        agent._stream_token_counter = _token_counter  # expose for reset
 
     agent._load_image_tool = load_image_tool
 
@@ -1682,6 +1701,8 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
                 task_text += inject_tree(tree_folder)
 
             # Run
+            if hasattr(cycle_agent, "_stream_token_counter"):
+                cycle_agent._stream_token_counter["count"] = 0
             _spinner.start()
             start_time = time.time()
             if verbose:
@@ -2257,6 +2278,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 agent.logger.level = LogLevel.INFO
             else:
                 agent.logger.level = LogLevel.ERROR
+            # Reset stream token counter for this turn
+            if hasattr(agent, "_stream_token_counter"):
+                agent._stream_token_counter["count"] = 0
             _spinner.start()
             last_prompt = text
             task_text = prepend_instructions(text, instructions) if first_turn else text

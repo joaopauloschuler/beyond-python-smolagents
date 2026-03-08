@@ -1872,6 +1872,7 @@ class CodeAgent(MultiStepAgent):
             **kwargs,
         )
         self.stream_outputs = stream_outputs
+        self.stream_delta_callback = None  # Optional callback(delta) called per stream chunk
         if self.stream_outputs and not hasattr(self.model, "generate_stream"):
             raise ValueError(
                 "`stream_outputs` is set to True, but the model class implements no `generate_stream` method."
@@ -1983,13 +1984,11 @@ class CodeAgent(MultiStepAgent):
                         )
                         output_text = ""
                         chat_message_stream_deltas: list[ChatMessageStreamDelta] = []
-                        with Live("", console=self.logger.console, vertical_overflow="visible") as live:
-                            for event in output_stream:
-                                chat_message_stream_deltas.append(event)
-                                live.update(
-                                    Markdown(agglomerate_stream_deltas(chat_message_stream_deltas).render_as_markdown())
-                                )
-                                yield event
+                        for event in output_stream:
+                            chat_message_stream_deltas.append(event)
+                            if self.stream_delta_callback:
+                                self.stream_delta_callback(event)
+                            yield event
                         chat_message = agglomerate_stream_deltas(chat_message_stream_deltas)
                         memory_step.model_output_message = chat_message
                         output_text = chat_message.content
