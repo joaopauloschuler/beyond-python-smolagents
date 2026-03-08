@@ -2083,9 +2083,12 @@ Reminders to my future self:
 * As I can not ask questions to users, I will use my best guess when required.
 * When I feel tempted to repeat the same reply, I will try a new approach.
 * When I finish or when I do not know what to do, I will respond with
-<runcode>final_answer("I finished working.")</runcode> in my output.
+<runcode>final_answer("I finished working.")</runcode> or
+<runcode>final_answer("I do not know what to do.") in my output.
 Another way to give my final answer is:
-<final_answer>I finished working</final_answer>
+<final_answer>I am ready for the next task</final_answer>
+* Only responses inside `final_answer` will be seen by the user. Everything else is internal dialogue.
+* If I keep seeing these same remineders to my future self, it means that I forgot to run <runcode>final_answer("...")</runcode>
 * When the user asks me to run something with <runcode></runcode>, it means that
 the user wants me to respond with the <runcode>...</runcode> string so the commands
 will run in his device.
