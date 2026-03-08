@@ -334,6 +334,105 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
     console.print(f"  Total time: [green]{total_elapsed:.1f}s[/]")
 
 
+def _resolve_tree_folder(tree_folder):
+    """Resolve tree_folder parameter: None=use env, False=off, True=cwd, str=path."""
+    if tree_folder is not None:
+        if tree_folder is False:
+            return None
+        if tree_folder is True:
+            return os.getcwd()
+        return tree_folder
+    # Fall back to env var
+    tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
+    if tree_folder_raw is not None and tree_folder_raw.lower() == "false":
+        return None
+    if tree_folder_raw is None or tree_folder_raw.lower() == "true":
+        return os.getcwd()
+    return tree_folder_raw
+
+
+def run_ad_infinitum(
+    task_source,
+    cycles=None,
+    max_steps=None,
+    plan_interval=None,
+    tree_folder=None,
+    cooldown=None,
+    model=None,
+    browser_enabled=None,
+    gui_enabled=None,
+    mcp_servers=None,
+    banner=True,
+):
+    """Run ad-infinitum programmatically.
+
+    Args:
+        task_source: Folder of task files (.md, .py, .sh) or a single task file path.
+        cycles: Number of cycles (0=infinite). Default: BPSA_CYCLES or 1.
+        max_steps: Max steps per agent run. Default: BPSA_MAX_STEPS or 200.
+        plan_interval: Planning interval. Default: BPSA_PLAN_INTERVAL or None.
+        tree_folder: Inject directory tree. None=use env, False=off, True=cwd, str=path.
+        cooldown: Seconds between cycles. Default: BPSA_COOLDOWN or 0.
+        model: Pre-built model instance. If None, builds from BPSA_* env vars.
+        browser_enabled: Enable browser. Default: BPSA_BROWSER or False.
+        gui_enabled: Enable GUI. Default: BPSA_GUI or False.
+        mcp_servers: List of MCP server specs (URLs or commands).
+        banner: Whether to print the startup banner. Default: True.
+
+    Example::
+
+        from smolagents.bp_ad_infinitum import run_ad_infinitum
+        run_ad_infinitum("./tasks/", cycles=3, cooldown=10)
+    """
+    from smolagents.bp_cli import build_model, check_required_env, try_load_dotenv
+
+    # Install Ctrl+C handler
+    signal.signal(signal.SIGINT, _signal_handler)
+
+    # Load .env and validate
+    try_load_dotenv()
+    check_required_env()
+
+    # Resolve parameters from kwargs or env vars
+    cycles = cycles if cycles is not None else get_env_int("BPSA_CYCLES", 1)
+    max_steps = max_steps if max_steps is not None else get_env_int("BPSA_MAX_STEPS", 200)
+    cooldown = cooldown if cooldown is not None else get_env_int("BPSA_COOLDOWN", 0)
+    if plan_interval is None:
+        plan_interval_val = get_env("BPSA_PLAN_INTERVAL")
+        plan_interval = int(plan_interval_val) if plan_interval_val else None
+    tree_folder = _resolve_tree_folder(tree_folder)
+    browser_enabled = browser_enabled if browser_enabled is not None else get_env_bool("BPSA_BROWSER")
+    gui_enabled = gui_enabled if gui_enabled is not None else get_env_bool("BPSA_GUI")
+
+    # Load tasks
+    console.print("[dim]Loading tasks...[/]")
+    tasks = load_tasks(task_source)
+
+    if banner:
+        config = {
+            "model_id": get_env("BPSA_MODEL_ID"),
+            "server_model": get_env("BPSA_SERVER_MODEL", "OpenAIServerModel"),
+            "task_count": len(tasks),
+            "cycles": cycles,
+            "max_steps": max_steps,
+            "plan_interval": plan_interval,
+            "tree_folder": tree_folder,
+            "cooldown": cooldown,
+            "browser": browser_enabled,
+            "gui": gui_enabled,
+            "mcp": mcp_servers,
+        }
+        print_banner(config)
+
+    # Build model if not provided
+    if model is None:
+        model = build_model()
+
+    # Run the loop
+    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
+             browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+
+
 def main():
     import argparse
 
@@ -365,58 +464,16 @@ def main():
     )
     args = parser.parse_args()
 
-    # Install Ctrl+C handler
-    signal.signal(signal.SIGINT, _signal_handler)
-
-    # Load .env
-    from smolagents.bp_cli import build_model, check_required_env, try_load_dotenv
-    try_load_dotenv()
-    check_required_env()
-
-    # Read config from env
-    cycles = args.cycles if args.cycles is not None else get_env_int("BPSA_CYCLES", 1)
-    plan_interval_val = get_env("BPSA_PLAN_INTERVAL")
-    plan_interval = int(plan_interval_val) if plan_interval_val else None
-    max_steps = get_env_int("BPSA_MAX_STEPS", 200)
-    cooldown = get_env_int("BPSA_COOLDOWN", 0)
-    tree_folder_raw = get_env("BPSA_INJECT_FOLDER")
-    if tree_folder_raw is not None and tree_folder_raw.lower() == "false":
-        tree_folder = None
-    elif tree_folder_raw is None or tree_folder_raw.lower() == "true":
-        tree_folder = os.getcwd()
-    else:
-        tree_folder = tree_folder_raw
-
-    browser_enabled = args.browser if args.browser else get_env_bool("BPSA_BROWSER")
-    gui_enabled = args.gui_x11 if args.gui_x11 else get_env_bool("BPSA_GUI")
     from smolagents.bp_cli import _parse_mcp_servers
     mcp_servers = _parse_mcp_servers(args.mcp or []) or None
 
-    # Load tasks
-    console.print("[dim]Loading tasks...[/]")
-    tasks = load_tasks(args.task_source)
-
-    config = {
-        "model_id": get_env("BPSA_MODEL_ID"),
-        "server_model": get_env("BPSA_SERVER_MODEL", "OpenAIServerModel"),
-        "task_count": len(tasks),
-        "cycles": cycles,
-        "max_steps": max_steps,
-        "plan_interval": plan_interval,
-        "tree_folder": tree_folder,
-        "cooldown": cooldown,
-        "browser": browser_enabled,
-        "gui": gui_enabled,
-        "mcp": mcp_servers,
-    }
-    print_banner(config)
-
-    # Build model (reused across all cycles)
-    model = build_model()
-
-    # Run the loop
-    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+    run_ad_infinitum(
+        task_source=args.task_source,
+        cycles=args.cycles,
+        browser_enabled=args.browser if args.browser else None,
+        gui_enabled=args.gui_x11 if args.gui_x11 else None,
+        mcp_servers=mcp_servers,
+    )
 
 
 if __name__ == "__main__":
