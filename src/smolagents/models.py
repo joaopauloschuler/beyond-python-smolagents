@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from transformers import StoppingCriteriaList
 
 # Token estimation heuristic: ~4 characters per token (conservative estimate for English text)
-CHARS_PER_TOKEN = 4
+CHARS_PER_TOKEN = 3
 
 logger = logging.getLogger(__name__)
 
