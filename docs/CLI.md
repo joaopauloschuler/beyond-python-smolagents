@@ -121,7 +121,7 @@ Functional banner shown after successful startup:
 
 ```
 ╭─────────────────────────────────────────╮
-│ Beyond Python SmolAgents v1.23-bp       │
+│ Beyond Python SmolAgents v1.24-bp       │
 │ Model: Gemini-2.5-Flash (OpenAIServer…) │
 │ Tools: 38 loaded                        │
 ╰─────────────────────────────────────────╯

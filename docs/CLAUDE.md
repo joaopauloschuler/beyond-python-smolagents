@@ -149,5 +149,5 @@ Tests are in `./tests/`. Key test files:
 
 ## Branch Information
 
-- Main branch for PRs: `v1.23-bp`
+- Main branch for PRs: `v1.24-bp`
 - Development happens on `development*` branches
