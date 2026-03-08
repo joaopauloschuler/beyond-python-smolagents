@@ -710,7 +710,9 @@ You have been provided with these additional arguments, that you can access dire
         if not returned_final_answer and self.step_number == max_steps + 1:
             final_answer = self._handle_max_steps_reached(task)
             yield action_step
-        yield FinalAnswerStep(handle_agent_output_types(final_answer))
+        final_answer_step = FinalAnswerStep(handle_agent_output_types(final_answer))
+        self._finalize_step(final_answer_step)
+        yield final_answer_step
 
     def _validate_final_answer(self, final_answer: Any):
         for check_function in self.final_answer_checks:
@@ -719,8 +721,9 @@ You have been provided with these additional arguments, that you can access dire
             except Exception as e:
                 raise AgentError(f"Check {check_function.__name__} failed with error: {e}", self.logger)
 
-    def _finalize_step(self, memory_step: ActionStep | PlanningStep):
-        memory_step.timing.end_time = time.time()
+    def _finalize_step(self, memory_step: ActionStep | PlanningStep | FinalAnswerStep):
+        if not isinstance(memory_step, FinalAnswerStep):
+            memory_step.timing.end_time = time.time()
         self.step_callbacks.callback(memory_step, agent=self)
 
     def _handle_max_steps_reached(self, task: str) -> Any:
@@ -1427,7 +1430,12 @@ You have been provided with these additional arguments, that you can access dire
         # Load agent.json
         folder = Path(folder)
         agent_dict = json.loads((folder / "agent.json").read_text())
-
+        # Handle HfApiModel -> InferenceClientModel rename for old agents
+        if agent_dict.get("model", {}).get("class") == "HfApiModel":
+            agent_dict["model"]["class"] = "InferenceClientModel"
+            logger.warning(
+                "The agent you're loading uses the deprecated 'HfApiModel' class: it was automatically updated to 'InferenceClientModel'."
+            )
         # Load managed agents from their respective folders, recursively
         managed_agents = []
         for managed_agent_name, managed_agent_class_name in agent_dict["managed_agents"].items():

@@ -140,7 +140,7 @@ locals().update(vars_dict)
             import base64
             import pickle
 
-            class FinalAnswerException(Exception):
+            class FinalAnswerException(BaseException):
                 def __init__(self, value):
                     self.value = value
 
