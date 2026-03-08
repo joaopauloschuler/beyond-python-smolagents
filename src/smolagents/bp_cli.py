@@ -406,7 +406,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
             _token_counter["count"] += 1
             if not _spinner.live:
                 _spinner.start()
-            _spinner.update(f"Agent is thinking... ({_token_counter['count']} chunks)")
+            _spinner.update(f"Agent is thinking... ({_token_counter['count']} chunks)\n")
 
         agent.stream_delta_callback = _stream_delta_cb
         agent._stream_token_counter = _token_counter  # expose for reset
