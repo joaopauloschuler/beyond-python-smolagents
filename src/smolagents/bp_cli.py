@@ -143,12 +143,13 @@ class Spinner:
     
     def update(self, message: str):
         """Update the spinner message while it's running.
-        
+
         Args:
             message: New message to display
         """
+        from rich.text import Text
         self.message = message
-        self.spinner.text = f"[{self.color}]{message}[/{self.color}]"
+        self.spinner.text = Text.from_markup(f"[{self.color}]{message}[/{self.color}]")
         if self.live:
             self.live.update(self.spinner)
 
