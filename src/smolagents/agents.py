@@ -2274,6 +2274,8 @@ You can combine the above to be able to run very large portions of python code i
                             ),
                         ]
         self.logger.log(Group(*execution_outputs_console), level=LogLevel.INFO)
+        if (len(observation)>4096):
+            observation += "\nNote from BPSA: consider moving to memory or summarizing steps.\n"
         memory_step.observations = observation
         memory_step.action_output = truncated_output
         yield ActionOutput(output=truncated_output, is_final_answer=code_output.is_final_answer)
