@@ -14,7 +14,7 @@ superficial; they appear to reflect deep structural constraints that any system 
 finite working memory over unbounded experience must eventually solve. This convergence
 is a hypothesis, not a proven fact — but the hypothesis is a strong one: finite capacity, 
 unbounded experience and the need for generalisation are universal pressures, and similar
-pressures tend to produce similar solutions regardless of substrate.
+pressures tend to produce similar solutions regardless of the biologic or artificial substrate.
 
 ### The Deepest Parallel
 
