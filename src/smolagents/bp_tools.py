@@ -1398,6 +1398,123 @@ Then, please reply with your code via
             result = self.agent.run(local_task_str, reset=restart_chat)
             return result
 
+
+class GitHubCopilotCoder(Tool):
+        # GitHub Copilot has its own built-in tools that can interact with the
+        # file system directly. When PermissionHandler.approve_all is set, copilot
+        # is granted the following permissions:
+        #   READ   - read files from disk
+        #   WRITE  - write files to disk
+        #   SHELL  - execute shell commands
+        #   URL    - fetch URLs
+        #   MEMORY - persistent memory
+        #   MCP    - MCP server tools
+        #   CUSTOM_TOOL - user-defined tools via @define_tool
+        #
+        # This means copilot can read, modify, and save files directly without
+        # passing code through the main agent's context — significantly reducing
+        # token usage. For example, asking copilot to "save the code to utils.py"
+        # will write the file to disk and return only a short confirmation.
+        name = "github_copilot_coder"
+        description = """This assistant uses GitHub Copilot for coding tasks.
+It excels at writing, refactoring, and explaining code.
+GitHub Copilot can read and write files directly to disk. It can also run shell commands.
+When you need code saved to a file, include the file path in your task description
+(e.g., "write a prime checker and save it to utils.py").
+Copilot will save the file and return a short confirmation, saving context tokens.
+"""+RESTART_CHAT_TXT
+        inputs = {
+            "task_str": {
+                "type": "string",
+                "description": "Coding task description. Include a file path if you want copilot to save directly to disk.",
+            },
+            "restart_chat": {
+                "type": "boolean",
+                "description": "When true, creates a new copilot session (forgets previous chat).",
+                "nullable": True
+            }
+        }
+        output_type = "string"
+
+        def __init__(self, model_id="gpt-4.1"):
+            super().__init__()
+            self._model_id = model_id
+            self._client = None
+            self._session = None
+            self._loop = None
+            self._loop_thread = None
+
+        def _run_async(self, coro):
+            """Run an async coroutine on the persistent event loop."""
+            import asyncio
+            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+            return future.result(timeout=120)
+
+        def _ensure_session(self):
+            """Lazily start a background event loop, copilot client, and session.
+
+            Uses PermissionHandler.approve_all to grant copilot full access to
+            its built-in tools (file read/write, shell, URL fetch, etc.).
+            """
+            if self._loop is None:
+                import asyncio
+                import threading
+
+                self._loop = asyncio.new_event_loop()
+                self._loop_thread = threading.Thread(
+                    target=self._loop.run_forever, daemon=True
+                )
+                self._loop_thread.start()
+
+            if self._client is None:
+                from copilot import CopilotClient, PermissionHandler
+
+                async def _init():
+                    self._client = CopilotClient()
+                    await self._client.start()
+                    self._session = await self._client.create_session({
+                        "model": self._model_id,
+                        "on_permission_request": PermissionHandler.approve_all,
+                    })
+                self._run_async(_init())
+
+        def _reset_session(self):
+            """Create a fresh copilot session (drops conversation history).
+
+            Reuses the existing client and event loop; only the session is replaced.
+            """
+            from copilot import PermissionHandler
+
+            async def _reset():
+                self._session = await self._client.create_session({
+                    "model": self._model_id,
+                    "on_permission_request": PermissionHandler.approve_all,
+                })
+            self._run_async(_reset())
+
+        def forward(self, task_str: str, restart_chat: bool = True) -> str:
+            self._ensure_session()
+
+            if restart_chat and self._session is not None:
+                self._reset_session()
+
+            prompt = (
+                "Hello super intelligence!\n"
+                f"Please code '{task_str}'.\n"
+                "Then, please reply with your code via\n"
+                "<final_answer>\n"
+                "# my code ...\n"
+                "...\n"
+                "</final_answer>\n"
+            )
+
+            async def _send():
+                response = await self._session.send_and_wait({"prompt": prompt})
+                return response.data.content
+
+            return self._run_async(_send())
+
+
 class GetRelevantInfoFromFile(Tool):
         name = "get_relevant_info_from_file"
         description = """This sub assistant will return relevant information about relevant_about_str from a local file.

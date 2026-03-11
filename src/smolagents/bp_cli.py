@@ -361,6 +361,11 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         gui_manager, gui_tools = create_gui_tools()
         tools.extend(gui_tools)
 
+    copilot_model_id = get_env("BPSA_COPILOT_MODEL_ID", default=None)
+    if copilot_model_id:
+        from smolagents.bp_tools import GitHubCopilotCoder
+        tools.append(GitHubCopilotCoder(model_id=copilot_model_id))
+
     if mcp_servers:
         from smolagents import MCPClient
         mcp_client = MCPClient(mcp_servers, structured_output=True)
