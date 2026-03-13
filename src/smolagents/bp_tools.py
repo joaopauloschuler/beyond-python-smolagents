@@ -1436,9 +1436,10 @@ Copilot will save the file and return a short confirmation, saving context token
         }
         output_type = "string"
 
-        def __init__(self, model_id="gpt-4.1"):
+        def __init__(self, model_id="gpt-4.1", copilot_tools=None):
             super().__init__()
             self._model_id = model_id
+            self._copilot_tools = copilot_tools
             self._client = None
             self._session = None
             self._loop = None
@@ -1449,6 +1450,22 @@ Copilot will save the file and return a short confirmation, saving context token
             import asyncio
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
             return future.result(timeout=120)
+
+        def _get_copilot_tools(self):
+            """Return the copilot tools list, loading defaults lazily if needed."""
+            if self._copilot_tools is None:
+                from smolagents.bp_copilot_tools import ALL_COPILOT_TOOLS
+                self._copilot_tools = ALL_COPILOT_TOOLS
+            return self._copilot_tools
+
+        def _session_config(self):
+            """Build the session config dict."""
+            from copilot import PermissionHandler
+            return {
+                "model": self._model_id,
+                "tools": self._get_copilot_tools(),
+                "on_permission_request": PermissionHandler.approve_all,
+            }
 
         def _ensure_session(self):
             """Lazily start a background event loop, copilot client, and session.
@@ -1467,15 +1484,12 @@ Copilot will save the file and return a short confirmation, saving context token
                 self._loop_thread.start()
 
             if self._client is None:
-                from copilot import CopilotClient, PermissionHandler
+                from copilot import CopilotClient
 
                 async def _init():
                     self._client = CopilotClient()
                     await self._client.start()
-                    self._session = await self._client.create_session({
-                        "model": self._model_id,
-                        "on_permission_request": PermissionHandler.approve_all,
-                    })
+                    self._session = await self._client.create_session(self._session_config())
                 self._run_async(_init())
 
         def _reset_session(self):
@@ -1483,13 +1497,8 @@ Copilot will save the file and return a short confirmation, saving context token
 
             Reuses the existing client and event loop; only the session is replaced.
             """
-            from copilot import PermissionHandler
-
             async def _reset():
-                self._session = await self._client.create_session({
-                    "model": self._model_id,
-                    "on_permission_request": PermissionHandler.approve_all,
-                })
+                self._session = await self._client.create_session(self._session_config())
             self._run_async(_reset())
 
         def forward(self, task_str: str, restart_chat: bool = True) -> str:
