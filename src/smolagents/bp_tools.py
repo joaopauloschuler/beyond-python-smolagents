@@ -1509,7 +1509,7 @@ Copilot will save the file and return a short confirmation, saving context token
             )
 
             async def _send():
-                response = await self._session.send_and_wait({"prompt": prompt})
+                response = await self._session.send_and_wait({"prompt": prompt}, timeout=3600)
                 return response.data.content
 
             return self._run_async(_send())
@@ -3038,13 +3038,8 @@ SUMMARY:"""
         return f"Summarized {', '.join(summarized)} for actionstep_id={actionstep_id}. Original archived."
 
 
-# ======================================================================
-# LoadImageTool — load an image file into the agent's visual context
-# ======================================================================
-
-
 class LoadImageTool(Tool):
-    """Load an image file so the agent can see it in the next turn."""
+    """Load an image file into the agent's visual context so the agent can see it in the next turn."""
 
     name = "load_image"
     description = (
