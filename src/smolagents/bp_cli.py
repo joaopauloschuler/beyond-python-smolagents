@@ -53,7 +53,7 @@ from rich.table import Table
 from smolagents.bp_utils import get_env
 
 
-VERSION = "1.23-bp"
+VERSION = "1.24-bp"
 console = Console()
 
 # Mutable state for verbose mode, accessible by the step callback

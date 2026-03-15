@@ -62,6 +62,7 @@ All prefixed with `BPSA_`:
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `false` | Place system prompt before memory steps instead of after |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
+| `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
 
 ### Context Compression Variables
 

@@ -26,6 +26,7 @@ from smolagents.bp_tools import (
     extract_function_signatures,
     inject_tree as _inject_tree,
     list_directory_tree as _list_directory_tree,
+    get_line_from_file as _get_line_from_file,
     search_in_files as _search_in_files,
 )
 
@@ -73,6 +74,11 @@ class CompareFoldersParams(BaseModel):
     folder1: str = Field(description="Path to the first folder")
     folder2: str = Field(description="Path to the second folder")
     context_lines: int = Field(default=3, description="Number of context lines around differences")
+
+
+class GetLineFromFileParams(BaseModel):
+    file_name: str = Field(description="Path to the text file")
+    line_number: int = Field(description="1-based line number to retrieve")
 
 
 class CountLinesOfCodeParams(BaseModel):
@@ -171,6 +177,17 @@ def count_lines_of_code(params: CountLinesOfCodeParams) -> dict:
     )
 
 
+@define_tool(description=(
+    "Read a specific line from a text file by line number. "
+    "Useful for inspecting the exact source line reported in compiler errors."
+))
+def get_line_from_file(params: GetLineFromFileParams) -> str:
+    return _get_line_from_file(
+        file_name=params.file_name,
+        line_number=params.line_number,
+    )
+
+
 ALL_COPILOT_TOOLS = [
     list_directory_tree,
     show_signatures,
@@ -179,4 +196,5 @@ ALL_COPILOT_TOOLS = [
     compare_files,
     compare_folders,
     count_lines_of_code,
+    get_line_from_file,
 ]
