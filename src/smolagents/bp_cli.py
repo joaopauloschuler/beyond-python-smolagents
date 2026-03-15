@@ -638,14 +638,15 @@ def _save_aliases(aliases: dict):
 
 SLASH_COMMANDS = [
     "/alias", "/auto-approve", "/cd", "/clear", "/compress", "/compression",
-    "/compression-keep-recent-steps", "/compression-keep-compressed-steps",
-    "/compression-max-uncompressed-steps", "/compression-max-compressed-steps",
+    "/compression-keep-compressed-steps", "/compression-keep-recent-steps",
+    "/compression-max-compressed-steps", "/compression-max-uncompressed-steps",
+    "/compression-model",
     "/compression-set-high", "/compression-set-low", "/compression-set-medium", "/compression-set-ultra",
-    "/compression-model", "/dictation", "/exit", "/help",
-    "/instructions-load", "/plan", "/pwd", "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py", "/save",
-    "/session-load", "/session-save",
-    "/show-compression-stats", "/show-memory-stats", "/show-stats",
-    "/save-step", "/set-max-steps", "/show-knowledge", "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
+    "/dictation", "/exit", "/help", "/instructions-load", "/plan", "/pwd",
+    "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py",
+    "/save", "/save-step", "/session-load", "/session-save", "/set-max-steps",
+    "/show-compression-stats", "/show-knowledge", "/show-memory-stats", "/show-stats",
+    "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
 ]
 
 
@@ -662,15 +663,15 @@ def print_help():
     table.add_row("/clear", "Clear screen, reset agent and conversation history")
     table.add_row(r"/compress \[N]", "Force compression now, or compress a specific step N")
     table.add_row(r"/compression \[on|off]", "Toggle compression on/off")
-    table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
-    table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
     table.add_row("/compression-keep-compressed-steps <N>", "Change keep_compressed_steps")
+    table.add_row("/compression-keep-recent-steps <N>", "Change keep_recent_steps")
     table.add_row("/compression-max-compressed-steps <N>", "Change max_compressed_steps")
-    table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
-    table.add_row("/compression-set-medium", "Set compression preset: MEDIUM (balanced)")
-    table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
-    table.add_row("/compression-set-ultra", "Set compression preset: ULTRA (maximum)")
+    table.add_row("/compression-max-uncompressed-steps <N>", "Change max_uncompressed_steps")
     table.add_row("/compression-model <model>", "Switch compression model")
+    table.add_row("/compression-set-high", "Set compression preset: HIGH (aggressive)")
+    table.add_row("/compression-set-low", "Set compression preset: LOW (conservative)")
+    table.add_row("/compression-set-medium", "Set compression preset: MEDIUM (balanced)")
+    table.add_row("/compression-set-ultra", "Set compression preset: ULTRA (maximum)")
     table.add_row(r"/dictation \[on|off]", "Toggle dictation (requires BPSA_DICTATION_TRANSCRIBER)")
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/help", "Show this help message")
@@ -686,13 +687,13 @@ def print_help():
     table.add_row("/save-step <N> <file>", "Save full content of step N to a file")
     table.add_row("/session-load <file>", "Load a session from a JSON file")
     table.add_row("/session-save <file>", "Save entire session to a JSON file")
+    table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-compression-stats", "Show compression config and stats")
+    table.add_row("/show-knowledge", "Show the full content of the knowledge store")
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
+    table.add_row("/show-stats", "Show session statistics")
     table.add_row("/show-step <N>", "Show full content of a specific step")
     table.add_row("/show-steps", "Show one-line summary of all memory steps")
-    table.add_row("/show-knowledge", "Show the full content of the knowledge store")
-    table.add_row("/show-stats", "Show session statistics")
-    table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-tools", "List all loaded tools")
     table.add_row(r"/undo-steps \[N]", "Remove last N steps from memory (default: 1)")
     table.add_row("/verbose", "Toggle verbose output")
