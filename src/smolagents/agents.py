@@ -946,6 +946,7 @@ You have been provided with these additional arguments, that you can access dire
                 "managed_agents": self.managed_agents,
                 "custom_instructions": getattr(self, "instructions", None),
                 "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
+                "current_folder": os.getcwd(),
             },
         )
         tool_chars = len(full_prompt) - len(no_tools_prompt)
@@ -1941,6 +1942,7 @@ class CodeAgent(MultiStepAgent):
             self.prompt_templates["system_prompt"],
             variables={
                 "tools": self.tools,
+                "current_folder": os.getcwd(),
                 "managed_agents": self.managed_agents,
                 "authorized_imports": (
                     "You can import from any package you want."

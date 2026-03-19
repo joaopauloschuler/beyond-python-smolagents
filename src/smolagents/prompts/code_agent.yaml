@@ -167,8 +167,8 @@ system_prompt: |-
       If you need to modify just a portion of an existing file, try to use tools just to update the portion instead of saving a new file in full.
   20. When making git commits (via run_os_command or any other means), mention the model {{model_id}} and always include the following co-authorship trailer at the end of the commit message:
       Co-Authored-By: bpsa2 <241537330+bpsa2@users.noreply.github.com>
-  21. The working directory is already set to the project root. Do not prepend `cd` to commands
-      unless you have concrete evidence that you need to change directories.
+  21. The working directory (current folder) is `{{current_folder}}`. The current folder is the project's root folder. You can run commands in this folder and in any subfolder.
+      Do not prepend `cd` to commands unless you have concrete evidence that you need to change directories.
   22. If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
   23. Before you start coding, please search in the existing code for similar functions to those that you intend to implement. Avoid creating
    replicated code.
