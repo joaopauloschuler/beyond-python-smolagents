@@ -304,22 +304,23 @@ def build_model(override_model_id=None):
         fail(f"Model class {canonical_name} not found. Supported models are: {supported}")
 
     # Build kwargs based on model type
+    # max_tokens has been tested only with GoogleColab, LiteLLM and Transformers, so we only include it for those to be safe.
     if canonical_name in ("OpenAIServerModel", "AzureOpenAIServerModel"):
-        model = model_class(model_id, api_key=api_key, max_tokens=max_tokens, api_base=api_endpoint)
+        model = model_class(model_id, api_key=api_key, api_base=api_endpoint)
     elif canonical_name == "LiteLLMModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
     elif canonical_name == "LiteLLMRouterModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
     elif canonical_name == "InferenceClientModel":
-        model = model_class(model_id=model_id, token=api_key, max_tokens=max_tokens)
+        model = model_class(model_id=model_id, token=api_key)
     elif canonical_name == "TransformersModel":
         model = model_class(model_id=model_id, device_map="auto", max_tokens=max_tokens)
     elif canonical_name == "AmazonBedrockModel":
-        model = model_class(model_id=model_id, max_tokens=max_tokens)
+        model = model_class(model_id=model_id)
     elif canonical_name == "VLLMModel":
-        model = model_class(model_id=model_id, max_tokens=max_tokens)
+        model = model_class(model_id=model_id)
     elif canonical_name == "MLXModel":
-        model = model_class(model_id=model_id, max_tokens=max_tokens)
+        model = model_class(model_id=model_id)
     elif canonical_name == "GoogleColabModel":
         model = model_class(model_id=model_id, max_tokens=max_tokens)
     else:
