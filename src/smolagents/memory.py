@@ -226,7 +226,9 @@ class SystemPromptStep(MemoryStep):
     def to_messages(self, summary_mode: bool = False) -> list[ChatMessage]:
         if summary_mode:
             return []
-        return [ChatMessage(role=MessageRole.SYSTEM, content=[{"type": "text", "text": self.system_prompt}])]
+        # Some models do not understand system prompts as a separate role, so we include the system prompt as a user message with a special tag.
+        return [ChatMessage(role=MessageRole.USER, content=[{"type": "text", "text": f"<system>{self.system_prompt}</system>"}])]
+        #return [ChatMessage(role=MessageRole.SYSTEM, content=[{"type": "text", "text": self.system_prompt}])]
 
 
 @dataclass
