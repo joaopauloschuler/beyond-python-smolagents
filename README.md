@@ -13,12 +13,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-# BPSA - Beyond Python Smolagents
+# BPSA - Beyond Python SmolAgents
 
 ![How to Install BPSA](docs/img/BPSA-HowToInstall.gif?raw=true)
 
 
-**BPSA - Beyond Python Smolagents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
+**BPSA - Beyond Python SmolAgents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
 * 💻 **Interactive CLI ([`bpsa`](#cli-bpsa)):** Multi-turn REPL with slash commands, command history, tab completion, session stats, and auto-approve mode.
 * 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Biologically inspired [automatic LLM-based summarization](docs/compression.md) of older memory steps to manage context window size during long-running tasks.
