@@ -32,6 +32,8 @@ dependencies = [
   "markdownify>=0.14.1",  # VisitWebpageTool
   "python-slugify",
   "prompt_toolkit>=3.0.0", # CLI
+  "mcpadapt>=0.1.13",  # Support structured output
+  "mcp",
 ]
 
 [project.optional-dependencies]
@@ -65,9 +67,8 @@ gradio = [
 litellm = [
   "litellm>=1.60.2",
 ]
+# mcp backward compatibility
 mcp = [
-  "mcpadapt>=0.1.13",  # Support structured output
-  "mcp",
 ]
 mlx-lm = [
   "mlx-lm",
