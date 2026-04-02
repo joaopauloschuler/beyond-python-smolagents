@@ -1449,7 +1449,7 @@ Copilot will save the file and return a short confirmation, saving context token
             """Run an async coroutine on the persistent event loop."""
             import asyncio
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-            return future.result(timeout=120)
+            return future.result(timeout=3600)
 
         def _get_copilot_tools(self):
             """Return the copilot tools list, loading defaults lazily if needed."""
