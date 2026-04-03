@@ -17,7 +17,11 @@ Usage::
 
 from pydantic import BaseModel, Field
 
-from copilot.tools import define_tool
+try:
+    from copilot.tools import define_tool
+except ImportError:
+    print("please run pip install github-copilot-sdk==0.1.32")
+    raise
 from smolagents.bp_tools import (
     compare_files as _compare_files,
     compare_folders as _compare_folders,

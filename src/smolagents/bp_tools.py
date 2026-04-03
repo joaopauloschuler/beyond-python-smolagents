@@ -1460,7 +1460,11 @@ Copilot will save the file and return a short confirmation, saving context token
 
         def _session_config(self):
             """Build the session config dict."""
-            from copilot import PermissionHandler
+            try:
+                from copilot import PermissionHandler
+            except ImportError:
+                print("please run pip install github-copilot-sdk==0.1.32")
+                raise
             return {
                 "model": self._model_id,
                 "tools": self._get_copilot_tools(),
@@ -1484,7 +1488,11 @@ Copilot will save the file and return a short confirmation, saving context token
                 self._loop_thread.start()
 
             if self._client is None:
-                from copilot import CopilotClient
+                try:
+                    from copilot import CopilotClient
+                except ImportError:
+                    print("please run pip install github-copilot-sdk==0.1.32")
+                    raise
 
                 async def _init():
                     self._client = CopilotClient()
