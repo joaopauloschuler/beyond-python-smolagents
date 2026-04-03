@@ -1526,8 +1526,34 @@ Copilot will save the file and return a short confirmation, saving context token
             )
 
             async def _send():
-                response = await self._session.send_and_wait({"prompt": prompt}, timeout=3600)
-                return response.data.content
+                import asyncio
+                from copilot.generated.session_events import SessionEventType
+
+                turn_done = asyncio.Event()
+                last_msg = None
+                turn_error = None
+
+                def _handler(event):
+                    nonlocal last_msg, turn_error
+                    if event.type == SessionEventType.ASSISTANT_MESSAGE:
+                        last_msg = event
+                    elif event.type == SessionEventType.ASSISTANT_TURN_END:
+                        turn_done.set()
+                    elif event.type == SessionEventType.SESSION_ERROR:
+                        turn_error = Exception(
+                            f"Session error: {getattr(event.data, 'message', str(event.data))}"
+                        )
+                        turn_done.set()
+
+                unsub = self._session.on(_handler)
+                try:
+                    await self._session.send({"prompt": prompt})
+                    await asyncio.wait_for(turn_done.wait(), timeout=3600)
+                    if turn_error:
+                        raise turn_error
+                    return last_msg.data.content if last_msg else ""
+                finally:
+                    unsub()
 
             return self._run_async(_send())
 
