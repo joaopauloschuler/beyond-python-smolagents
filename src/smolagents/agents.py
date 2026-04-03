@@ -867,7 +867,7 @@ You have been provided with these additional arguments, that you can access dire
         self.interrupt_switch = True
 
     def _debug_save_context(self, messages: list) -> None:
-        """Save context messages to /tmp/bpsa_debug_context.txt if BPSA_DEBUG_CONTEXT is set."""
+        """Save context messages to /tmp/bpsa_debug_context_<pid>.txt if BPSA_DEBUG_CONTEXT is set."""
         import os, json
         if not os.environ.get("BPSA_DEBUG_CONTEXT"):
             return
@@ -880,7 +880,7 @@ You have been provided with these additional arguments, that you can access dire
             else:
                 lines.append(str(msg.content) if msg.content else "")
             lines.append("")
-        with open("/tmp/bpsa_debug_context.txt", "w") as f:
+        with open(f"/tmp/bpsa_debug_context_{os.getpid()}.txt", "w") as f:
             f.write("\n".join(lines))
 
     def write_memory_to_messages(
