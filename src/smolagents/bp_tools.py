@@ -1515,15 +1515,7 @@ Copilot will save the file and return a short confirmation, saving context token
             if restart_chat and self._session is not None:
                 self._reset_session()
 
-            prompt = (
-                "Hello super intelligence!\n"
-                f"Please code '{task_str}'.\n"
-                "Then, please reply with your code via\n"
-                "<final_answer>\n"
-                "# my code ...\n"
-                "...\n"
-                "</final_answer>\n"
-            )
+            prompt = (task_str)
 
             async def _send():
                 import asyncio
