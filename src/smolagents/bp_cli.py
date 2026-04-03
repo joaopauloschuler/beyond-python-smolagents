@@ -330,7 +330,7 @@ def build_model(override_model_id=None):
     return model
 
 
-def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, mcp_servers=None):
+def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, image_enabled=False, mcp_servers=None):
     from smolagents import CodeAgent
     from smolagents.bp_thinkers import (
         DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS,
@@ -344,13 +344,15 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     gui_manager = None
     mcp_client = None
 
-    # Image tools — always available (Pillow only; tesseract optional for OCR)
+    # Image tools — load_image is always available
     from smolagents.bp_tools import LoadImageTool, load_image_callback
     load_image_tool = LoadImageTool()
     tools.append(load_image_tool)
 
-    from smolagents.bp_tools_image import create_image_tools
-    tools.extend(create_image_tools())
+    # Image analysis/drawing tools — only when --image is passed
+    if image_enabled:
+        from smolagents.bp_tools_image import create_image_tools
+        tools.extend(create_image_tools())
 
     if browser_enabled:
         from smolagents.bp_tools_browser import create_browser_tools
@@ -1666,7 +1668,7 @@ def cmd_undo(agent, args: str):
         console.print(f"[yellow]Only {actual} of {n} requested steps were removable (protected system prompt steps).[/]")
 
 
-def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=False):
+def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=False, image_enabled=False):
     """Run a prompt N times, each on a fresh agent with snapshotted context."""
     from smolagents.bp_session import load_session_from_dict, save_session_to_dict
     from smolagents.monitoring import LogLevel
@@ -1698,7 +1700,7 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
             os.chdir(original_folder)
 
             # Create fresh agent and restore snapshot
-            cycle_agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled)
+            cycle_agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled)
             load_session_from_dict(snapshot, cycle_agent)
 
             # Prepare prompt (prepend instructions on first_turn only)
@@ -1795,13 +1797,13 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -1826,14 +1828,14 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         _shutdown_mcp(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, mcp_servers=None):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, mcp_servers=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
     check_required_env()
 
     model = build_model()
-    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
@@ -2054,7 +2056,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
                 _shutdown_mcp(agent)
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -2197,7 +2199,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 except ValueError:
                     console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
                     continue
-                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled)
+                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled)
                 continue
             elif cmd == "/repeat-prompt":
                 parts = cmd_args.strip().split(None, 1)
@@ -2214,7 +2216,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 file_content = load_file_as_prompt(parts[1])
                 if file_content is None:
                     continue
-                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled)
+                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled)
                 continue
             elif cmd == "/session-save":
                 cmd_session_save(agent, session_stats, cmd_args)
@@ -2368,6 +2370,10 @@ def main():
         help="Enable native GUI interaction tools (screenshot, click, type, key via xdotool/ImageMagick on X11)",
     )
     parser.add_argument(
+        "--image", action="store_true",
+        help="Enable image analysis and drawing tools (diff_images, screen_ocr, canvas drawing)",
+    )
+    parser.add_argument(
         "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
         help="Connect an MCP server. Use a URL for HTTP servers or a shell command for stdio servers. Can be repeated for multiple servers.",
     )
@@ -2382,6 +2388,7 @@ def main():
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")
+    image_enabled = args.image or get_env_bool("BPSA_IMAGE")
     env_mcp = get_env("BPSA_MCP", "")
     env_mcp_list = [s.strip() for s in env_mcp.splitlines() if s.strip()]
     mcp_servers = _parse_mcp_servers((args.mcp or []) + env_mcp_list) or None
@@ -2390,15 +2397,15 @@ def main():
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
 
 
 if __name__ == "__main__":

@@ -93,6 +93,7 @@ $ echo "task" | bpsa                # Piped input
 $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
 $ bpsa --gui-x11                     # Enable native GUI interaction (xdotool/ImageMagick)
+$ bpsa --image                       # Enable image analysis and drawing tools
 $ bpsa --mcp http://localhost:8000/mcp  # Connect an HTTP MCP server
 $ bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'  # Connect a stdio MCP server
 ```

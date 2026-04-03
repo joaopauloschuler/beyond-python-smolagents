@@ -229,7 +229,7 @@ def print_banner(config: dict):
 
 
 def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=False, gui_enabled=False, mcp_servers=None):
+             browser_enabled=False, gui_enabled=False, image_enabled=False, mcp_servers=None):
     """Core autonomous loop: cycles x tasks, fresh agent per task."""
     from smolagents.bp_cli import _shutdown_browser, _shutdown_gui, _shutdown_mcp, build_agent
 
@@ -262,7 +262,7 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                 if tree_folder:
                     prompt += inject_tree(tree_folder)
 
-                agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+                agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
                 if plan_interval:
                     agent.planning_interval = plan_interval
 
@@ -361,6 +361,7 @@ def run_ad_infinitum(
     model=None,
     browser_enabled=None,
     gui_enabled=None,
+    image_enabled=None,
     mcp_servers=None,
     banner=True,
 ):
@@ -376,6 +377,7 @@ def run_ad_infinitum(
         model: Pre-built model instance. If None, builds from BPSA_* env vars.
         browser_enabled: Enable browser. Default: BPSA_BROWSER or False.
         gui_enabled: Enable GUI. Default: BPSA_GUI or False.
+        image_enabled: Enable image tools. Default: BPSA_IMAGE or False.
         mcp_servers: List of MCP server specs (URLs or commands).
         banner: Whether to print the startup banner. Default: True.
 
@@ -403,6 +405,7 @@ def run_ad_infinitum(
     tree_folder = _resolve_tree_folder(tree_folder)
     browser_enabled = browser_enabled if browser_enabled is not None else get_env_bool("BPSA_BROWSER")
     gui_enabled = gui_enabled if gui_enabled is not None else get_env_bool("BPSA_GUI")
+    image_enabled = image_enabled if image_enabled is not None else get_env_bool("BPSA_IMAGE")
 
     # Load tasks
     console.print("[dim]Loading tasks...[/]")
@@ -420,6 +423,7 @@ def run_ad_infinitum(
             "cooldown": cooldown,
             "browser": browser_enabled,
             "gui": gui_enabled,
+            "image": image_enabled,
             "mcp": mcp_servers,
         }
         print_banner(config)
@@ -430,7 +434,7 @@ def run_ad_infinitum(
 
     # Run the loop
     run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=browser_enabled, gui_enabled=gui_enabled, mcp_servers=mcp_servers)
+             browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
 
 
 def main():
@@ -459,6 +463,10 @@ def main():
         help="Enable native GUI interaction tools (overrides BPSA_GUI)",
     )
     parser.add_argument(
+        "--image", action="store_true", default=None,
+        help="Enable image analysis and drawing tools (overrides BPSA_IMAGE)",
+    )
+    parser.add_argument(
         "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
         help="MCP server to connect (URL or shell command); repeatable",
     )
@@ -472,6 +480,7 @@ def main():
         cycles=args.cycles,
         browser_enabled=args.browser if args.browser else None,
         gui_enabled=args.gui_x11 if args.gui_x11 else None,
+        image_enabled=args.image if args.image else None,
         mcp_servers=mcp_servers,
     )
 

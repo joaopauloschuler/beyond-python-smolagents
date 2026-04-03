@@ -64,6 +64,16 @@ All prefixed with `BPSA_`:
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
 
+### Tool-Enabling Environment Variables
+
+These variables enable optional tool sets. Each corresponds to a CLI flag. Setting the variable to `true` or `1` enables the tools without needing the flag.
+
+| Variable | CLI Flag | Description |
+|----------|----------|-------------|
+| `BPSA_BROWSER` | `--browser` | Enable Playwright browser integration (navigate, click, type, etc.) |
+| `BPSA_GUI` | `--gui-x11` | Enable native GUI interaction tools (screenshot, click, type via xdotool/ImageMagick on X11) |
+| `BPSA_IMAGE` | `--image` | Enable image analysis and drawing tools (diff_images, screen_ocr, canvas drawing) |
+
 ### Context Compression Variables
 
 All optional. Configure `CompressionConfig` without touching code:
