@@ -1521,29 +1521,33 @@ Copilot will save the file and return a short confirmation, saving context token
                 import asyncio
                 from copilot.generated.session_events import SessionEventType
 
-                turn_done = asyncio.Event()
+                idle_event = asyncio.Event()
                 last_msg = None
                 turn_error = None
+                idle_cycles = 0
+                max_idle_cycles = 10
 
                 def _handler(event):
-                    nonlocal last_msg, turn_error
+                    nonlocal last_msg, turn_error, idle_cycles
                     if event.type == SessionEventType.ASSISTANT_MESSAGE:
                         last_msg = event
-                    elif event.type == SessionEventType.ASSISTANT_TURN_END:
-                        turn_done.set()
+                    elif event.type == SessionEventType.SESSION_IDLE:
+                        idle_cycles += 1
+                        if (last_msg and last_msg.data.content) or idle_cycles >= max_idle_cycles:
+                            idle_event.set()
                     elif event.type == SessionEventType.SESSION_ERROR:
                         turn_error = Exception(
                             f"Session error: {getattr(event.data, 'message', str(event.data))}"
                         )
-                        turn_done.set()
+                        idle_event.set()
 
                 unsub = self._session.on(_handler)
                 try:
                     await self._session.send({"prompt": prompt})
-                    await asyncio.wait_for(turn_done.wait(), timeout=3600)
+                    await asyncio.wait_for(idle_event.wait(), timeout=3600)
                     if turn_error:
                         raise turn_error
-                    return last_msg.data.content if last_msg else ""
+                    return last_msg.data.content if last_msg and last_msg.data.content else ""
                 finally:
                     unsub()
 
