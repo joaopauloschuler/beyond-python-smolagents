@@ -164,5 +164,6 @@ lines-after-imports = 2
 [project.scripts]
 smolagent = "smolagents.cli:main"
 bpsa = "smolagents.bp_cli:main"
+bptree = "smolagents.bp_tree_cli:main"
 webagent = "smolagents.vision_web_browser:main"
 ad-infinitum = "smolagents.bp_ad_infinitum:main"
