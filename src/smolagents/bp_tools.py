@@ -1,4 +1,9 @@
-# beyond python tools
+# BPSA - Beyond Python SmolAgents
+# https://github.com/joaopauloschuler/beyond-python-smolagents
+#
+# Copyright (c) 2024-2026 Joao Paulo Schwarz Schuler and others.
+# Refer to the git commit history for individual authorship.
+# Licensed under the Apache License, Version 2.0
 
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
