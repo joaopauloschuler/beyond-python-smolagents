@@ -73,6 +73,7 @@ These variables enable optional tool sets. Each corresponds to a CLI flag. Setti
 | `BPSA_BROWSER` | `--browser` | Enable Playwright browser integration (navigate, click, type, etc.) |
 | `BPSA_GUI` | `--gui-x11` | Enable native GUI interaction tools (screenshot, click, type via xdotool/ImageMagick on X11) |
 | `BPSA_IMAGE` | `--image` | Enable image analysis and drawing tools (diff_images, screen_ocr, canvas drawing) |
+| `BPSA_TMUX` | `--tmux` | Enable tmux multi-screen tools (create, send, read, list, destroy, wait) |
 
 ### Context Compression Variables
 
@@ -198,6 +199,51 @@ Use `prompt_toolkit` for:
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
 | `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
+
+## Tmux Multi-Screen Tools
+
+The `--tmux` flag (or `BPSA_TMUX=1` env var) enables tools that let the agent create and operate multiple independent shell sessions concurrently via tmux. This is useful for running long-running processes (servers, builds, file watchers) in parallel while the agent continues other work.
+
+**Requires:** `tmux` installed on the system.
+
+```bash
+bpsa --tmux
+
+# Or via environment variable:
+export BPSA_TMUX=1
+bpsa
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `tmux_create(session_name, command?)` | Create a new named screen session (default command: `bash`) |
+| `tmux_send(session_name, text, press_enter?)` | Send keystrokes to a session (default: presses Enter after text) |
+| `tmux_read(session_name, lines?)` | Read the current screen content / scrollback (default: 100 lines, max: 2000) |
+| `tmux_list()` | List all active agent screen sessions |
+| `tmux_destroy(session_name)` | Kill a session and all its processes |
+| `tmux_wait(session_name, pattern, timeout?, interval?)` | Poll until a text pattern appears (default: 60s timeout, 1s interval) |
+
+### Example Agent Workflow
+
+```
+tmux_create("server")
+tmux_send("server", "python app.py")
+tmux_wait("server", "Listening on port 8080")
+
+tmux_create("tests")
+tmux_send("tests", "pytest tests/ -v")
+tmux_wait("tests", "passed")
+tmux_read("tests")
+
+tmux_destroy("server")
+tmux_destroy("tests")
+```
+
+### Session Namespacing
+
+All sessions are automatically prefixed with `bpsa_` internally to avoid collisions with user tmux sessions. The agent uses short names (e.g., `server`) while tmux sees `bpsa_server`. Sessions are automatically cleaned up when the process exits.
 
 ## MCP Server Integration
 
@@ -482,3 +528,4 @@ bppas lib/ --strip-comments -o interfaces.txt
 - `prompt_toolkit` - REPL input handling (optional, falls back to basic `input()`)
 - `rich` - Output formatting (already a project dependency)
 - `argparse` - CLI argument parsing (stdlib)
+- `tmux` - Multi-screen session management (optional, required for `--tmux`)
