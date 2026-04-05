@@ -92,7 +92,7 @@ class TmuxCreateTool(Tool):
             "new-session", "-d", "-s", full, "-x", "200", "-y", "50", cmd,
         )
         if result.returncode != 0:
-            return f"ERROR: {result.stderr.strip()}"
+            return f"ERROR: {result.stderr.strip().replace(TMUX_PREFIX, '')}"
         return f"Session '{session_name}' created."
 
 
