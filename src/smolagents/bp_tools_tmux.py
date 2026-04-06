@@ -164,7 +164,7 @@ class TmuxReadTool(Tool):
         },
         "lines": {
             "type": "integer",
-            "description": "Number of scrollback lines to capture. Defaults to 100.",
+            "description": "Number of lines to return from the end of the buffer (tail behaviour). Defaults to 20.",
             "nullable": True,
         },
     }
@@ -172,15 +172,18 @@ class TmuxReadTool(Tool):
 
     def forward(self, session_name: str, lines: int | None = None) -> str:
         if lines is None:
-            lines = 100
+            lines = 20
         lines = min(lines, _MAX_READ_LINES)
         full = _full_name(session_name)
-        result = _run_tmux("capture-pane", "-t", full, "-p", "-S", f"-{lines}")
+        # Always capture the full scrollback; tail-slice in Python afterwards.
+        result = _run_tmux("capture-pane", "-t", full, "-p", "-S", f"-{_MAX_READ_LINES}")
         if result.returncode != 0:
             return f"ERROR: {result.stderr.strip()}"
-        # Strip trailing blank lines for cleaner output
         output = result.stdout.rstrip("\n")
-        return output if output else "(empty screen)"
+        if not output:
+            return "(empty screen)"
+        # Return only the last `lines` lines (tail behaviour).
+        return "\n".join(output.splitlines()[-lines:])
 
 
 # ======================================================================
