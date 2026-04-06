@@ -27,6 +27,7 @@ limitations under the License.
 * 🔌 **MCP server integration:** Connect any [Model Context Protocol](https://modelcontextprotocol.io) server as a tool source via the `--mcp` CLI flag. Supports both HTTP (Streamable HTTP) and stdio-based servers.
 * 👁️ **Image loading:** Agents can load and visually inspect image files (plots, screenshots, diagrams) via the built-in `load_image` tool — always available, no flags needed.
 * 🎨 **Image tools:** Visual image diffing (`diff_images`), OCR text extraction from images (`screen_ocr`), and a canvas for drawing shapes, text, and annotations (`canvas_create`, `canvas_draw`) — always available.
+* 🖵 **Tmux multi-screen:** Agents can create and operate multiple independent shell sessions concurrently via tmux (`--tmux` flag or `BPSA_TMUX=1`). Run builds, servers, and tests in parallel across named screen sessions.
 * 🎤 **Dictation input:** Dictate prompts via microphone using Whisper or ElevenLabs transcription (`/dictation` command, requires `BPSA_DICTATION_TRANSCRIBER` env var).
 * ⚡ **Native Python execution:** Execute Python code natively via `exec` for unrestricted processing.
 * 🌍 **Multi-language support:** Code in multiple languages beyond Python (Pascal, PHP, C++, Java and more).
@@ -94,6 +95,7 @@ $ bpsa --load-instructions          # Load CLAUDE.md, AGENTS.md, etc. at startup
 $ bpsa --browser                    # Enable Playwright browser integration
 $ bpsa --gui-x11                     # Enable native GUI interaction (xdotool/ImageMagick)
 $ bpsa --image                       # Enable image analysis and drawing tools
+$ bpsa --tmux                        # Enable tmux multi-screen tools
 $ bpsa --mcp http://localhost:8000/mcp  # Connect an HTTP MCP server
 $ bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'  # Connect a stdio MCP server
 ```

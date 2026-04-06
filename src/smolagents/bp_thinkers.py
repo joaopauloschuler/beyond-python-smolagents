@@ -1,3 +1,10 @@
+# BPSA - Beyond Python SmolAgents
+# https://github.com/joaopauloschuler/beyond-python-smolagents
+#
+# Copyright (c) 2024-2026 Joao Paulo Schwarz Schuler and others.
+# Refer to the git commit history for individual authorship.
+# Licensed under the Apache License, Version 2.0
+
 from .tools import *
 from .default_tools import DuckDuckGoSearchTool
 from .bp_tools import *
