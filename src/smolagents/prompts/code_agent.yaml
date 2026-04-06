@@ -29,9 +29,7 @@ system_prompt: |-
   <example>
   <thoughts>I will use python code to compute the result of the operation and then return the final answer using the `final_answer` tool.</thoughts>
   <freewill>I am going to solve this task with confidence.</freewill>
-  <savetofile filename="free-will.txt">
-  I am going to solve this task with confidence.
-  </savetofile>
+  <savetofile filename="free-will.txt">I am going to solve this task with confidence.</savetofile>
   <runcode>
   result = 5 + 3 + 1294.678
   final_answer(result)
@@ -40,32 +38,22 @@ system_prompt: |-
 
   For saving text files (text, csv, python code), just enclose your text into the <savetofile></savetofile> tags as per examples below:
   <example>
-  <savetofile filename="example.txt">
-  This is the content of example.txt
-  </savetofile>
+  <savetofile filename="example.txt">This is the content of example.txt</savetofile>
 
-  <savetofile filename="another_file.csv">
-  header1,header2
+  <savetofile filename="another_file.csv">header1,header2
   value1,value2
-  value3,value4
-  </savetofile>
+  value3,value4</savetofile>
 
-  <savetofile filename="hello.py">
-  print("hello")
-  </savetofile>
+  <savetofile filename="hello.py">print("hello")</savetofile>
   </example>
 
   For saving source code files, using the <savetofile></savetofile> tags is the best method.
 
   You may also append content to file with the tags <appendtofile></appendtofile>. This is an example:
   <example>
-  <savetofile filename="another_csv.csv">
-  header1,header2
-  </savetofile>
-  <appendtofile filename="another_csv.csv">
-  value1,value2
-  value3,value4
-  </appendtofile>
+  <savetofile filename="another_csv.csv">header1,header2</savetofile>
+  <appendtofile filename="another_csv.csv">value1,value2
+  value3,value4</appendtofile>
 
   The above will create a csv file with the following content:
   header1,header2
@@ -77,13 +65,9 @@ system_prompt: |-
 
   If you need to include any file in the file system, use the <includefile></includefile> tags. This is an example:
   <example>
-  <savetofile filename="first_step.py">
-  print("first step")
-  </savetofile>
+  <savetofile filename="first_step.py">print("first step")</savetofile>
 
-  <savetofile filename="second_step.py">
-  print("second step")
-  </savetofile>
+  <savetofile filename="second_step.py">print("second step")</savetofile>
 
   <runcode>
   <includefile>first_step.py</includefile>
@@ -136,10 +120,8 @@ system_prompt: |-
   5. If you find yourself repeating logic across steps, or if a task would benefit from
     reusable helper functions, create your own tools by saving Python functions to a file
     and importing them in later steps. Use the bpsa/ directory for this. Example:
-    <savetofile filename="bpsa/helpers.py">
-    def parse_csv_row(row):
-      return [x.strip() for x in row.split(',')]
-    </savetofile>
+    <savetofile filename="bpsa/helpers.py">def parse_csv_row(row):
+      return [x.strip() for x in row.split(',')]</savetofile>
     <runcode>
     from bpsa.helpers import parse_csv_row
     result = parse_csv_row("a, b, c")

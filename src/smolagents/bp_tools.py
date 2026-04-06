@@ -77,11 +77,9 @@ def load_string_from_file(filename: str) -> str:
 Loads the content from the specified file.
 For saving and printing a file, just enclose your text into the <savetofile></savetofile>:
 <example>
-<savetofile filename="another_file.csv">
-header1,header2
+<savetofile filename="another_file.csv">header1,header2
 value1,value2
-value3,value4
-</savetofile>
+value3,value4</savetofile>
 <runcode>
 # print the content of another_file.csv
 print(load_string_from_file(filename="another_file.csv"))
@@ -155,15 +153,9 @@ def replace_in_file_from_files(filename: str, file_with_old_value: str, file_wit
 
 In the case that you need to replace strings in an existing file, you can do it using the replace_in_file tool. This is an example:
 <example>
-<savetofile filename="tmp1.txt">
-hello world
-</savetofile>
-<savetofile filename="tmp2.txt">
-hello home!
-</savetofile>
-<savetofile filename="test.txt">
-Hey! hello world
-</savetofile>
+<savetofile filename="tmp1.txt">hello world</savetofile>
+<savetofile filename="tmp2.txt">hello home!</savetofile>
+<savetofile filename="test.txt">Hey! hello world</savetofile>
 <runcode>
 replace_in_file_from_files('test.txt', 'tmp1.txt', 'tmp2.txt')
 </runcode>
@@ -274,9 +266,7 @@ print(run_os_command('find / -type f -iname "UTF8P*" 2>/dev/null'))
 
 You can use run_os_command to run php code. This is an example:
 <example>
-<savetofile filename="hello.php">
-<?php echo "hello"; ?>
-</savetofile>
+<savetofile filename="hello.php"><?php echo "hello"; ?></savetofile>
 <runcode>
 # 60 seconds of timeout and 512MB of max memory
 print(run_os_command("php hello.php", timeout=60, max_memory=512*1024*1024))
@@ -589,9 +579,7 @@ def run_php_file(filename: str, timeout: int = 60) -> str:
 Runs a PHP file and returns the output.
 To run PHP code, follow tis an example:
 <example>
-<savetofile filename="hello.php">
-<?php echo "hello"; ?>
-</savetofile>
+<savetofile filename="hello.php"><?php echo "hello"; ?></savetofile>
 <runcode>
 print(run_php_file("hello.php", timeout=60))
 </runcode>
@@ -613,12 +601,10 @@ compile_and_run_pascal_code('-Funeural-api/neural/ myfile.pas', 120)
 
 This is an example for running pascal code:
 <example>
-<savetofile filename="hello.pas">
-program hello;
+<savetofile filename="hello.pas">program hello;
 begin
 WriteLn('Hello');
-end.
-</savetofile>
+end.</savetofile>
 <runcode>
 compile_and_run_pascal_code("hello.pas", timeout=60)
 </runcode>

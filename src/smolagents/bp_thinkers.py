@@ -76,9 +76,7 @@ Task: "What is the result of the following operation: 5 + 3 + 1294.678? Save you
 <example>
 <thoughts>I will use python code to compute the result of the operation and then return the final answer using the `final_answer` tool.</thoughts>
 <freewill>I am going to solve this task with confidence.</freewill>
-<savetofile filename="free-will.txt">
-I am going to solve this task with confidence.
-</savetofile>
+<savetofile filename="free-will.txt">I am going to solve this task with confidence.</savetofile>
 <runcode>
 result = 5 + 3 + 1294.678
 final_answer(result)
@@ -87,32 +85,22 @@ final_answer(result)
 
 For saving text files (text, csv, python code), just enclose your text into the <savetofile></savetofile> tags as per examples below:
 <example>
-<savetofile filename="example.txt">
-This is the content of example.txt
-</savetofile>
+<savetofile filename="example.txt">This is the content of example.txt</savetofile>
 
-<savetofile filename="another_file.csv">
-header1,header2
+<savetofile filename="another_file.csv">header1,header2
 value1,value2
-value3,value4
-</savetofile>
+value3,value4</savetofile>
 
-<savetofile filename="hello.py">
-print("hello")
-</savetofile>
+<savetofile filename="hello.py">print("hello")</savetofile>
 </example>
 
 For saving source code files, use the tags <savetofile></savetofile> is the best method.
 
 You may also append content to file with the tags <appendtofile></appendtofile>. This is an example:
 <example>
-<savetofile filename="another_csv.csv">
-header1,header2
-</savetofile>
-<appendtofile filename="another_csv.csv">
-value1,value2
-value3,value4
-</appendtofile>
+<savetofile filename="another_csv.csv">header1,header2</savetofile>
+<appendtofile filename="another_csv.csv">value1,value2
+value3,value4</appendtofile>
 
 The above will create a csv file with the following content:
 header1,header2
@@ -124,13 +112,9 @@ All savetofile tags will be run before the appendtofile tags.
 
 If you need to include any file in the file system, use the <includefile></includefile> tags. This is an example:
 <example>
-<savetofile filename="first_step.py">
-print("first step")
-</savetofile>
+<savetofile filename="first_step.py">print("first step")</savetofile>
 
-<savetofile filename="second_step.py">
-print("second step")
-</savetofile>
+<savetofile filename="second_step.py">print("second step")</savetofile>
 
 <runcode>
 <includefile>first_step.py</includefile>
@@ -457,9 +441,7 @@ Try to add as much as you can in your first attempt to modify the existing solut
             task_description="""Fantastic! Save the full updated solution that solves the task described in <task></task> into the file '"""+solution_file+"""'.
 YOU ARE REQUIRED TO SAVE THE FULL SOLUTION AND NOT JUST THE PORTIONS THAT YOU HAVE MODIFIED.
 You can follow this example:
-<savetofile filename="""+solution_file+""">
-print("your source code or text here")
-</savetofile>
+<savetofile filename="""+solution_file+""">print("your source code or text here")</savetofile>
 <runcode>
 final_answer("Task completed! YAY!")
 </runcode>
@@ -489,9 +471,7 @@ No real person can interact with this solution at this moment.
               task_description="""Fantastic! Save the full merged solution into the file '"""+solution_file+"""'.
 YOU ARE REQUIRED TO SAVE THE FULL SOLUTION AND NOT JUST THE PORTIONS THAT YOU HAVE MODIFIED.
 You can follow this example:
-<savetofile filename="""+solution_file+""">
-print("your source code or text here")
-</savetofile>
+<savetofile filename="""+solution_file+""">print("your source code or text here")</savetofile>
 <runcode>
 final_answer("Task completed! YAY!")
 </runcode>

@@ -2146,9 +2146,7 @@ print('the result of a computation for debug, test or verification.')
 """ 
             error_msg = """Error in code parsing. Follow examples with the desired structure in the tags <example></example>:
 <example>
-<savetofile filename="free-will.txt">
-I am going to solve this task with confidence.
-</savetofile>
+<savetofile filename="free-will.txt">I am going to solve this task with confidence.</savetofile>
 <runcode>
 result = 5 + 3 + 1294.678
 final_answer(result)
@@ -2157,13 +2155,9 @@ final_answer(result)
 
 If you need to include any file in the file system, use the <includefile></includefile> tags. This is an example:
 <example>
-<savetofile filename="first_step.py">
-print("first step")
-</savetofile>
+<savetofile filename="first_step.py">print("first step")</savetofile>
 
-<savetofile filename="second_step.py">
-print("second step")
-</savetofile>
+<savetofile filename="second_step.py">print("second step")</savetofile>
 
 <runcode>
 <includefile>first_step.py</includefile>
@@ -2179,21 +2173,15 @@ second step
                     error_msg = error_msg + """
 If you are trying to save or run a too big file, you can try to save and append in steps:
 <example>
-<savetofile filename="large_file.txt">
-First section, function or chapter
-</savetofile>
+<savetofile filename="large_file.txt">First section, function or chapter</savetofile>
 <runcode>
 print('Starting well.')
 </runcode>
-<appendtofile filename="large_file.txt">
-Second section, function or chapter
-</savetofile>
+<appendtofile filename="large_file.txt">Second section, function or chapter</appendtofile>
 <runcode>
 print('Continuing awesome!')
 </runcode>
-<appendtofile filename="large_file.txt">
-Third section, function or chapter
-</savetofile>
+<appendtofile filename="large_file.txt">Third section, function or chapter</appendtofile>
 <runcode>
 print('Finishing fantastic!!!')
 </runcode>
