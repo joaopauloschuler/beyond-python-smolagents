@@ -64,6 +64,17 @@ All prefixed with `BPSA_`:
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
 
+### Tool-Enabling Environment Variables
+
+These variables enable optional tool sets. Each corresponds to a CLI flag. Setting the variable to `true` or `1` enables the tools without needing the flag.
+
+| Variable | CLI Flag | Description |
+|----------|----------|-------------|
+| `BPSA_BROWSER` | `--browser` | Enable Playwright browser integration (navigate, click, type, etc.) |
+| `BPSA_GUI` | `--gui-x11` | Enable native GUI interaction tools (screenshot, click, type via xdotool/ImageMagick on X11) |
+| `BPSA_IMAGE` | `--image` | Enable image analysis and drawing tools (diff_images, screen_ocr, canvas drawing) |
+| `BPSA_TMUX` | `--tmux` | Enable tmux multi-screen tools (create, send, read, list, destroy, wait) |
+
 ### Context Compression Variables
 
 All optional. Configure `CompressionConfig` without touching code:
@@ -189,6 +200,51 @@ Use `prompt_toolkit` for:
 | `/verbose` | Toggle verbose output |
 | `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
 
+## Tmux Multi-Screen Tools
+
+The `--tmux` flag (or `BPSA_TMUX=1` env var) enables tools that let the agent create and operate multiple independent shell sessions concurrently via tmux. This is useful for running long-running processes (servers, builds, file watchers) in parallel while the agent continues other work.
+
+**Requires:** `tmux` installed on the system.
+
+```bash
+bpsa --tmux
+
+# Or via environment variable:
+export BPSA_TMUX=1
+bpsa
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `tmux_create(session_name, command?)` | Create a new named screen session (default command: `bash`) |
+| `tmux_send(session_name, text, press_enter?)` | Send keystrokes to a session (default: presses Enter after text) |
+| `tmux_read(session_name, lines?)` | Read the current screen content / scrollback (default: 100 lines, max: 2000) |
+| `tmux_list()` | List all active agent screen sessions |
+| `tmux_destroy(session_name)` | Kill a session and all its processes |
+| `tmux_wait(session_name, pattern, timeout?, interval?)` | Poll until a text pattern appears (default: 60s timeout, 1s interval) |
+
+### Example Agent Workflow
+
+```
+tmux_create("server")
+tmux_send("server", "python app.py")
+tmux_wait("server", "Listening on port 8080")
+
+tmux_create("tests")
+tmux_send("tests", "pytest tests/ -v")
+tmux_wait("tests", "passed")
+tmux_read("tests")
+
+tmux_destroy("server")
+tmux_destroy("tests")
+```
+
+### Session Namespacing
+
+All sessions are automatically prefixed with `bpsa_` internally to avoid collisions with user tmux sessions. The agent uses short names (e.g., `server`) while tmux sees `bpsa_server`. Sessions are automatically cleaned up when the process exits.
+
 ## MCP Server Integration
 
 The `--mcp` flag connects [Model Context Protocol](https://modelcontextprotocol.io) servers as additional tool sources. Tools exposed by MCP servers are automatically available to the agent alongside the built-in tools.
@@ -226,8 +282,250 @@ Priority (highest to lowest):
 3. Config file (`~/.bpsa.yaml`)
 4. Built-in defaults
 
+## Utility CLIs
+
+Beyond the main `bpsa` REPL, the project ships lightweight CLI wrappers around commonly used tools from `bp_tools.py`. All are installed automatically via `pip install` and support `--help`.
+
+### Quick Reference
+
+| Command | Description |
+|---------|-------------|
+| `bptree` | Directory tree with line counts and optional function signatures |
+| `bpgrep` | Search for text patterns in files with extension filtering |
+| `bppack` | Pack a folder's source code into a single tagged string |
+| `bpunpack` | Reconstruct source files from a packed string |
+| `bploc` | Lines-of-code summary broken down by file type |
+| `bpdiff` | Compare two files or two folders (unified diff) |
+| `bpsig` | Extract function/class signatures from a source file |
+| `bppas` | Extract Pascal unit interface sections from a folder |
+
+Entry points in `pyproject.toml`:
+```toml
+[project.scripts]
+bptree  = "smolagents.bp_tree_cli:main"
+bpgrep  = "smolagents.bp_grep_cli:main"
+bppack  = "smolagents.bp_pack_cli:main"
+bpunpack = "smolagents.bp_unpack_cli:main"
+bploc   = "smolagents.bp_loc_cli:main"
+bpdiff  = "smolagents.bp_diff_cli:main"
+bpsig   = "smolagents.bp_sig_cli:main"
+bppas   = "smolagents.bp_pas_cli:main"
+```
+
+---
+
+### `bptree` — Directory Tree
+
+Displays a tree view of a directory with source-file line counts and optional function signatures. Skips common build/artifact folders by default.
+
+```bash
+bptree [FOLDER] [-d DEPTH] [--no-files] [-s] [--skip-dirs DIRS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `FOLDER` | Root folder (default: `.`) |
+| `-d`, `--depth N` | Max depth to traverse (default: 6) |
+| `--no-files` | Show only directories, hide files |
+| `-s`, `--signatures` | Show function/class signatures inline |
+| `--skip-dirs d1,d2` | Comma-separated dirs to show but not traverse |
+
+```bash
+# Basic tree of src/ with depth 2
+bptree src/ -d 2
+
+# Tree with function signatures
+bptree . -s
+
+# Directories only, skip vendor
+bptree . --no-files --skip-dirs vendor,tmp
+```
+
+---
+
+### `bpgrep` — Search in Files
+
+Searches for a text pattern in files within a folder (or a single file). Returns matching lines with file paths and line numbers.
+
+```bash
+bpgrep PATTERN [PATH] [-e EXTS] [-c] [-m MAX]
+```
+
+| Flag | Description |
+|------|-------------|
+| `PATTERN` | Text pattern to search for |
+| `PATH` | Folder or file to search (default: `.`) |
+| `-e`, `--extensions` | Comma-separated extensions to filter (e.g. `py,js,ts`) |
+| `-c`, `--case-sensitive` | Case-sensitive search (default: case-insensitive) |
+| `-m`, `--max-results N` | Maximum results to return (default: 50) |
+
+```bash
+# Search for "def main" in Python files
+bpgrep "def main" src/ -e py
+
+# Case-sensitive search with limit
+bpgrep "TODO" . -c -m 20
+```
+
+---
+
+### `bppack` — Pack Source Code
+
+Packs all source files in a folder into a single string with `<file filename="...">...</file>` XML-like tags. Useful for feeding entire projects to LLMs or creating context dumps.
+
+```bash
+bppack FOLDER [-e EXTS] [--strip-pascal-comments] [--exclude ITEMS] [-o FILE]
+```
+
+| Flag | Description |
+|------|-------------|
+| `FOLDER` | Root folder to scan |
+| `-e`, `--extensions` | Comma-separated extensions to include (default: common source extensions) |
+| `--strip-pascal-comments` | Remove Pascal comments from `.pas`/`.inc` files |
+| `--exclude` | Comma-separated files/folders to exclude |
+| `-o`, `--output FILE` | Write to a file instead of stdout |
+
+```bash
+# Pack src/ to a file
+bppack src/ -o context.txt
+
+# Pack only Python and JS files
+bppack . -e py,js --exclude __pycache__,node_modules
+```
+
+---
+
+### `bpunpack` — Unpack Source Code
+
+Reconstructs source files from a packed string produced by `bppack`. Reads from a file or stdin.
+
+```bash
+bpunpack [INPUT] [-o DIR] [--no-overwrite] [-q]
+```
+
+| Flag | Description |
+|------|-------------|
+| `INPUT` | Packed file to read (default: stdin) |
+| `-o`, `--output-dir DIR` | Base directory to write into (default: `.`) |
+| `--no-overwrite` | Skip files that already exist |
+| `-q`, `--quiet` | Suppress status messages |
+
+```bash
+# Unpack from file into output/
+bpunpack context.txt -o output/
+
+# Pipe from bppack
+bppack src/ | bpunpack -o copy/
+
+# Unpack without overwriting existing files
+bpunpack context.txt --no-overwrite
+```
+
+---
+
+### `bploc` — Lines of Code
+
+Counts lines of code broken down by file extension. Skips hidden files and directories.
+
+```bash
+bploc [FOLDER] [-e EXTS]
+```
+
+| Flag | Description |
+|------|-------------|
+| `FOLDER` | Root folder to analyze (default: `.`) |
+| `-e`, `--extensions` | Comma-separated extensions to count (default: `py,js,java,cpp,c,php,rb`) |
+
+```bash
+# Count lines in current project
+bploc
+
+# Count only Python and TypeScript
+bploc src/ -e py,ts
+```
+
+Example output:
+```
+  .py     23985 lines
+  total   23985 lines
+```
+
+---
+
+### `bpdiff` — Compare Files or Folders
+
+Compares two files or two folders and shows differences in unified diff format. For folders, only source code files are compared.
+
+```bash
+bpdiff PATH1 PATH2 [-c CONTEXT]
+```
+
+| Flag | Description |
+|------|-------------|
+| `PATH1` | First file or folder |
+| `PATH2` | Second file or folder |
+| `-c`, `--context N` | Context lines around differences (default: 3) |
+
+```bash
+# Compare two files
+bpdiff old_version.py new_version.py
+
+# Compare two folders with more context
+bpdiff project_v1/ project_v2/ -c 5
+```
+
+---
+
+### `bpsig` — Function Signatures
+
+Extracts function and class signatures from a source file without showing the implementation. Supports Python, JavaScript/TypeScript, Java, PHP, Pascal, C/C++, Markdown (section headers), and a generic fallback.
+
+```bash
+bpsig FILE [-l LANGUAGE]
+```
+
+| Flag | Description |
+|------|-------------|
+| `FILE` | Source file to extract signatures from |
+| `-l`, `--language` | Programming language (auto-detected from extension if omitted) |
+
+```bash
+# Auto-detect language
+bpsig src/main.py
+
+# Explicit language
+bpsig utils.inc -l pascal
+```
+
+---
+
+### `bppas` — Pascal Interfaces
+
+Extracts the interface sections (between `interface` and `implementation` keywords) from Pascal source files in a folder. Output uses `<pascal_interface filename="...">` tags.
+
+```bash
+bppas FOLDER [--strip-comments] [-o FILE]
+```
+
+| Flag | Description |
+|------|-------------|
+| `FOLDER` | Root folder to scan for `.pas`, `.inc`, `.pp`, `.lpr`, `.dpr` files |
+| `--strip-comments` | Remove Pascal comments from extracted interfaces |
+| `-o`, `--output FILE` | Write to a file instead of stdout |
+
+```bash
+# Extract interfaces
+bppas pascal_src/
+
+# Strip comments and save to file
+bppas lib/ --strip-comments -o interfaces.txt
+```
+
+---
+
 ## Dependencies
 
 - `prompt_toolkit` - REPL input handling (optional, falls back to basic `input()`)
 - `rich` - Output formatting (already a project dependency)
 - `argparse` - CLI argument parsing (stdlib)
+- `tmux` - Multi-screen session management (optional, required for `--tmux`)

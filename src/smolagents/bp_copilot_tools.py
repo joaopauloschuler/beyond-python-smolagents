@@ -1,3 +1,10 @@
+# BPSA - Beyond Python SmolAgents
+# https://github.com/joaopauloschuler/beyond-python-smolagents
+#
+# Copyright (c) 2024-2026 Joao Paulo Schwarz Schuler and others.
+# Refer to the git commit history for individual authorship.
+# Licensed under the Apache License, Version 2.0
+
 """GitHub Copilot SDK tool wrappers for bpsa helpers.
 
 Wraps bp_tools functions using the Copilot SDK's ``define_tool`` decorator
@@ -17,7 +24,11 @@ Usage::
 
 from pydantic import BaseModel, Field
 
-from copilot.tools import define_tool
+try:
+    from copilot.tools import define_tool
+except ImportError:
+    print("please run pip install github-copilot-sdk==0.1.32")
+    raise
 from smolagents.bp_tools import (
     compare_files as _compare_files,
     compare_folders as _compare_folders,

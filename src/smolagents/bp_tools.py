@@ -1,4 +1,9 @@
-# beyond python tools
+# BPSA - Beyond Python SmolAgents
+# https://github.com/joaopauloschuler/beyond-python-smolagents
+#
+# Copyright (c) 2024-2026 Joao Paulo Schwarz Schuler and others.
+# Refer to the git commit history for individual authorship.
+# Licensed under the Apache License, Version 2.0
 
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
@@ -1460,7 +1465,11 @@ Copilot will save the file and return a short confirmation, saving context token
 
         def _session_config(self):
             """Build the session config dict."""
-            from copilot import PermissionHandler
+            try:
+                from copilot import PermissionHandler
+            except ImportError:
+                print("please run pip install github-copilot-sdk==0.1.32")
+                raise
             return {
                 "model": self._model_id,
                 "tools": self._get_copilot_tools(),
@@ -1480,7 +1489,11 @@ Copilot will save the file and return a short confirmation, saving context token
                 self._loop_thread.start()
 
             if self._client is None:
-                from copilot import CopilotClient
+                try:
+                    from copilot import CopilotClient
+                except ImportError:
+                    print("please run pip install github-copilot-sdk==0.1.32")
+                    raise
 
                 async def _init():
                     self._client = CopilotClient()
@@ -1508,19 +1521,41 @@ Copilot will save the file and return a short confirmation, saving context token
             if restart_chat or self._session is None:
                 self._reset_session()
 
-            prompt = (
-                "Hello super intelligence!\n"
-                f"Please code '{task_str}'.\n"
-                "Then, please reply with your code via\n"
-                "<final_answer>\n"
-                "# my code ...\n"
-                "...\n"
-                "</final_answer>\n"
-            )
+            prompt = (task_str)
 
             async def _send():
-                response = await self._session.send_and_wait(prompt, timeout=3600)
-                return response.data.content
+                import asyncio
+                from copilot.generated.session_events import SessionEventType
+
+                idle_event = asyncio.Event()
+                last_msg = None
+                turn_error = None
+                idle_cycles = 0
+                max_idle_cycles = 10
+
+                def _handler(event):
+                    nonlocal last_msg, turn_error, idle_cycles
+                    if event.type == SessionEventType.ASSISTANT_MESSAGE:
+                        last_msg = event
+                    elif event.type == SessionEventType.SESSION_IDLE:
+                        idle_cycles += 1
+                        if (last_msg and last_msg.data.content) or idle_cycles >= max_idle_cycles:
+                            idle_event.set()
+                    elif event.type == SessionEventType.SESSION_ERROR:
+                        turn_error = Exception(
+                            f"Session error: {getattr(event.data, 'message', str(event.data))}"
+                        )
+                        idle_event.set()
+
+                unsub = self._session.on(_handler)
+                try:
+                    await self._session.send({"prompt": prompt})
+                    await asyncio.wait_for(idle_event.wait(), timeout=3600)
+                    if turn_error:
+                        raise turn_error
+                    return last_msg.data.content if last_msg and last_msg.data.content else ""
+                finally:
+                    unsub()
 
             return self._run_async(_send())
 
