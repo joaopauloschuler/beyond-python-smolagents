@@ -1462,8 +1462,12 @@ Copilot will save the file and return a short confirmation, saving context token
                 "on_permission_request": PermissionHandler.approve_all,
             }
 
-        def _ensure_client(self):
-            """Lazily start a background event loop and copilot client (no session)."""
+        def _ensure_session(self):
+            """Lazily start a background event loop, copilot client, and session.
+
+            Uses PermissionHandler.approve_all to grant copilot full access to
+            its built-in tools (file read/write, shell, URL fetch, etc.).
+            """
             if self._loop is None:
                 import asyncio
                 import threading
@@ -1484,13 +1488,8 @@ Copilot will save the file and return a short confirmation, saving context token
                 async def _init():
                     self._client = CopilotClient()
                     await self._client.start()
+                    self._session = await self._client.create_session(self._session_config())
                 self._run_async(_init())
-
-        def _ensure_session(self):
-            """Ensure client is started and a session exists."""
-            self._ensure_client()
-            if self._session is None:
-                self._reset_session()
 
         def _reset_session(self):
             """Create a fresh copilot session (drops conversation history).
@@ -1498,13 +1497,13 @@ Copilot will save the file and return a short confirmation, saving context token
             Reuses the existing client and event loop; only the session is replaced.
             """
             async def _reset():
-                self._session = await self._client.create_session(**self._session_config())
+                self._session = await self._client.create_session(self._session_config())
             self._run_async(_reset())
 
         def forward(self, task_str: str, restart_chat: bool = True) -> str:
-            self._ensure_client()
+            self._ensure_session()
 
-            if restart_chat or self._session is None:
+            if restart_chat and self._session is not None:
                 self._reset_session()
 
             prompt = (task_str)
