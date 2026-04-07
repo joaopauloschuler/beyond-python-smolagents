@@ -873,13 +873,18 @@ You have been provided with these additional arguments, that you can access dire
             return
         lines = []
         for i, msg in enumerate(messages):
+            total_len = 0
             lines.append(f"=== Message {i} | role={msg.role} ===")
             if isinstance(msg.content, list):
                 for part in msg.content:
-                    lines.append(str(part))
+                    str_part = str(part)
+                    lines.append(str_part)
+                    total_len += len(str_part)
             else:
-                lines.append(str(msg.content) if msg.content else "")
-            lines.append("")
+                str_part = str(msg.content) if msg.content else ""
+                total_len += len(str_part)
+                lines.append(str_part)
+            lines.append("LEN: "+str(total_len))
         with open(f"/tmp/bpsa_debug_context_{os.getpid()}.txt", "w") as f:
             f.write("\n".join(lines))
 
