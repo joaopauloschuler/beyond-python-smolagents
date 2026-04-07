@@ -67,10 +67,16 @@ class TmuxCreateTool(Tool):
 
     name = "tmux_create"
     description = (
-        "Creates a new independent named tmux screen session. "
+        "Creates a new independent named tmux screen session."
         "Use this to run long-running processes (servers, builds, watches) "
-        "in the background while continuing other work. "
+        "in the background while continuing other work."
         "Each session is a full shell you can send commands to and read output from."
+        "* Create a new bash session:" 
+        "  tmux_create(\"newsession\") or tmux_create(\"newsession\",\"bash\")"
+        "* Type ls -l:"
+        "  tmux_send(\"newsession\",\"ls -l\")"
+        "* Create a fresh clone of yourself without your context/history:"
+        "  tmux_create(\"myclone\",\"bpsa\")"
     )
     inputs = {
         "session_name": {
