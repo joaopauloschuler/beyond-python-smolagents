@@ -311,7 +311,8 @@ def print_file_lines(filename: str, start_line: int, end_line: int) -> None:
   """ 
   This tool prints the lines from the start_line to the end_line of the file filename.
   In combination with get_line_from_file, this tool is useful for finding bugs in the source code.
-
+  The first line of the file is the line number 1.
+  print_file_lines('filename.txt', -2, 0) will print the last 3 lines of the file.
   Args:
     filename: str The path to the text file.
     start_line: int
@@ -319,8 +320,16 @@ def print_file_lines(filename: str, start_line: int, end_line: int) -> None:
   """
   file_content = load_string_from_file(filename)
   lines = file_content.splitlines()
+  last_line = len(lines)
+  if end_line > last_line:
+    end_line = last_line
+  if start_line > end_line:
+    start_line = end_line
   print("Content of " + filename + " from line "+str(start_line)+" to line " +str(end_line) )
   for i in range(start_line-1, end_line):
+    if i<0:
+      print(f"{i+1+last_line}: {lines[i]}")
+    else:
       print(f"{i+1}: {lines[i]}")
 
 @tool
