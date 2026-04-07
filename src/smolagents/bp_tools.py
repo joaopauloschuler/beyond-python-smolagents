@@ -1727,7 +1727,8 @@ DEFAULT_SKIP_DIRS = {
 }
 
 @tool
-def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True, add_function_signatures: bool = False, skip_dirs: object = None) -> str:
+def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool = True,
+    add_function_signatures: bool = False, skip_dirs: object = None, human: bool = True) -> str:
     """
     Creates a tree-like view of a directory structure. This is useful for understanding
     project structure without loading all file contents, saving context.
@@ -1753,6 +1754,7 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
         show_files: bool Whether to show files or only directories (default True)
         add_function_signatures: bool Whether to extract and display function signatures for source code files (default False)
         skip_dirs: set/list of directory names to show but not inspect (default: build, dist, __pycache__, node_modules, .eggs)
+        human: formatted for humans (token expensive)
     
     Returns:
         str: A string representation of the directory tree
@@ -1788,7 +1790,10 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
             item_path = os.path.join(current_path, item)
 
             # Choose the appropriate tree characters
-            connector = "└── " if is_last else "├── "
+            if human:
+                connector = "└── " if is_last else "├── "
+            else:
+                connector = ""
 
             # If this is a directory in skip_dirs, show it but don't recurse
             if os.path.isdir(item_path) and item in effective_skip_dirs:
@@ -1832,7 +1837,10 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
                             sig_prefix = prefix + extension
                             for sig in signatures.split('\n'):
                                 if sig.strip():  # Only add non-empty signature lines
-                                    lines.append(f"{sig_prefix}    {sig.strip()}")
+                                    if human:
+                                        lines.append(f"{sig_prefix}    {sig.strip()}")
+                                    else:
+                                        lines.append(f"{sig.strip()}")
                     except (
                         UnicodeDecodeError,
                         PermissionError,
@@ -1844,9 +1852,12 @@ def list_directory_tree(folder_path: str, max_depth: int = 6, show_files: bool =
 
             # Recurse into subdirectories
             if os.path.isdir(item_path):
-                extension = "    " if is_last else "│   "
-                add_tree_lines(item_path, prefix + extension, depth + 1)
-
+                if human:
+                    extension = "    " if is_last else "│   "
+                    add_tree_lines(item_path, prefix + extension, depth + 1)
+                else:
+                    add_tree_lines(item_path, prefix, depth + 1)
+                
     # Add root folder
     lines.append(f"{os.path.basename(folder_path)}/")
     add_tree_lines(folder_path, "", 0)
@@ -1865,7 +1876,7 @@ def inject_tree(folder: str) -> str:
     Args:
         folder: path to the folder to generate the tree from.
     """
-    tree = list_directory_tree(folder_path=folder, add_function_signatures=True)
+    tree = list_directory_tree(folder_path=folder, add_function_signatures=True, human=False)
     return (
         "\nThis is the result of list_directory_tree:\n<directory_tree>\n"
         + tree
