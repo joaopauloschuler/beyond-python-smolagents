@@ -33,18 +33,24 @@ DEFAULT_THINKER_COMPRESSION = CompressionConfig(
     min_compression_chars=get_env_int("BPSA_COMPRESSION_MIN_CHARS", 4096),
 )
 
-DEFAULT_THINKER_TOOLS = [
-  copy_file, is_file, 
+# tools that can be replaced via terminal
+# copy_file, is_file,
+# mkdir, delete_file, delete_directory,
+# read_first_n_lines, read_last_n_lines,
+
+# Tools that agents do not use
+# remove_pascal_comments_from_string, pascal_interface_to_string,
+# source_code_to_string, string_to_source_code, inject_tree,
+
+DEFAULT_THINKER_TOOLS = [ 
   print_file_lines, get_line_from_file, count_file_lines,
   read_file_range, insert_lines_into_file, replace_line_in_file,
-  remove_pascal_comments_from_string, pascal_interface_to_string,
-  source_code_to_string, string_to_source_code,
   run_os_command, replace_in_file, replace_in_file_from_files,
   get_file_size, load_string_from_file, save_string_to_file, append_string_to_file,
-  list_directory_tree, inject_tree, search_in_files, get_file_info, list_directory,
+  list_directory_tree, search_in_files, get_file_info, list_directory,
   extract_function_signatures, compare_files, count_lines_of_code,
-  mkdir, delete_file, delete_directory, compare_folders,
-  read_first_n_lines, read_last_n_lines, delete_lines_from_file]
+  compare_folders,
+  delete_lines_from_file]
 
 #TODO: include force_directories into the DEFAULT_THINKER_TOOLS (it now fails adding)
 
