@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bpsa"
-version = "1.24.6"
+version = "1.24.7"
 description = "Beyond Python SmolAgents (BPSA) — a multi-language, multi-agent framework forked from HuggingFace smolagents."
 authors = [
   { name="Joao Paulo Schwarz Schuler" },
