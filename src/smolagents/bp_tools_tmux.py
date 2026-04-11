@@ -29,8 +29,29 @@ from .tools import Tool
 TMUX_PREFIX = "bpsa_"
 _MAX_READ_LINES = 2000
 
-# Per-session incremental read state: session_name → (line_count, last_line_content)
-_last_read: dict[str, tuple[int, str]] = {}
+# Per-session incremental read state:
+#   session_name → (line_before_anchor, anchor_line, last_line)
+# The anchor is the second-to-last content line (avoids the active prompt).
+# line_before_anchor disambiguates when the anchor appears multiple times.
+# last_line lets us suppress "(no new output)" re-sends of an unchanged prompt.
+_last_read: dict[str, tuple[str, str, str]] = {}
+
+
+def _make_fingerprint(all_lines: list[str]) -> tuple[str, str, str]:
+    """Return (line_before_anchor, anchor, last_line) from the tail.
+
+    The anchor is the second-to-last line to avoid the active prompt which
+    mutates as the user types.  The line before the anchor disambiguates
+    when the anchor content is duplicated elsewhere in the buffer.
+    last_line is stored so we can detect when only the unchanged prompt
+    follows the anchor (i.e. truly no new output).
+    """
+    if len(all_lines) >= 3:
+        return (all_lines[-3], all_lines[-2], all_lines[-1])
+    if len(all_lines) == 2:
+        return ("", all_lines[0], all_lines[1])
+    # len == 1
+    return ("", all_lines[0], all_lines[0])
 
 
 def _full_name(session_name: str) -> str:
@@ -207,38 +228,41 @@ class TmuxReadTool(Tool):
             all_lines.pop()
         if not all_lines:
             return "(empty screen)"
+
+        new_lines = None
         prev = _last_read.get(session_name) if incremental else None
-        if prev:
-            prev_count, prev_anchor = prev
-            # Anchor is the second-to-last line (avoids the active prompt
-            # which mutates when a command is typed).
-            anchor_idx = prev_count - 2 if prev_count >= 2 else prev_count - 1
-            # Safety check: does the anchor line still match?
-            if anchor_idx < len(all_lines) and all_lines[anchor_idx] == prev_anchor:
-                # Return from one past the anchor onwards (includes the old
-                # last line which may have changed — that's intentional).
-                new_lines = all_lines[anchor_idx + 1:]
-                if not new_lines:
-                    # Update state and report no new output.
-                    _last_read[session_name] = (
-                        len(all_lines),
-                        all_lines[-2] if len(all_lines) >= 2 else all_lines[-1],
-                    )
+        if prev is not None:
+            prev_before, prev_anchor, prev_last = prev
+            # Search backwards for the two-line fingerprint to find where
+            # we last read up to.  This is index-independent, so trailing-
+            # blank fluctuations and buffer trimming don't break it.
+            found = -1
+            for i in range(len(all_lines) - 1, 0, -1):
+                if all_lines[i] == prev_anchor and all_lines[i - 1] == prev_before:
+                    found = i
+                    break
+            if found == -1:
+                # Two-line pair not found — try single-line fallback
+                # (handles short buffers and the first read after a reset).
+                for i in range(len(all_lines) - 1, -1, -1):
+                    if all_lines[i] == prev_anchor:
+                        found = i
+                        break
+            if found >= 0:
+                new_lines = all_lines[found + 1:]
+                if not new_lines or new_lines == [prev_last]:
+                    # Nothing after the anchor, or only the same trailing
+                    # line (typically the unchanged prompt).
+                    _last_read[session_name] = _make_fingerprint(all_lines)
                     return "(no new output)"
-            else:
-                # Content mismatch — fall back to full tail.
-                new_lines = all_lines[-lines:]
-        else:
-            # First read or non-incremental — full tail.
+
+        if new_lines is None:
+            # First read, non-incremental, or anchor not found — full tail.
             new_lines = all_lines[-lines:]
-        # Cap at max requested lines from the end.
+
+        # Cap at max requested lines.
         new_lines = new_lines[-lines:]
-        # Update state for next incremental read.
-        # Anchor on second-to-last line to avoid the active prompt.
-        _last_read[session_name] = (
-            len(all_lines),
-            all_lines[-2] if len(all_lines) >= 2 else all_lines[-1],
-        )
+        _last_read[session_name] = _make_fingerprint(all_lines)
         return "\n".join(new_lines)
 
 
