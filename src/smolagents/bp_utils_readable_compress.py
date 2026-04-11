@@ -17,7 +17,8 @@ Passes (in order):
 2. Whitespace normalization (trailing spaces, blank-line runs)
 3. Exact consecutive duplicate line collapsing
 4. Progress line removal (keep only the final state)
-5. Timestamp prefix stripping
+5. Separator line collapsing (e.g. ====, ----, ####)
+6. Timestamp prefix stripping
 """
 
 import re
@@ -128,7 +129,21 @@ def _is_progress_line(line: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 5. Timestamp prefix stripping
+# 5. Separator line collapsing
+# ---------------------------------------------------------------------------
+
+# Runs of 4+ identical separator characters anywhere in text.
+_SEPARATOR_RE = re.compile(r"([=\-#_*~.+])\1{3,}")
+_SEPARATOR_MARKER = "---"
+
+
+def _collapse_separators(lines: list[str]) -> list[str]:
+    """Replace runs of repeated separator characters with a short marker."""
+    return [_SEPARATOR_RE.sub(_SEPARATOR_MARKER, line) for line in lines]
+
+
+# ---------------------------------------------------------------------------
+# 6. Timestamp prefix stripping
 # ---------------------------------------------------------------------------
 
 # Common log timestamp patterns at the start of a line:
@@ -168,5 +183,6 @@ def readable_compress(text: str) -> str:
     lines = _normalize_whitespace(lines)
     lines = _collapse_repeated_lines(lines)
     lines = _collapse_progress_lines(lines)
+    lines = _collapse_separators(lines)
     lines = _strip_timestamps(lines)
     return "\n".join(lines)

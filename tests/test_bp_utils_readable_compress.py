@@ -16,6 +16,7 @@ from smolagents.bp_utils_readable_compress import (
     _normalize_whitespace,
     _collapse_repeated_lines,
     _collapse_progress_lines,
+    _collapse_separators,
     _strip_timestamps,
 )
 
@@ -106,6 +107,59 @@ class TestCollapseProgressLines:
 
     def test_empty(self):
         assert _collapse_progress_lines([]) == []
+
+
+# ── Separator collapsing ────────────────────────────────────────────────
+
+class TestCollapseSeparators:
+    def test_equals(self):
+        assert _collapse_separators(["========================"]) == ["---"]
+
+    def test_dashes(self):
+        assert _collapse_separators(["----------------------------"]) == ["---"]
+
+    def test_hashes(self):
+        assert _collapse_separators(["############################"]) == ["---"]
+
+    def test_underscores(self):
+        assert _collapse_separators(["____________________________"]) == ["---"]
+
+    def test_stars(self):
+        assert _collapse_separators(["****************************"]) == ["---"]
+
+    def test_tildes(self):
+        assert _collapse_separators(["~~~~~~~~~~~~~~~~~~~~~~~~~~~~"]) == ["---"]
+
+    def test_dots(self):
+        assert _collapse_separators(["............................."]) == ["---"]
+
+    def test_plus(self):
+        assert _collapse_separators(["++++++++++++++++++++++++++++"]) == ["---"]
+
+    def test_with_surrounding_whitespace(self):
+        assert _collapse_separators(["   ============   "]) == ["   ---   "]
+
+    def test_too_short_not_matched(self):
+        assert _collapse_separators(["==="]) == ["==="]
+
+    def test_exactly_four(self):
+        assert _collapse_separators(["===="]) == ["---"]
+
+    def test_mixed_chars_not_matched(self):
+        assert _collapse_separators(["=-==-==-"]) == ["=-==-==-"]
+
+    def test_normal_text_unchanged(self):
+        assert _collapse_separators(["hello world"]) == ["hello world"]
+
+    def test_in_context(self):
+        lines = ["header", "==============================", "body"]
+        assert _collapse_separators(lines) == ["header", "---", "body"]
+
+    def test_inline_separator(self):
+        assert _collapse_separators(["Result: ====== done"]) == ["Result: --- done"]
+
+    def test_multiple_runs_in_one_line(self):
+        assert _collapse_separators(["===== text #####"]) == ["--- text ---"]
 
 
 # ── Timestamp stripping ─────────────────────────────────────────────────
