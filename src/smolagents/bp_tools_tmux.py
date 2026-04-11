@@ -23,6 +23,7 @@ import shlex
 import subprocess
 import time
 
+from .bp_utils_readable_compress import readable_compress
 from .tools import Tool
 
 
@@ -205,14 +206,21 @@ class TmuxReadTool(Tool):
             "description": "If True (default), return only new lines since the last read. If False, return the full tail.",
             "nullable": True,
         },
+        "compress": {
+            "type": "boolean",
+            "description": "If True (default), apply readable compression to the output (strip ANSI, collapse duplicates, remove progress lines, strip timestamps). Defaults to True.",
+            "nullable": True,
+        },
     }
     output_type = "string"
 
-    def forward(self, session_name: str, lines: int | None = None, incremental: bool | None = None) -> str:
+    def forward(self, session_name: str, lines: int | None = None, incremental: bool | None = None, compress: bool | None = None) -> str:
         if lines is None:
             lines = 20
         if incremental is None:
             incremental = True
+        if compress is None:
+            compress = True
         lines = min(lines, _MAX_READ_LINES)
         full = _full_name(session_name)
         # Always capture the full scrollback; slice in Python afterwards.
@@ -263,7 +271,10 @@ class TmuxReadTool(Tool):
         # Cap at max requested lines.
         new_lines = new_lines[-lines:]
         _last_read[session_name] = _make_fingerprint(all_lines)
-        return "\n".join(new_lines)
+        text = "\n".join(new_lines)
+        if compress:
+            text = readable_compress(text)
+        return text
 
 
 # ======================================================================
