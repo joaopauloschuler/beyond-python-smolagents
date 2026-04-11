@@ -29,6 +29,9 @@ from .tools import Tool
 TMUX_PREFIX = "bpsa_"
 _MAX_READ_LINES = 2000
 
+# Per-session incremental read state: session_name → (line_count, last_line_content)
+_last_read: dict[str, tuple[int, str]] = {}
+
 
 def _full_name(session_name: str) -> str:
     """Return the prefixed tmux session name."""
@@ -161,7 +164,10 @@ class TmuxReadTool(Tool):
     description = (
         "Reads and returns the current text content (scrollback buffer) of a named "
         "tmux screen session. Use this to check command output, monitor progress, "
-        "or see the current state of an interactive program."
+        "or see the current state of an interactive program. "
+        "With incremental=True (default), only new lines since the last read are "
+        "returned, saving tokens on repeated polls. Set incremental=False to get "
+        "the full tail."
     )
     inputs = {
         "session_name": {
@@ -173,23 +179,67 @@ class TmuxReadTool(Tool):
             "description": "Number of lines to return from the end of the buffer (tail behaviour). Defaults to 20.",
             "nullable": True,
         },
+        "incremental": {
+            "type": "boolean",
+            "description": "If True (default), return only new lines since the last read. If False, return the full tail.",
+            "nullable": True,
+        },
     }
     output_type = "string"
 
-    def forward(self, session_name: str, lines: int | None = None) -> str:
+    def forward(self, session_name: str, lines: int | None = None, incremental: bool | None = None) -> str:
         if lines is None:
             lines = 20
+        if incremental is None:
+            incremental = True
         lines = min(lines, _MAX_READ_LINES)
         full = _full_name(session_name)
-        # Always capture the full scrollback; tail-slice in Python afterwards.
+        # Always capture the full scrollback; slice in Python afterwards.
         result = _run_tmux("capture-pane", "-t", full, "-p", "-S", f"-{_MAX_READ_LINES}")
         if result.returncode != 0:
             return f"ERROR: {result.stderr.strip()}"
         output = result.stdout.rstrip("\n")
         if not output:
             return "(empty screen)"
-        # Return only the last `lines` lines (tail behaviour).
-        return "\n".join(output.splitlines()[-lines:])
+        all_lines = output.splitlines()
+        # Strip trailing blank lines so we anchor on real content.
+        while all_lines and not all_lines[-1].strip():
+            all_lines.pop()
+        if not all_lines:
+            return "(empty screen)"
+        prev = _last_read.get(session_name) if incremental else None
+        if prev:
+            prev_count, prev_anchor = prev
+            # Anchor is the second-to-last line (avoids the active prompt
+            # which mutates when a command is typed).
+            anchor_idx = prev_count - 2 if prev_count >= 2 else prev_count - 1
+            # Safety check: does the anchor line still match?
+            if anchor_idx < len(all_lines) and all_lines[anchor_idx] == prev_anchor:
+                # Return from one past the anchor onwards (includes the old
+                # last line which may have changed — that's intentional).
+                new_lines = all_lines[anchor_idx + 1:]
+                if not new_lines:
+                    # Update state and report no new output.
+                    _last_read[session_name] = (
+                        len(all_lines),
+                        all_lines[-2] if len(all_lines) >= 2 else all_lines[-1],
+                    )
+                    return "(no new output)"
+            else:
+                # Content mismatch — fall back to full tail.
+                new_lines = all_lines[-lines:]
+        else:
+            # First read or non-incremental — full tail.
+            new_lines = all_lines[-lines:]
+        # Cap at max requested lines from the end.
+        new_lines = new_lines[-lines:]
+        # Update state for next incremental read.
+        # Anchor on second-to-last line to avoid the active prompt.
+        _last_read[session_name] = (
+            len(all_lines),
+            all_lines[-2] if len(all_lines) >= 2 else all_lines[-1],
+        )
+        return "\n".join(new_lines)
 
 
 # ======================================================================
@@ -250,6 +300,7 @@ class TmuxDestroyTool(Tool):
         result = _run_tmux("kill-session", "-t", full)
         if result.returncode != 0:
             return f"ERROR: {result.stderr.strip()}"
+        _last_read.pop(session_name, None)
         return f"Session '{session_name}' destroyed."
 
 
