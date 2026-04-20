@@ -274,6 +274,13 @@ print(run_os_command("php hello.php"))
 
 As you can see in the above command, you can use any computer language that is available in the system. If it is not, you can install it using the run_os_command tool.
 
+To run a bash command (such as with && or with env variables), use "bash -c ...":
+<example>
+<runcode>
+print(run_os_command("bash -c 'LD_LIBRARY_PATH=src ./src/tests/Benchmark32'"))
+</runcode>
+</example>
+
     Args:
       str_command: str
       timeout: int seconds (optional)
