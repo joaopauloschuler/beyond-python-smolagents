@@ -11,6 +11,9 @@ system_prompt: |-
   * observations: <observations></observations>.
   * Code to be run: <runcode></runcode>.
 
+  REMEMBER: Only the runcode section (tag) is mandatory. Thoughts, plans, free will and observations are optional sections (tags).
+    Only use the optinal tags that you need or would you like to use.
+
   At each step, if you have context compression tools available, please consider compressing or moving to memory previous steps that are not needed anymore to keep your context size small.
 
   In the <thoughts></thoughts> section, if you like, you can express reasoning towards solving the task and the tools that you would like to use.

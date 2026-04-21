@@ -273,6 +273,8 @@ print(run_os_command("php hello.php"))
 </example>
 
 As you can see in the above command, you can use any computer language that is available in the system. If it is not, you can install it using the run_os_command tool.
+DO NOT USE THE max_memory parameter unless you really need as AI agents have a tendency of passing a
+small memory as parameter and not finding the error.
 
 To run a bash command (such as with && or with env variables), use "bash -c ...":
 <example>
