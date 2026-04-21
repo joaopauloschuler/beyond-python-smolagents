@@ -279,7 +279,8 @@ small memory as parameter and not finding the error.
 To run a bash command (such as with && or with env variables), use "bash -c ...":
 <example>
 <runcode>
-print(run_os_command("bash -c 'LD_LIBRARY_PATH=src ./src/tests/Benchmark32'"))
+print(run_os_command("bash -c 'cd /home/bpsa/app/pas-core-math/src/tests/ && build.sh -dAVX2 -CfAVX2 -CpCOREI -OpCOREI'"))
+print(run_os_command("bash -c 'LD_LIBRARY_PATH=src ./bin/Benchmark32'"))
 </runcode>
 </example>
 
