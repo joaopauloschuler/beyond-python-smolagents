@@ -22,6 +22,7 @@ import textwrap
 import time
 import warnings
 import re
+import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1901,6 +1902,10 @@ class CodeAgent(MultiStepAgent):
         self.executor_kwargs: dict[str, Any] = executor_kwargs or {}
         self.python_executor = executor or self.create_python_executor()
 
+        self._last_trimmed_output: str | None = None
+        self._last_code_action: str | None = None
+        self._repeat_count: int = 0
+
     def _request_approval(self, tag_type: str, content: str) -> bool:
         """Request user approval before executing a tag. Returns True if approved."""
         if self.approval_callback is None:
@@ -1970,6 +1975,11 @@ class CodeAgent(MultiStepAgent):
         Yields ChatMessageStreamDelta during the run if streaming is enabled.
         At the end, yields either None if the step is not final, or the final answer.
         """
+        if self.step_number == 1:
+            self._last_trimmed_output = None
+            self._last_code_action = None
+            self._repeat_count = 0
+
         self.cleanup_model_input_messages(3)
         memory_messages = self.write_memory_to_messages()
 
@@ -2136,6 +2146,32 @@ will run in his device.
             # if (len(saved_files)==0):
             #     code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
             # """+code_action
+            trimmed_output = (model_output or "").strip()
+            nudge_triggered = False
+            if trimmed_output:
+                same_output = (self._last_trimmed_output is not None
+                               and trimmed_output == self._last_trimmed_output)
+                same_code = (self._last_code_action is not None
+                             and code_action == self._last_code_action)
+                if same_output or same_code:
+                    nudge_triggered = True
+                    self._repeat_count += 1
+                else:
+                    self._repeat_count = 0
+                self._last_trimmed_output = trimmed_output
+                self._last_code_action = code_action
+
+            if nudge_triggered:
+                creativity_seed = random.random()
+                self.logger.log(
+                    f"Repetition detected (consecutive={self._repeat_count}); "
+                    f"injecting creativity nudge {creativity_seed:.6f}.",
+                    level=LogLevel.INFO,
+                )
+                code_action = code_action + (
+                    f'\nprint("This is a random number to stimulate creativity: '
+                    f'{creativity_seed:.6f}.")\n'
+                )
             memory_step.code_action = code_action
         except Exception as e:
             code_example = """ Follow this example in <example></example>:
