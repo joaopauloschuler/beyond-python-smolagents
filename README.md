@@ -65,6 +65,14 @@ BPSA_MODEL_ID=Gemini-2.5-Flash
 BPSA_MAX_TOKENS=64000
 ```
 
+In Linux Ubuntu, you can also configure bpsa via the `~/.profile` file:
+```
+export BPSA_SERVER_MODEL=OpenAIServerModel
+export BPSA_API_ENDPOINT="https://openrouter.ai/api/v1"
+export BPSA_KEY_VALUE='your api key'
+export BPSA_MODEL_ID="z-ai/glm-5.3-flash"
+```
+
 Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](docs/CLI.md) for the full list.
 
 #### Dictation Input
