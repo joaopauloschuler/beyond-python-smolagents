@@ -22,6 +22,7 @@ Environment variables:
     BPSA_GLOBAL_EXECUTOR - Executor type (default: exec)
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
+    BPSA_HAS_SESSION_ID - Send a random OpenRouter session_id for sticky provider routing, 1/true/on (default: 0; OpenAI-compatible models only)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
 
@@ -281,6 +282,8 @@ def check_required_env():
         console.print("  [bold]BPSA_POSTPEND_STRING[/]  String set on model.postpend_string (default: '')")
         console.print("  [bold]BPSA_GLOBAL_EXECUTOR[/]  Executor type (default: exec)")
         console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
+        console.print("  [bold]BPSA_PROVIDER_ORDER[/]   OpenRouter provider order, comma-separated (default: '')")
+        console.print("  [bold]BPSA_HAS_SESSION_ID[/]   Send a random OpenRouter session_id, 1/true/on (default: 0)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("\nExample:")
         console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
@@ -291,6 +294,41 @@ def check_required_env():
         sys.exit(1)
 
 
+# OpenRouter session id (BPSA_HAS_SESSION_ID). One id is shared by every model
+# built in this process (main + compression) so all requests of a conversation
+# stay on the same provider and keep the prompt cache warm. Rotated on /clear.
+_session_id: str | None = None
+
+
+def current_session_id() -> str | None:
+    """Return the process-wide OpenRouter session id, or None when disabled."""
+    global _session_id
+    from smolagents.bp_utils import get_env_bool
+    if not get_env_bool("BPSA_HAS_SESSION_ID"):
+        return None
+    if _session_id is None:
+        import uuid
+        _session_id = f"bpsa-{uuid.uuid4().hex}"
+    return _session_id
+
+
+def rotate_session_id(*models) -> str | None:
+    """Generate a fresh session id and apply it to already-built models.
+
+    Returns the new id, or None when BPSA_HAS_SESSION_ID is disabled.
+    """
+    global _session_id
+    _session_id = None
+    new_id = current_session_id()
+    if new_id is None:
+        return None
+    for model in models:
+        extra_body = getattr(model, "kwargs", {}).get("extra_body")
+        if isinstance(extra_body, dict) and "session_id" in extra_body:
+            extra_body["session_id"] = new_id
+    return new_id
+
+
 def build_model(override_model_id=None):
     server_model = get_env("BPSA_SERVER_MODEL", None)
     model_id = override_model_id or get_env("BPSA_MODEL_ID")
@@ -299,6 +337,7 @@ def build_model(override_model_id=None):
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
     provider_order = get_env("BPSA_PROVIDER_ORDER", "")
+    session_id = current_session_id()
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
     
     if server_model is None:
@@ -319,11 +358,17 @@ def build_model(override_model_id=None):
     # max_tokens has been tested only with GoogleColab, LiteLLM and Transformers, so we only include it for those to be safe.
     if canonical_name in ("OpenAIServerModel", "AzureOpenAIServerModel"):
         extra_kwargs = {}
+        extra_body = {}
         # OpenRouter provider routing: comma-separated list sent as provider.order
         # (non-standard field, so it must go through extra_body).
         providers = [p.strip() for p in provider_order.split(",") if p.strip()]
         if providers:
-            extra_kwargs["extra_body"] = {"provider": {"order": providers}}
+            extra_body["provider"] = {"order": providers}
+        # OpenRouter sticky routing key (non-standard field, also via extra_body).
+        if session_id:
+            extra_body["session_id"] = session_id
+        if extra_body:
+            extra_kwargs["extra_body"] = extra_body
         model = model_class(model_id, api_key=api_key, api_base=api_endpoint, **extra_kwargs)
     elif canonical_name == "LiteLLMModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
@@ -2078,6 +2123,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 _shutdown_browser(agent)
                 _shutdown_gui(agent)
                 _shutdown_mcp(agent)
+                rotate_session_id(model)  # new conversation -> new OpenRouter session id
                 agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
                 session_stats = {
                     "turns": 0,

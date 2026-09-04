@@ -59,6 +59,7 @@ All prefixed with `BPSA_`:
 | `BPSA_GLOBAL_EXECUTOR` | No | `exec` | Executor type (`exec`, `local`, `e2b`, etc.) |
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
 | `BPSA_PROVIDER_ORDER` | No | - | Comma-separated OpenRouter provider order (e.g., `openai,together`). Sent as `provider.order` in the request body. `OpenAIServerModel` only. |
+| `BPSA_HAS_SESSION_ID` | No | `0` | `1`, `true` or `on` to send a random `session_id` in the request body. OpenRouter uses it as a sticky-routing key so requests of the same conversation stay on the same provider and keep the prompt cache warm. A new id is generated on `/clear`. Note: `BPSA_PROVIDER_ORDER` overrides sticky routing on OpenRouter. `OpenAIServerModel` only. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
