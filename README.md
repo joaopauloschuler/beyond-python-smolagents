@@ -71,6 +71,8 @@ export BPSA_SERVER_MODEL=OpenAIServerModel
 export BPSA_API_ENDPOINT="https://openrouter.ai/api/v1"
 export BPSA_KEY_VALUE='your api key'
 export BPSA_MODEL_ID="z-ai/glm-5.3-flash"
+# Optional: OpenRouter provider routing (comma-separated, sent as provider.order)
+export BPSA_PROVIDER_ORDER="openai,together"
 ```
 
 Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](docs/CLI.md) for the full list.

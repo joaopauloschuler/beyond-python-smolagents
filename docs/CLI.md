@@ -58,6 +58,7 @@ All prefixed with `BPSA_`:
 | `BPSA_POSTPEND_STRING` | No | `''` | String set on `model.postpend_string` |
 | `BPSA_GLOBAL_EXECUTOR` | No | `exec` | Executor type (`exec`, `local`, `e2b`, etc.) |
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
+| `BPSA_PROVIDER_ORDER` | No | - | Comma-separated OpenRouter provider order (e.g., `openai,together`). Sent as `provider.order` in the request body. `OpenAIServerModel` only. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `false` | Place system prompt before memory steps instead of after |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |

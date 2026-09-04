@@ -21,6 +21,7 @@ Environment variables:
     BPSA_POSTPEND_STRING - String to append to model outputs (default: '')
     BPSA_GLOBAL_EXECUTOR - Executor type (default: exec)
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
+    BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: false)
 
@@ -297,6 +298,7 @@ def build_model(override_model_id=None):
     api_endpoint = get_env("BPSA_API_ENDPOINT")
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
+    provider_order = get_env("BPSA_PROVIDER_ORDER", "")
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
     
     if server_model is None:
@@ -316,7 +318,13 @@ def build_model(override_model_id=None):
     # Build kwargs based on model type
     # max_tokens has been tested only with GoogleColab, LiteLLM and Transformers, so we only include it for those to be safe.
     if canonical_name in ("OpenAIServerModel", "AzureOpenAIServerModel"):
-        model = model_class(model_id, api_key=api_key, api_base=api_endpoint)
+        extra_kwargs = {}
+        # OpenRouter provider routing: comma-separated list sent as provider.order
+        # (non-standard field, so it must go through extra_body).
+        providers = [p.strip() for p in provider_order.split(",") if p.strip()]
+        if providers:
+            extra_kwargs["extra_body"] = {"provider": {"order": providers}}
+        model = model_class(model_id, api_key=api_key, api_base=api_endpoint, **extra_kwargs)
     elif canonical_name == "LiteLLMModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
     elif canonical_name == "LiteLLMRouterModel":
