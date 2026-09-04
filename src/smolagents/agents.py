@@ -903,7 +903,7 @@ You have been provided with these additional arguments, that you can access dire
             step_messages.extend(memory_step.to_messages(summary_mode=summary_mode))
 
         # Message ordering: system prompt position depends on BPSA_SYSTEM_PROMPT_FIRST
-        system_prompt_first = get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", False)
+        system_prompt_first = get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True)
         if step_messages:
             last_message = step_messages[-1]
             if system_prompt_first:

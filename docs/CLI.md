@@ -60,7 +60,7 @@ All prefixed with `BPSA_`:
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
 | `BPSA_PROVIDER_ORDER` | No | - | Comma-separated OpenRouter provider order (e.g., `openai,together`). Sent as `provider.order` in the request body. `OpenAIServerModel` only. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
-| `BPSA_SYSTEM_PROMPT_FIRST` | No | `false` | Place system prompt before memory steps instead of after |
+| `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |

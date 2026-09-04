@@ -23,7 +23,7 @@ Environment variables:
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
-    BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: false)
+    BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
 
     Context compression parameters (see CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
