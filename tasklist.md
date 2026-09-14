@@ -25,6 +25,27 @@ append a short "LANDED" note with what was verified.
   existing code before adding any, name the actor in every report, and do not
   write code unless asked.
 
+## Baseline (existing test suite)
+
+- Commit: `a8fb19f` (branch `a1`), date 2026-09-14.
+- Command: `cd /home/bpsa/app/bpsa && python -m pytest ./tests/ -q -p no:cacheprovider`
+- Result: **not run**. `python` resolves to `/home/bpsa/x/bin/python`
+  (venv, Python 3.12.3) and printed `No module named pytest`; the same holds
+  for `/usr/bin/python3`. No `pytest` or `_pytest` package exists under any
+  `site-packages` on this machine. The baseline agent was told not to
+  install packages, so it stopped here.
+- Counts: passed / failed / skipped / errors / xfailed = unknown; wall time
+  unknown.
+- [ ] Install the test extras (`pip install -e '.[test]'` inside
+  `/home/bpsa/x`, which is what `pyproject.toml` `[project.optional-dependencies].test`
+  lists: pytest, pytest-datadir, pytest-timeout, pandas, ...) and rerun the
+  command above to fill in the counts and the list of pre-existing failures.
+
+Coding agents must run the same pytest command, compare their counts against
+the numbers recorded here, and leave any pre-existing failure alone; until the
+counts above are filled in, an agent must run the suite before and after its
+change and report both results.
+
 ## Provider visibility (turn summary and `/show-stats`)
 
 These share one blind spot: `TokenUsage` in `src/smolagents/monitoring.py`
