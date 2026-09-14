@@ -87,7 +87,7 @@ def test_action_step_dict():
     assert action_step_dict["timing"] == {"start_time": 0.0, "end_time": 1.0, "duration": 1.0}
 
     assert "token_usage" in action_step_dict
-    assert action_step_dict["token_usage"] == {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
+    assert action_step_dict["token_usage"] == {"input_tokens": 10, "output_tokens": 20, "cached_input_tokens": 0, "total_tokens": 30}
 
     assert "step_number" in action_step_dict
     assert action_step_dict["step_number"] == 1

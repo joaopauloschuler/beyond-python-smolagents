@@ -96,13 +96,21 @@ def _deserialize_timing(data: dict | None) -> Timing | None:
 def _serialize_token_usage(usage: TokenUsage | None) -> dict | None:
     if usage is None:
         return None
-    return {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+    return {
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cached_input_tokens": usage.cached_input_tokens,
+    }
 
 
 def _deserialize_token_usage(data: dict | None) -> TokenUsage | None:
     if data is None:
         return None
-    return TokenUsage(input_tokens=data["input_tokens"], output_tokens=data["output_tokens"])
+    return TokenUsage(
+        input_tokens=data["input_tokens"],
+        output_tokens=data["output_tokens"],
+        cached_input_tokens=data.get("cached_input_tokens", 0),
+    )
 
 
 def _serialize_error(error) -> dict | None:
@@ -302,6 +310,7 @@ def save_session_to_dict(agent, session_stats: dict) -> dict:
         "monitor_state": {
             "total_input_token_count": agent.monitor.total_input_token_count,
             "total_output_token_count": agent.monitor.total_output_token_count,
+            "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
         },
         "steps": steps,
     }
@@ -341,12 +350,14 @@ def load_session_from_dict(payload: dict, agent) -> dict:
     monitor_state = payload.get("monitor_state", {})
     agent.monitor.total_input_token_count = monitor_state.get("total_input_token_count", 0)
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
+    agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
 
     return payload.get("session_stats", {
         "turns": 0,
         "total_time": 0.0,
         "total_input_tokens": 0,
         "total_output_tokens": 0,
+        "total_cached_input_tokens": 0,
     })
 
 
@@ -376,6 +387,7 @@ def save_session(filepath: str, agent, session_stats: dict) -> int:
         "monitor_state": {
             "total_input_token_count": agent.monitor.total_input_token_count,
             "total_output_token_count": agent.monitor.total_output_token_count,
+            "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
         },
         "steps": steps,
     }
@@ -421,10 +433,12 @@ def load_session(filepath: str, agent) -> dict:
     monitor_state = payload.get("monitor_state", {})
     agent.monitor.total_input_token_count = monitor_state.get("total_input_token_count", 0)
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
+    agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
 
     return payload.get("session_stats", {
         "turns": 0,
         "total_time": 0.0,
         "total_input_tokens": 0,
         "total_output_tokens": 0,
+        "total_cached_input_tokens": 0,
     })

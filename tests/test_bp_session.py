@@ -37,6 +37,7 @@ class FakeMonitor:
     def __init__(self):
         self.total_input_token_count = 0
         self.total_output_token_count = 0
+        self.total_cached_input_token_count = 0
 
 
 class FakeAgent:
@@ -303,6 +304,7 @@ class TestAgentStateRestoration:
         agent._last_plan_step = 10
         agent.monitor.total_input_token_count = 50000
         agent.monitor.total_output_token_count = 15000
+        agent.monitor.total_cached_input_token_count = 40000
         stats = {"turns": 5, "total_time": 123.4, "total_input_tokens": 50000, "total_output_tokens": 15000}
 
         save_session(filepath, agent, stats)
@@ -313,6 +315,7 @@ class TestAgentStateRestoration:
         assert agent2._last_plan_step == 10
         assert agent2.monitor.total_input_token_count == 50000
         assert agent2.monitor.total_output_token_count == 15000
+        assert agent2.monitor.total_cached_input_token_count == 40000
 
 
 class TestSessionStatsRestoration:

@@ -41,6 +41,7 @@ class TokenUsage:
 
     input_tokens: int
     output_tokens: int
+    cached_input_tokens: int = 0  # subset of input_tokens served from the provider's prompt cache
     total_tokens: int = field(init=False)
 
     def __post_init__(self):
@@ -50,6 +51,7 @@ class TokenUsage:
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
             "total_tokens": self.total_tokens,
         }
 
@@ -86,17 +88,20 @@ class Monitor:
         self.memory = memory
         self.total_input_token_count = 0
         self.total_output_token_count = 0
+        self.total_cached_input_token_count = 0
 
     def get_total_token_counts(self) -> TokenUsage:
         return TokenUsage(
             input_tokens=self.total_input_token_count,
             output_tokens=self.total_output_token_count,
+            cached_input_tokens=self.total_cached_input_token_count,
         )
 
     def reset(self):
         self.step_durations = []
         self.total_input_token_count = 0
         self.total_output_token_count = 0
+        self.total_cached_input_token_count = 0
 
     def update_metrics(self, step_log):
         """Update the metrics of the monitor.
@@ -111,6 +116,7 @@ class Monitor:
         if step_log.token_usage is not None:
             self.total_input_token_count += step_log.token_usage.input_tokens
             self.total_output_token_count += step_log.token_usage.output_tokens
+            self.total_cached_input_token_count += step_log.token_usage.cached_input_tokens
             console_outputs += (
                 f"| Input tokens: {self.total_input_token_count:,} | Output tokens: {self.total_output_token_count:,}"
             )

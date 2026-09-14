@@ -166,6 +166,16 @@ Use `prompt_toolkit` for:
 - Show intermediate code/thoughts as they happen (streaming)
 - Dim or prefix intermediate steps so the final answer stands out
 
+After each turn `print_turn_summary` prints one dim line with the turn's input,
+output and total tokens. When the provider reports cached prompt tokens the line
+also shows `Cache: NN%`, the share of that turn's input tokens served from the
+provider's prompt cache (cached / input, rounded). `OpenAIModel` reads
+`usage.prompt_tokens_details.cached_tokens` (OpenAI, OpenRouter) or
+`usage.prompt_cache_hit_tokens` (DeepSeek); when neither is present the figure
+is left out. `/show-stats` shows the session total as "Total cached input
+tokens". A non-zero figure confirms `BPSA_HAS_SESSION_ID` and prompt ordering
+are hitting the cache.
+
 ### Slash Commands
 
 | Command | Description |

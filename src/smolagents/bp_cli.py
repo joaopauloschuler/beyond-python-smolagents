@@ -598,12 +598,12 @@ def format_tokens(n: int) -> str:
 
 
 def get_agent_token_usage(agent):
-    """Get current total token usage from the agent's monitor."""
+    """Return (input, output, cached_input) token totals from the agent's monitor; zeros when unavailable."""
     try:
         usage = agent.monitor.get_total_token_counts()
-        return usage.input_tokens, usage.output_tokens
+        return usage.input_tokens, usage.output_tokens, usage.cached_input_tokens
     except Exception:
-        return 0, 0
+        return 0, 0, 0
 
 
 def get_compression_stats(agent):
@@ -619,14 +619,18 @@ def get_compression_stats(agent):
         return 0, 0, 0
 
 
-def print_turn_summary(turn_num: int, elapsed: float, input_tokens: int, output_tokens: int, agent=None):
-    """Print a one-line summary after each turn."""
+def print_turn_summary(
+    turn_num: int, elapsed: float, input_tokens: int, output_tokens: int, agent=None, cached_tokens: int = 0
+):
+    """Print a one-line summary after each turn; Cache: (cached_tokens / input_tokens) only when cached_tokens > 0."""
     total = input_tokens + output_tokens
     line = (
         f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
         f"In: {format_tokens(input_tokens)} | Out: {format_tokens(output_tokens)} | "
         f"Total: {format_tokens(total)}"
     )
+    if cached_tokens > 0 and input_tokens > 0:
+        line += f" | Cache: {round(100 * cached_tokens / input_tokens)}%"
     if agent is not None:
         total_steps, compressed_count, compressed_original = get_compression_stats(agent)
         if compressed_count > 0:
@@ -974,6 +978,7 @@ def print_stats(session_stats: dict, agent=None):
     table.add_row("Total time", f"{session_stats['total_time']:.1f}s")
     table.add_row("Total input tokens", f"{session_stats['total_input_tokens']:,}")
     table.add_row("Total output tokens", f"{session_stats['total_output_tokens']:,}")
+    table.add_row("Total cached input tokens", f"{session_stats.get('total_cached_input_tokens', 0):,}")
     total_tokens = session_stats["total_input_tokens"] + session_stats["total_output_tokens"]
     table.add_row("Total tokens", f"{total_tokens:,}")
     if session_stats["turns"] > 0:
@@ -2015,6 +2020,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         "total_time": 0.0,
         "total_input_tokens": 0,
         "total_output_tokens": 0,
+        "total_cached_input_tokens": 0,
     }
     first_turn = True
 
@@ -2130,6 +2136,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     "total_time": 0.0,
                     "total_input_tokens": 0,
                     "total_output_tokens": 0,
+                    "total_cached_input_tokens": 0,
                 }
                 last_answer = None
                 first_turn = True
@@ -2345,7 +2352,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         console.print(Rule(style="cyan"))
 
         # Capture token counts before this turn
-        input_before, output_before = get_agent_token_usage(agent)
+        input_before, output_before, cached_before = get_agent_token_usage(agent)
 
         # Run agent
         try:
@@ -2375,14 +2382,18 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             elapsed = time.time() - start_time
 
             # Calculate token usage for this turn
-            input_after, output_after = get_agent_token_usage(agent)
+            input_after, output_after, cached_after = get_agent_token_usage(agent)
             turn_input = input_after - input_before
             turn_output = output_after - output_before
+            turn_cached = cached_after - cached_before
 
             session_stats["turns"] += 1
             session_stats["total_time"] += elapsed
             session_stats["total_input_tokens"] += turn_input
             session_stats["total_output_tokens"] += turn_output
+            session_stats["total_cached_input_tokens"] = (
+                session_stats.get("total_cached_input_tokens", 0) + turn_cached
+            )
             last_answer = result
 
             console.print()
@@ -2390,7 +2401,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             console.print()
 
             # Per-turn summary line
-            print_turn_summary(turn_num, elapsed, turn_input, turn_output, agent)
+            print_turn_summary(turn_num, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached)
             console.print()
 
             # Auto-save session periodically

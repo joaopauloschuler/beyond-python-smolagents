@@ -219,6 +219,27 @@ class ChatMessageStreamDelta:
     token_usage: TokenUsage | None = None
 
 
+def extract_cached_input_tokens(usage) -> int:
+    """Cached prompt tokens from an OpenAI-style usage object or dict; 0 when the provider does not report them.
+    Reads usage.prompt_tokens_details.cached_tokens (OpenAI/OpenRouter), else usage.prompt_cache_hit_tokens (DeepSeek).
+    """
+
+    def read_field(obj, name):
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(name)
+        return getattr(obj, name, None)
+
+    details = read_field(usage, "prompt_tokens_details")
+    for candidate in (read_field(details, "cached_tokens"), read_field(usage, "prompt_cache_hit_tokens")):
+        if isinstance(candidate, bool):
+            continue
+        if isinstance(candidate, int) and candidate > 0:
+            return candidate
+    return 0
+
+
 def agglomerate_stream_deltas(
     stream_deltas: list[ChatMessageStreamDelta], role: MessageRole = MessageRole.ASSISTANT
 ) -> ChatMessage:
@@ -229,10 +250,12 @@ def agglomerate_stream_deltas(
     accumulated_content = ""
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cached_input_tokens = 0
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
             total_output_tokens += stream_delta.token_usage.output_tokens
+            total_cached_input_tokens += stream_delta.token_usage.cached_input_tokens
         if stream_delta.content:
             accumulated_content += stream_delta.content
         if stream_delta.tool_calls:
@@ -277,6 +300,7 @@ def agglomerate_stream_deltas(
         token_usage=TokenUsage(
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
+            cached_input_tokens=total_cached_input_tokens,
         ),
     )
 
@@ -1743,6 +1767,7 @@ class OpenAIModel(ApiModel):
                     token_usage=TokenUsage(
                         input_tokens=event.usage.prompt_tokens,
                         output_tokens=event.usage.completion_tokens,
+                        cached_input_tokens=extract_cached_input_tokens(event.usage),
                     ),
                 )
             if event.choices:
@@ -1797,6 +1822,7 @@ class OpenAIModel(ApiModel):
             token_usage=TokenUsage(
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
+                cached_input_tokens=extract_cached_input_tokens(response.usage),
             ),
         )
 
