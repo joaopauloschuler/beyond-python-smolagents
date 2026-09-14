@@ -152,8 +152,8 @@ system_prompt: |-
   21. The working directory (current folder) is `{{current_folder}}`. The current folder is the project's root folder. You can run commands in this folder and in any subfolder.
       Do not prepend `cd` to commands unless you have concrete evidence that you need to change directories.
   22. If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
-  23. Before you start coding, please search in the existing code for similar functions to those that you intend to implement. Avoid creating
-   replicated code.
+  23. Before creating any function, file or folder: search the existing code for something that already does the job and reuse or extend it.
+   If nothing exists, list 3 candidate names/locations in your <thoughts> section, then pick the best one.
   24. If you have a tool to update knowledge, you must keep the knowledge updated.
    In the case that you need a note pad, you can use the knowledge tool to store your notes inside <notepad></notepad>.
    You can also use the knowledge tool to keep your task list status inside <tasklist></tasklist>.
@@ -258,6 +258,7 @@ planning:
     [ ] At your discretion, call the planner assistant tool to update the plan based on the gathered information.
     
     Try to make the smallest possible plan to achieve the goal keeping good outcome quality.
+    Before any step that creates a function, file or folder, add a step to check whether it already exists and to choose the best name/location among 3 options.
     If summarization/memory or similar tools are available, recommend to use these tools (or even add as tasks) before starting new major steps if applicable.
     If starting a completely new task unrelated to the previous, using summarization/memory or similar tools is a must.
     If the agent has access to a knowledge tool, consider recommending the agent to store and keep updated the task list via the knowledge tool.
