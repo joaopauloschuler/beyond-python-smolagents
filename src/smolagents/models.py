@@ -258,6 +258,53 @@ def extract_provider_name(response) -> str | None:
     return None
 
 
+def extract_response_cost(usage) -> float:
+    """Request cost in USD from an OpenAI-style usage object or dict (OpenRouter `usage.cost`); 0.0 when absent.
+    Missing, None, bool or non-numeric values give 0.0; never raises.
+    """
+    if usage is None:
+        return 0.0
+    cost = usage.get("cost") if isinstance(usage, dict) else getattr(usage, "cost", None)
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        return 0.0
+    return float(cost) if cost > 0 else 0.0
+
+
+def _price_per_million(env_name: str) -> float | None:
+    value = os.environ.get(env_name)
+    try:
+        return float(value) if value not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def estimate_cost_usd(input_tokens: int, output_tokens: int, cached_input_tokens: int = 0) -> float:
+    """Cost in USD from BPSA_PRICE_INPUT_PER_M / BPSA_PRICE_OUTPUT_PER_M (and optional BPSA_PRICE_CACHED_INPUT_PER_M);
+    0.0 unless both required prices are set. Cached input tokens cost the cached price, else the input price.
+    """
+    input_price = _price_per_million("BPSA_PRICE_INPUT_PER_M")
+    output_price = _price_per_million("BPSA_PRICE_OUTPUT_PER_M")
+    if input_price is None or output_price is None:
+        return 0.0
+    cached_price = _price_per_million("BPSA_PRICE_CACHED_INPUT_PER_M")
+    if cached_price is None:
+        cached_price = input_price
+    cached = min(max(cached_input_tokens or 0, 0), max(input_tokens or 0, 0))
+    uncached = max(input_tokens or 0, 0) - cached
+    return (uncached * input_price + cached * cached_price + max(output_tokens or 0, 0) * output_price) / 1e6
+
+
+def request_cost_usd(usage) -> float:
+    """Cost of one request: the provider-reported `usage.cost` when present, else the BPSA_PRICE_* estimate."""
+    reported = extract_response_cost(usage)
+    if reported > 0:
+        return reported
+    read = usage.get if isinstance(usage, dict) else lambda name, default=None: getattr(usage, name, default)
+    return estimate_cost_usd(
+        read("prompt_tokens", 0) or 0, read("completion_tokens", 0) or 0, extract_cached_input_tokens(usage)
+    )
+
+
 def agglomerate_stream_deltas(
     stream_deltas: list[ChatMessageStreamDelta], role: MessageRole = MessageRole.ASSISTANT
 ) -> ChatMessage:
@@ -269,12 +316,14 @@ def agglomerate_stream_deltas(
     total_input_tokens = 0
     total_output_tokens = 0
     total_cached_input_tokens = 0
+    total_cost_usd = 0.0
     provider = None
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
             total_output_tokens += stream_delta.token_usage.output_tokens
             total_cached_input_tokens += stream_delta.token_usage.cached_input_tokens
+            total_cost_usd += stream_delta.token_usage.cost_usd
             provider = stream_delta.token_usage.provider or provider
         if stream_delta.content:
             accumulated_content += stream_delta.content
@@ -322,6 +371,7 @@ def agglomerate_stream_deltas(
             output_tokens=total_output_tokens,
             cached_input_tokens=total_cached_input_tokens,
             provider=provider,
+            cost_usd=total_cost_usd,
         ),
     )
 
@@ -1792,6 +1842,7 @@ class OpenAIModel(ApiModel):
                         output_tokens=event.usage.completion_tokens,
                         cached_input_tokens=extract_cached_input_tokens(event.usage),
                         provider=provider,
+                        cost_usd=request_cost_usd(event.usage),
                     ),
                 )
             if event.choices:
@@ -1848,6 +1899,7 @@ class OpenAIModel(ApiModel):
                 output_tokens=response.usage.completion_tokens,
                 cached_input_tokens=extract_cached_input_tokens(response.usage),
                 provider=extract_provider_name(response),
+                cost_usd=request_cost_usd(response.usage),
             ),
         )
 

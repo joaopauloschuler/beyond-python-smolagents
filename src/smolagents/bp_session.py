@@ -101,6 +101,7 @@ def _serialize_token_usage(usage: TokenUsage | None) -> dict | None:
         "output_tokens": usage.output_tokens,
         "cached_input_tokens": usage.cached_input_tokens,
         "provider": usage.provider,
+        "cost_usd": usage.cost_usd,
     }
 
 
@@ -112,6 +113,7 @@ def _deserialize_token_usage(data: dict | None) -> TokenUsage | None:
         output_tokens=data["output_tokens"],
         cached_input_tokens=data.get("cached_input_tokens", 0),
         provider=data.get("provider"),
+        cost_usd=float(data.get("cost_usd", 0.0) or 0.0),
     )
 
 
@@ -314,6 +316,7 @@ def save_session_to_dict(agent, session_stats: dict) -> dict:
             "total_output_token_count": agent.monitor.total_output_token_count,
             "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
             "last_provider": agent.monitor.last_provider,
+            "total_cost_usd": agent.monitor.total_cost_usd,
         },
         "steps": steps,
     }
@@ -355,6 +358,7 @@ def load_session_from_dict(payload: dict, agent) -> dict:
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
     agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
     agent.monitor.last_provider = monitor_state.get("last_provider")
+    agent.monitor.total_cost_usd = float(monitor_state.get("total_cost_usd", 0.0) or 0.0)
 
     return payload.get("session_stats", {
         "turns": 0,
@@ -362,6 +366,7 @@ def load_session_from_dict(payload: dict, agent) -> dict:
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_cached_input_tokens": 0,
+        "total_cost_usd": 0.0,
     })
 
 
@@ -393,6 +398,7 @@ def save_session(filepath: str, agent, session_stats: dict) -> int:
             "total_output_token_count": agent.monitor.total_output_token_count,
             "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
             "last_provider": agent.monitor.last_provider,
+            "total_cost_usd": agent.monitor.total_cost_usd,
         },
         "steps": steps,
     }
@@ -440,6 +446,7 @@ def load_session(filepath: str, agent) -> dict:
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
     agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
     agent.monitor.last_provider = monitor_state.get("last_provider")
+    agent.monitor.total_cost_usd = float(monitor_state.get("total_cost_usd", 0.0) or 0.0)
 
     return payload.get("session_stats", {
         "turns": 0,
@@ -447,4 +454,5 @@ def load_session(filepath: str, agent) -> dict:
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_cached_input_tokens": 0,
+        "total_cost_usd": 0.0,
     })

@@ -23,6 +23,9 @@ Environment variables:
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_HAS_SESSION_ID - Send a random OpenRouter session_id for sticky provider routing, 1/true/on (default: 0; OpenAI-compatible models only)
+    BPSA_PRICE_INPUT_PER_M  - USD per million input tokens, used to estimate cost when the response has no usage.cost
+    BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
+    BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
 
@@ -284,6 +287,9 @@ def check_required_env():
         console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
         console.print("  [bold]BPSA_PROVIDER_ORDER[/]   OpenRouter provider order, comma-separated (default: '')")
         console.print("  [bold]BPSA_HAS_SESSION_ID[/]   Send a random OpenRouter session_id, 1/true/on (default: 0)")
+        console.print("  [bold]BPSA_PRICE_INPUT_PER_M[/]  USD per million input tokens for cost estimates (default: unset)")
+        console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
+        console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("\nExample:")
         console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
@@ -367,6 +373,9 @@ def build_model(override_model_id=None):
         # OpenRouter sticky routing key (non-standard field, also via extra_body).
         if session_id:
             extra_body["session_id"] = session_id
+        # OpenRouter returns usage.cost when asked; OpenAI rejects unknown body fields, so only send it there.
+        if "openrouter" in (api_endpoint or "").lower():
+            extra_body["usage"] = {"include": True}
         if extra_body:
             extra_kwargs["extra_body"] = extra_body
         model = model_class(model_id, api_key=api_key, api_base=api_endpoint, **extra_kwargs)
@@ -606,6 +615,19 @@ def get_agent_token_usage(agent):
         return 0, 0, 0
 
 
+def get_agent_cost_usd(agent) -> float:
+    """Accumulated request cost in USD from the agent's monitor; 0.0 when unavailable."""
+    try:
+        return float(agent.monitor.total_cost_usd or 0.0)
+    except Exception:
+        return 0.0
+
+
+def format_cost_usd(cost: float) -> str:
+    """Format a USD amount as `$0.0123`; six decimals below one tenth of a cent so tiny costs stay visible."""
+    return f"${cost:.6f}" if cost < 0.001 else f"${cost:.4f}"
+
+
 def get_agent_last_provider(agent) -> str | None:
     """Provider that served the agent's most recent step, from its monitor; None when unknown or unavailable."""
     try:
@@ -628,10 +650,16 @@ def get_compression_stats(agent):
 
 
 def print_turn_summary(
-    turn_num: int, elapsed: float, input_tokens: int, output_tokens: int, agent=None, cached_tokens: int = 0
+    turn_num: int,
+    elapsed: float,
+    input_tokens: int,
+    output_tokens: int,
+    agent=None,
+    cached_tokens: int = 0,
+    cost_usd: float = 0.0,
 ):
-    """Print a one-line summary after each turn; Cache: (cached_tokens / input_tokens) only when cached_tokens > 0,
-    "via <provider>" only when the agent's monitor knows which provider served the last step."""
+    """Print a one-line summary after each turn; Cache: only when cached_tokens > 0, "via <provider>" only when
+    the agent's monitor knows the last provider, and the `$` cost only when cost_usd > 0."""
     total = input_tokens + output_tokens
     line = (
         f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
@@ -654,6 +682,8 @@ def print_turn_summary(
         provider = get_agent_last_provider(agent)
         if provider:
             line += f" | via {provider}"
+    if cost_usd > 0:
+        line += f" | {format_cost_usd(cost_usd)}"
     line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)
@@ -993,11 +1023,15 @@ def print_stats(session_stats: dict, agent=None):
     table.add_row("Total cached input tokens", f"{session_stats.get('total_cached_input_tokens', 0):,}")
     total_tokens = session_stats["total_input_tokens"] + session_stats["total_output_tokens"]
     table.add_row("Total tokens", f"{total_tokens:,}")
+    total_cost = float(session_stats.get("total_cost_usd", 0.0) or 0.0)
+    table.add_row("Total cost", format_cost_usd(total_cost) if total_cost > 0 else "unknown")
     if session_stats["turns"] > 0:
         avg_time = session_stats["total_time"] / session_stats["turns"]
         avg_tokens = total_tokens // session_stats["turns"]
         table.add_row("Avg time/turn", f"{avg_time:.1f}s")
         table.add_row("Avg tokens/turn", f"{avg_tokens:,}")
+        if total_cost > 0:
+            table.add_row("Avg cost/turn", format_cost_usd(total_cost / session_stats["turns"]))
     if agent and hasattr(agent, 'get_prompt_char_breakdown'):
         breakdown = agent.get_prompt_char_breakdown()
         table.add_row("", "")
@@ -2034,6 +2068,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_cached_input_tokens": 0,
+        "total_cost_usd": 0.0,
     }
     first_turn = True
 
@@ -2150,6 +2185,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     "total_input_tokens": 0,
                     "total_output_tokens": 0,
                     "total_cached_input_tokens": 0,
+                    "total_cost_usd": 0.0,
                 }
                 last_answer = None
                 first_turn = True
@@ -2366,6 +2402,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
 
         # Capture token counts before this turn
         input_before, output_before, cached_before = get_agent_token_usage(agent)
+        cost_before = get_agent_cost_usd(agent)
 
         # Run agent
         try:
@@ -2399,6 +2436,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             turn_input = input_after - input_before
             turn_output = output_after - output_before
             turn_cached = cached_after - cached_before
+            turn_cost = get_agent_cost_usd(agent) - cost_before
 
             session_stats["turns"] += 1
             session_stats["total_time"] += elapsed
@@ -2407,6 +2445,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             session_stats["total_cached_input_tokens"] = (
                 session_stats.get("total_cached_input_tokens", 0) + turn_cached
             )
+            session_stats["total_cost_usd"] = session_stats.get("total_cost_usd", 0.0) + turn_cost
             last_answer = result
 
             console.print()
@@ -2414,7 +2453,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             console.print()
 
             # Per-turn summary line
-            print_turn_summary(turn_num, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached)
+            print_turn_summary(
+                turn_num, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached, cost_usd=turn_cost
+            )
             console.print()
 
             # Auto-save session periodically

@@ -60,6 +60,9 @@ All prefixed with `BPSA_`:
 | `BPSA_MAX_TOKENS` | No | `64000` | Max tokens for model responses |
 | `BPSA_PROVIDER_ORDER` | No | - | Comma-separated OpenRouter provider order (e.g., `openai,together`). Sent as `provider.order` in the request body. `OpenAIServerModel` only. |
 | `BPSA_HAS_SESSION_ID` | No | `0` | `1`, `true` or `on` to send a random `session_id` in the request body. OpenRouter uses it as a sticky-routing key so requests of the same conversation stay on the same provider and keep the prompt cache warm. A new id is generated on `/clear`. Note: `BPSA_PROVIDER_ORDER` overrides sticky routing on OpenRouter. `OpenAIServerModel` only. |
+| `BPSA_PRICE_INPUT_PER_M` | No | - | USD per million input tokens. With `BPSA_PRICE_OUTPUT_PER_M` it lets `OpenAIModel` estimate the cost of each request when the response carries no `usage.cost` (OpenAI, DeepSeek). |
+| `BPSA_PRICE_OUTPUT_PER_M` | No | - | USD per million output tokens. Both price variables must be set for an estimate; otherwise no cost is shown. |
+| `BPSA_PRICE_CACHED_INPUT_PER_M` | No | _(input price)_ | USD per million cached input tokens, applied to the cached share of the input when the provider reports it. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
@@ -184,6 +187,19 @@ from the most recent step, and `print_turn_summary` prints it. OpenAI and
 DeepSeek endpoints do not send the field, so the line has no `via` part there.
 `/show-stats` shows the same value as "Last provider". Use it to check that
 `BPSA_PROVIDER_ORDER` and `BPSA_HAS_SESSION_ID` route where you expect.
+
+The line also shows the turn's cost, for example `$0.0123` (four decimals, six
+below one tenth of a cent), when a cost is known. On OpenRouter `build_model`
+adds `usage: {"include": true}` to the request body (only when
+`BPSA_API_ENDPOINT` contains `openrouter`, because OpenAI rejects unknown body
+fields) and `OpenAIModel` reads the exact `usage.cost` the response then
+carries (`extract_response_cost`). For endpoints that do not report a cost, set
+`BPSA_PRICE_INPUT_PER_M` and `BPSA_PRICE_OUTPUT_PER_M` (USD per million tokens)
+and `OpenAIModel` estimates it from the token counts (`estimate_cost_usd`);
+cached input tokens are charged at `BPSA_PRICE_CACHED_INPUT_PER_M` when set,
+else at the input price. When neither a reported cost nor both price variables
+are available, the line has no `$` part. `/show-stats` shows "Total cost" and
+"Avg cost/turn"; `/session-save` and `/session-load` keep the totals.
 
 ### Slash Commands
 

@@ -39,6 +39,7 @@ class FakeMonitor:
         self.total_output_token_count = 0
         self.total_cached_input_token_count = 0
         self.last_provider = None
+        self.total_cost_usd = 0.0
 
 
 class FakeAgent:

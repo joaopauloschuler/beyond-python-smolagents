@@ -43,6 +43,7 @@ class TokenUsage:
     output_tokens: int
     cached_input_tokens: int = 0  # subset of input_tokens served from the provider's prompt cache
     provider: str | None = None  # upstream provider that served the request (OpenRouter only); None when unknown
+    cost_usd: float = 0.0  # request cost in USD, reported by the provider or estimated from BPSA_PRICE_*; 0 if unknown
     total_tokens: int = field(init=False)
 
     def __post_init__(self):
@@ -54,6 +55,7 @@ class TokenUsage:
             "output_tokens": self.output_tokens,
             "cached_input_tokens": self.cached_input_tokens,
             "provider": self.provider,
+            "cost_usd": self.cost_usd,
             "total_tokens": self.total_tokens,
         }
 
@@ -91,6 +93,7 @@ class Monitor:
         self.total_input_token_count = 0
         self.total_output_token_count = 0
         self.total_cached_input_token_count = 0
+        self.total_cost_usd = 0.0
         self.last_provider: str | None = None  # provider of the most recent step that reported one
 
     def get_total_token_counts(self) -> TokenUsage:
@@ -98,6 +101,7 @@ class Monitor:
             input_tokens=self.total_input_token_count,
             output_tokens=self.total_output_token_count,
             cached_input_tokens=self.total_cached_input_token_count,
+            cost_usd=self.total_cost_usd,
         )
 
     def reset(self):
@@ -105,6 +109,7 @@ class Monitor:
         self.total_input_token_count = 0
         self.total_output_token_count = 0
         self.total_cached_input_token_count = 0
+        self.total_cost_usd = 0.0
         self.last_provider = None
 
     def update_metrics(self, step_log):
@@ -121,6 +126,7 @@ class Monitor:
             self.total_input_token_count += step_log.token_usage.input_tokens
             self.total_output_token_count += step_log.token_usage.output_tokens
             self.total_cached_input_token_count += step_log.token_usage.cached_input_tokens
+            self.total_cost_usd += step_log.token_usage.cost_usd
             if step_log.token_usage.provider:
                 self.last_provider = step_log.token_usage.provider
             console_outputs += (

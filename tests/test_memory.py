@@ -92,6 +92,7 @@ def test_action_step_dict():
         "output_tokens": 20,
         "cached_input_tokens": 0,
         "provider": None,
+        "cost_usd": 0.0,
         "total_tokens": 30,
     }
 
