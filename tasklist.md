@@ -217,7 +217,7 @@ these fields when they build `TokenUsage`.
       `... | via Parasail | Auto-approve: on`, `/show-stats` printed
       "Last provider  Parasail"; OpenRouter again routed consecutive calls
       to different providers, and both reported 0 cached tokens.
-- [ ] **Cost per turn and per session.** OpenRouter reports exact cost when
+- [x] **Cost per turn and per session.** OpenRouter reports exact cost when
       the request body contains `usage: {"include": true}` — one more entry
       in the `extra_body` that `build_model` in `bp_cli.py` already
       assembles; the response then carries `usage.cost`. For DeepSeek and
@@ -231,6 +231,28 @@ these fields when they build `TokenUsage`.
       `/session-load`. Money is what users actually budget by. When
       neither the response cost nor the price env vars are available, show
       no cost line.
+      LANDED (commit efe4a16): `TokenUsage.cost_usd` (0.0 by default),
+      `extract_response_cost` / `estimate_cost_usd` / `request_cost_usd` in
+      `models.py` (reported `usage.cost` wins, else the `BPSA_PRICE_*`
+      estimate, else 0.0; computed in `OpenAIModel.generate` /
+      `generate_stream` so both paths share one place), summed in
+      `agglomerate_stream_deltas` and `Monitor.total_cost_usd`, persisted by
+      `bp_session.py` (old files load with 0.0). `build_model` sends
+      `usage: {"include": true}` only when `BPSA_API_ENDPOINT` contains
+      `openrouter` (OpenAI rejects unknown body fields). `print_turn_summary`
+      appends `$0.0027` (six decimals below 0.001) when the turn cost is
+      known; `print_stats` shows "Total cost" and "Avg cost/turn". Docs:
+      `docs/CLI.md` (table rows and a paragraph after the `via` one),
+      `--help` text. Tests: `tests/test_bp_cost.py` (26 new). Full suite:
+      739 passed, 100 failed, 39 skipped, 4 errors vs baseline 684/101/39/4;
+      the failed set is the baseline set minus `test_visit_webpage`
+      (network, passed this time). Live check on OpenRouter with
+      `~deepseek/deepseek-flash-latest`: a direct probe with `usage.include`
+      returned `usage.cost` 1.575e-05; the REPL printed
+      `... | via Phala | $0.0027 | Auto-approve: off` (turn 1) and
+      `... | Cache: 98% | ... | via Phala | $0.000205 | ...` (turn 2);
+      `/show-stats` printed "Total cost $0.0039" and "Avg cost/turn $0.0020"
+      in a second session.
 
 ## Configuration ergonomics
 
