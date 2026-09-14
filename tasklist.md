@@ -195,7 +195,7 @@ these fields when they build `TokenUsage`.
       and print `via DeepInfra` in the turn summary. Verifies
       `BPSA_PROVIDER_ORDER` and sticky routing without guessing. When the
       field is absent (OpenAI, DeepSeek), print nothing.
-      LANDED (commit 19362bb): `TokenUsage.provider` (None by default),
+      LANDED (commit 7140f65): `TokenUsage.provider` (None by default),
       `extract_provider_name` in `models.py` (reads `provider` from the
       object, dict or `model_extra`; None for missing/None/non-string), used
       by `OpenAIModel.generate` / `generate_stream` (streaming keeps the
