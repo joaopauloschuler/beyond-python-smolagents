@@ -240,6 +240,24 @@ def extract_cached_input_tokens(usage) -> int:
     return 0
 
 
+def extract_provider_name(response) -> str | None:
+    """Upstream provider name from a chat completion (or stream chunk) object or dict; None when not reported.
+    OpenRouter sends a top-level `provider` string; the OpenAI SDK exposes it as an attribute or in model_extra.
+    """
+
+    def read_field(obj, name):
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(name)
+        return getattr(obj, name, None)
+
+    for candidate in (read_field(response, "provider"), read_field(read_field(response, "model_extra"), "provider")):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
 def agglomerate_stream_deltas(
     stream_deltas: list[ChatMessageStreamDelta], role: MessageRole = MessageRole.ASSISTANT
 ) -> ChatMessage:
@@ -251,11 +269,13 @@ def agglomerate_stream_deltas(
     total_input_tokens = 0
     total_output_tokens = 0
     total_cached_input_tokens = 0
+    provider = None
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
             total_output_tokens += stream_delta.token_usage.output_tokens
             total_cached_input_tokens += stream_delta.token_usage.cached_input_tokens
+            provider = stream_delta.token_usage.provider or provider
         if stream_delta.content:
             accumulated_content += stream_delta.content
         if stream_delta.tool_calls:
@@ -301,6 +321,7 @@ def agglomerate_stream_deltas(
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
             cached_input_tokens=total_cached_input_tokens,
+            provider=provider,
         ),
     )
 
@@ -1755,12 +1776,14 @@ class OpenAIModel(ApiModel):
             **kwargs,
         )
         self._apply_rate_limit()
+        provider = None
         for event in self.retryer(
             self.client.chat.completions.create,
             **completion_kwargs,
             stream=True,
             stream_options={"include_usage": True},
         ):
+            provider = extract_provider_name(event) or provider
             if event.usage:
                 yield ChatMessageStreamDelta(
                     content="",
@@ -1768,6 +1791,7 @@ class OpenAIModel(ApiModel):
                         input_tokens=event.usage.prompt_tokens,
                         output_tokens=event.usage.completion_tokens,
                         cached_input_tokens=extract_cached_input_tokens(event.usage),
+                        provider=provider,
                     ),
                 )
             if event.choices:
@@ -1823,6 +1847,7 @@ class OpenAIModel(ApiModel):
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
                 cached_input_tokens=extract_cached_input_tokens(response.usage),
+                provider=extract_provider_name(response),
             ),
         )
 

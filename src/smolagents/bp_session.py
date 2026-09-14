@@ -100,6 +100,7 @@ def _serialize_token_usage(usage: TokenUsage | None) -> dict | None:
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
         "cached_input_tokens": usage.cached_input_tokens,
+        "provider": usage.provider,
     }
 
 
@@ -110,6 +111,7 @@ def _deserialize_token_usage(data: dict | None) -> TokenUsage | None:
         input_tokens=data["input_tokens"],
         output_tokens=data["output_tokens"],
         cached_input_tokens=data.get("cached_input_tokens", 0),
+        provider=data.get("provider"),
     )
 
 
@@ -311,6 +313,7 @@ def save_session_to_dict(agent, session_stats: dict) -> dict:
             "total_input_token_count": agent.monitor.total_input_token_count,
             "total_output_token_count": agent.monitor.total_output_token_count,
             "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
+            "last_provider": agent.monitor.last_provider,
         },
         "steps": steps,
     }
@@ -351,6 +354,7 @@ def load_session_from_dict(payload: dict, agent) -> dict:
     agent.monitor.total_input_token_count = monitor_state.get("total_input_token_count", 0)
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
     agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
+    agent.monitor.last_provider = monitor_state.get("last_provider")
 
     return payload.get("session_stats", {
         "turns": 0,
@@ -388,6 +392,7 @@ def save_session(filepath: str, agent, session_stats: dict) -> int:
             "total_input_token_count": agent.monitor.total_input_token_count,
             "total_output_token_count": agent.monitor.total_output_token_count,
             "total_cached_input_token_count": agent.monitor.total_cached_input_token_count,
+            "last_provider": agent.monitor.last_provider,
         },
         "steps": steps,
     }
@@ -434,6 +439,7 @@ def load_session(filepath: str, agent) -> dict:
     agent.monitor.total_input_token_count = monitor_state.get("total_input_token_count", 0)
     agent.monitor.total_output_token_count = monitor_state.get("total_output_token_count", 0)
     agent.monitor.total_cached_input_token_count = monitor_state.get("total_cached_input_token_count", 0)
+    agent.monitor.last_provider = monitor_state.get("last_provider")
 
     return payload.get("session_stats", {
         "turns": 0,

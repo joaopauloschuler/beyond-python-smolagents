@@ -2010,16 +2010,13 @@ class CodeAgent(MultiStepAgent):
 
                         model_output = output_text
                         # Use token counts from stream if available, otherwise estimate from chars
-                        stream_input = chat_message.token_usage.input_tokens if chat_message.token_usage else 0
-                        stream_output = chat_message.token_usage.output_tokens if chat_message.token_usage else 0
-                        if stream_input == 0 and stream_output == 0:
-                            stream_input = count_messages_chars(input_messages) // CHARS_PER_TOKEN
-                            stream_output = len(output_text) // CHARS_PER_TOKEN if output_text else 0
-                        chat_message = ChatMessage(
-                            role="assistant",
-                            content=output_text,
-                            token_usage=TokenUsage(input_tokens=stream_input, output_tokens=stream_output),
-                        )
+                        stream_usage = chat_message.token_usage
+                        if stream_usage is None or stream_usage.input_tokens == stream_usage.output_tokens == 0:
+                            stream_usage = TokenUsage(
+                                input_tokens=count_messages_chars(input_messages) // CHARS_PER_TOKEN,
+                                output_tokens=len(output_text) // CHARS_PER_TOKEN if output_text else 0,
+                            )
+                        chat_message = ChatMessage(role="assistant", content=output_text, token_usage=stream_usage)
                         memory_step.model_output_message = chat_message
                         model_output = chat_message.content
                     else:

@@ -176,6 +176,15 @@ is left out. `/show-stats` shows the session total as "Total cached input
 tokens". A non-zero figure confirms `BPSA_HAS_SESSION_ID` and prompt ordering
 are hitting the cache.
 
+The same line ends with `via <Provider>` (for example `via DeepInfra`) when the
+last model call of the turn reported which upstream provider served it. Today
+only OpenRouter sends this: `OpenAIModel` reads the top-level `provider` string
+of the response (`extract_provider_name`), the agent's `Monitor` keeps the value
+from the most recent step, and `print_turn_summary` prints it. OpenAI and
+DeepSeek endpoints do not send the field, so the line has no `via` part there.
+`/show-stats` shows the same value as "Last provider". Use it to check that
+`BPSA_PROVIDER_ORDER` and `BPSA_HAS_SESSION_ID` route where you expect.
+
 ### Slash Commands
 
 | Command | Description |

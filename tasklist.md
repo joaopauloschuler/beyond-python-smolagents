@@ -188,13 +188,35 @@ these fields when they build `TokenUsage`.
       DeepInfra) even with `BPSA_HAS_SESSION_ID=1` and
       `BPSA_PROVIDER_ORDER=deepseek`, so every call reported 0 cached tokens
       and the turn summary correctly showed no `Cache:` figure.
-- [ ] **Show which provider served the request.** OpenRouter puts a
+- [x] **Show which provider served the request.** OpenRouter puts a
       `provider` string in every response body (`response.provider` on the
       OpenAI SDK object, reachable via `getattr` or `model_extra`). Store it
       on the `ChatMessage` (or on `TokenUsage` as `provider: str | None`)
       and print `via DeepInfra` in the turn summary. Verifies
       `BPSA_PROVIDER_ORDER` and sticky routing without guessing. When the
       field is absent (OpenAI, DeepSeek), print nothing.
+      LANDED (commit 19362bb): `TokenUsage.provider` (None by default),
+      `extract_provider_name` in `models.py` (reads `provider` from the
+      object, dict or `model_extra`; None for missing/None/non-string), used
+      by `OpenAIModel.generate` / `generate_stream` (streaming keeps the
+      last chunk-level provider seen and attaches it to the usage delta);
+      `agglomerate_stream_deltas` keeps the last non-None provider;
+      `CodeAgent._step_stream` in `agents.py` now keeps the aggregated
+      `TokenUsage` (it rebuilt one from bare counts, which dropped the
+      field); `Monitor.last_provider` holds the most recent step's provider
+      (reset with the counters) and `bp_session.py` persists it plus the
+      per-step field (old files load with None); `print_turn_summary`
+      appends `via <Provider>` from the monitor and `print_stats` shows
+      "Last provider". Docs: `docs/CLI.md` (paragraph after the Cache one).
+      Tests: `tests/test_bp_provider_name.py` (16 new). Full suite: 713
+      passed, 100 failed, 39 skipped, 4 errors vs baseline 684/101/39/4;
+      the failed set is the baseline set minus `test_visit_webpage`
+      (network, passed this time). Live check on OpenRouter with
+      `~deepseek/deepseek-flash-latest`, `BPSA_HAS_SESSION_ID=1`: turn 1
+      printed `... | via DeepInfra | Auto-approve: off`, turn 2 printed
+      `... | via Parasail | Auto-approve: on`, `/show-stats` printed
+      "Last provider  Parasail"; OpenRouter again routed consecutive calls
+      to different providers, and both reported 0 cached tokens.
 - [ ] **Cost per turn and per session.** OpenRouter reports exact cost when
       the request body contains `usage: {"include": true}` — one more entry
       in the `extra_body` that `build_model` in `bp_cli.py` already

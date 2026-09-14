@@ -42,6 +42,7 @@ class TokenUsage:
     input_tokens: int
     output_tokens: int
     cached_input_tokens: int = 0  # subset of input_tokens served from the provider's prompt cache
+    provider: str | None = None  # upstream provider that served the request (OpenRouter only); None when unknown
     total_tokens: int = field(init=False)
 
     def __post_init__(self):
@@ -52,6 +53,7 @@ class TokenUsage:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cached_input_tokens": self.cached_input_tokens,
+            "provider": self.provider,
             "total_tokens": self.total_tokens,
         }
 
@@ -89,6 +91,7 @@ class Monitor:
         self.total_input_token_count = 0
         self.total_output_token_count = 0
         self.total_cached_input_token_count = 0
+        self.last_provider: str | None = None  # provider of the most recent step that reported one
 
     def get_total_token_counts(self) -> TokenUsage:
         return TokenUsage(
@@ -102,6 +105,7 @@ class Monitor:
         self.total_input_token_count = 0
         self.total_output_token_count = 0
         self.total_cached_input_token_count = 0
+        self.last_provider = None
 
     def update_metrics(self, step_log):
         """Update the metrics of the monitor.
@@ -117,6 +121,8 @@ class Monitor:
             self.total_input_token_count += step_log.token_usage.input_tokens
             self.total_output_token_count += step_log.token_usage.output_tokens
             self.total_cached_input_token_count += step_log.token_usage.cached_input_tokens
+            if step_log.token_usage.provider:
+                self.last_provider = step_log.token_usage.provider
             console_outputs += (
                 f"| Input tokens: {self.total_input_token_count:,} | Output tokens: {self.total_output_token_count:,}"
             )

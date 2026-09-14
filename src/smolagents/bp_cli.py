@@ -606,6 +606,14 @@ def get_agent_token_usage(agent):
         return 0, 0, 0
 
 
+def get_agent_last_provider(agent) -> str | None:
+    """Provider that served the agent's most recent step, from its monitor; None when unknown or unavailable."""
+    try:
+        return agent.monitor.last_provider or None
+    except Exception:
+        return None
+
+
 def get_compression_stats(agent):
     """Get context compression statistics from the agent's memory."""
     try:
@@ -622,7 +630,8 @@ def get_compression_stats(agent):
 def print_turn_summary(
     turn_num: int, elapsed: float, input_tokens: int, output_tokens: int, agent=None, cached_tokens: int = 0
 ):
-    """Print a one-line summary after each turn; Cache: (cached_tokens / input_tokens) only when cached_tokens > 0."""
+    """Print a one-line summary after each turn; Cache: (cached_tokens / input_tokens) only when cached_tokens > 0,
+    "via <provider>" only when the agent's monitor knows which provider served the last step."""
     total = input_tokens + output_tokens
     line = (
         f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
@@ -642,6 +651,9 @@ def print_turn_summary(
         knowledge = getattr(agent.memory, "knowledge", "")
         if knowledge:
             line += f" | Knowledge: {format_tokens(len(knowledge))} chars"
+        provider = get_agent_last_provider(agent)
+        if provider:
+            line += f" | via {provider}"
     line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
     line += "[/]"
     console.print(line)
@@ -997,6 +1009,7 @@ def print_stats(session_stats: dict, agent=None):
         knowledge_chars = len(knowledge) if knowledge else 0
         table.add_row("", "")
         table.add_row("Knowledge", f"{knowledge_chars:,} chars")
+        table.add_row("Last provider", get_agent_last_provider(agent) or "unknown")
     console.print(table)
     console.print()
 
