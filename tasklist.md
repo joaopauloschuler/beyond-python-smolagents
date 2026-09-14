@@ -159,7 +159,7 @@ are paying off. `OpenAIModel.generate` and `OpenAIModel.generate_stream` in
 `src/smolagents/models.py` already hold the full response object and drop
 these fields when they build `TokenUsage`.
 
-- [ ] **Cache hit rate per turn.** OpenRouter returns
+- [x] **Cache hit rate per turn.** OpenRouter returns
       `usage.prompt_tokens_details.cached_tokens`, DeepSeek returns
       `usage.prompt_cache_hit_tokens` and `usage.prompt_cache_miss_tokens`,
       OpenAI returns `usage.prompt_tokens_details.cached_tokens`. Add a
@@ -171,6 +171,23 @@ these fields when they build `TokenUsage`.
       (cached / input) when the turn had any cached tokens. This lets the
       user see immediately whether `BPSA_HAS_SESSION_ID` is working.
       Must not break when `usage` is `None` or lacks the detail object.
+      LANDED (commit 2cf08b5): `TokenUsage.cached_input_tokens`,
+      `extract_cached_input_tokens` in `models.py` (used by
+      `OpenAIModel.generate` / `generate_stream`), summed in
+      `agglomerate_stream_deltas` and `Monitor`, persisted by `bp_session.py`
+      (old files load with 0), shown by `print_turn_summary` (`Cache: NN%`)
+      and `print_stats` ("Total cached input tokens"). Tests:
+      `tests/test_bp_token_cache.py` (12 new). Full suite: 697 passed,
+      100 failed, 39 skipped, 4 errors vs baseline 684/101/39/4; the failed
+      set is the baseline set minus `test_visit_webpage` (network, passed
+      this time). `test_memory.py::test_action_step_dict` expects the new
+      key in `TokenUsage.dict()`. Live check on OpenRouter with
+      `~deepseek/deepseek-flash-latest`: the response carries
+      `prompt_tokens_details.cached_tokens` and the reader picks it up, but
+      OpenRouter routed consecutive calls to different providers (Relace,
+      DeepInfra) even with `BPSA_HAS_SESSION_ID=1` and
+      `BPSA_PROVIDER_ORDER=deepseek`, so every call reported 0 cached tokens
+      and the turn summary correctly showed no `Cache:` figure.
 - [ ] **Show which provider served the request.** OpenRouter puts a
       `provider` string in every response body (`response.provider` on the
       OpenAI SDK object, reachable via `getattr` or `model_extra`). Store it
