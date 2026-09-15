@@ -20,6 +20,7 @@ limitations under the License.
 
 **BPSA - Beyond Python SmolAgents** is a fork of the original [smolagents](https://github.com/huggingface/smolagents) that extends its original abilities:
 * 💻 **Interactive CLI ([`bpsa`](#cli-bpsa)):** Multi-turn REPL with slash commands, command history, tab completion, session stats, and auto-approve mode.
+* 💰 **Cost and context visibility:** Each turn ends with one summary line showing the prompt cache hit rate, the provider that served the request, the request cost and the context use; optional session token and cost budgets stop a runaway session; a startup connectivity check fails fast on a bad key, model id or endpoint.
 * 🔄 **Infinite runtime CLI ([`ad-infinitum`](#cli-ad-infinitum)):** Allows agents to **run ad infinitum** via autonomous looping.
 * 🗜️ **Context compression**: Biologically inspired [automatic LLM-based summarization](docs/compression.md) of older memory steps to manage context window size during long-running tasks.
 * 🌐 **Browser integration:** Control a headed Chromium browser from agent code blocks via Playwright (`--browser` flag).
@@ -75,9 +76,34 @@ export BPSA_MODEL_ID="z-ai/glm-5.3-flash"
 export BPSA_PROVIDER_ORDER="openai,together"
 # Optional: send a random OpenRouter session_id so requests stick to one provider (prompt cache)
 export BPSA_HAS_SESSION_ID=1
+# Optional: prices in USD per million tokens, for a cost estimate on endpoints that report no cost
+# export BPSA_PRICE_INPUT_PER_M=0.30
+# export BPSA_PRICE_OUTPUT_PER_M=1.20
+# export BPSA_PRICE_CACHED_INPUT_PER_M=0.03
+# Optional: context window in tokens, when the endpoint is not OpenRouter
+# export BPSA_CONTEXT_LENGTH=128000
+# Optional: session budgets (0 or unset = no limit)
+# export BPSA_MAX_SESSION_TOKENS=2000000
+# export BPSA_MAX_SESSION_COST=5
+# Optional: skip the startup connectivity check
+# export BPSA_SKIP_CONNECTIVITY_CHECK=1
 ```
 
 Context compression parameters can also be configured via env vars (e.g., `BPSA_COMPRESSION_ENABLED`, `BPSA_COMPRESSION_KEEP_RECENT_STEPS`). See [CLI.md](docs/CLI.md) for the full list.
+
+#### Turn summary and costs
+
+After each turn `bpsa` prints one dim line with the turn's input, output and total tokens, then `Cache: NN%` (the share of the input tokens the provider served from its prompt cache), `Memory` and `Context` figures, `via <Provider>` (the upstream provider that served the last request) and the turn's cost as `$0.0123`. The cache figure, the `via` part, the exact cost and the automatic context length all come from the response or the model list of OpenRouter; OpenAI and DeepSeek endpoints report cached tokens but no provider or cost. Two figures work on any endpoint: set `BPSA_PRICE_INPUT_PER_M`, `BPSA_PRICE_OUTPUT_PER_M` and optionally `BPSA_PRICE_CACHED_INPUT_PER_M` (USD per million tokens) and `bpsa` estimates the cost from the token counts; set `BPSA_CONTEXT_LENGTH` (tokens) and the line shows `Context: NN%` (last request's input tokens over the window; yellow from 70%, red from 90%) instead of `Context: N chars`. A figure that is not known is left out. Example from a live OpenRouter session (token and memory figures elided):
+
+```
+Turn 2 | ... | Cache: 98% | ... | via Phala | $0.000205 | Auto-approve: off
+```
+
+`/show-stats` shows the session totals (cached input tokens, last provider, total cost, average cost per turn); `/session-save` and `/session-load` keep them.
+
+#### Session budget
+
+`BPSA_MAX_SESSION_TOKENS` (input + output tokens summed over the session) and `BPSA_MAX_SESSION_COST` (USD) are optional; `0` or unset means no limit. At 80% of a limit `bpsa` prints one yellow warning; at 100% it prints a red `Session budget exceeded` message and starts no further agent turn, while slash commands keep working so you can still `/session-save` and `/show-stats`. `/clear` resets the totals and so the budget; `/session-load` counts the loaded totals. The cost budget only works when a cost is known (reported by OpenRouter or estimated from the `BPSA_PRICE_*` variables). `ad-infinitum` applies the same two variables to the sum over every `.md` task of the run, stops after the task that reaches a limit and exits with code 3 (see the `ad-infinitum` table below).
 
 #### Dictation Input
 
@@ -112,7 +138,9 @@ $ bpsa --mcp http://localhost:8000/mcp  # Connect an HTTP MCP server
 $ bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'  # Connect a stdio MCP server
 ```
 
-The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.
+Before showing the banner, `bpsa` sends one tiny request through the model and exits with `Error: Startup connectivity check failed for <model id>: ...` on a rejected API key, an unknown model id or an unreachable endpoint; set `BPSA_SKIP_CONNECTIVITY_CHECK=1` to skip this request (local model classes never send it). The banner then shows the round-trip time of that request and, when known, the model's context length.
+
+The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. `/model <id>` switches the main model mid-session and keeps the conversation history, endpoint, key and token counters; `/model` alone shows the current id. `/show-config` prints the effective settings (model, endpoint, masked key, prices, context length, budgets, compression thresholds, enabled tool sets) and where each came from: the environment, `.env`, a default or a slash command. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.
 
 #### Shell commands from the REPL
 
