@@ -256,7 +256,7 @@ these fields when they build `TokenUsage`.
 
 ## Configuration ergonomics
 
-- [ ] **`/model <id>` to switch the main model mid-session.**
+- [x] **`/model <id>` to switch the main model mid-session.**
       `build_model(override_model_id=...)` in `bp_cli.py` already accepts an
       override id, and `cmd_compression_model` already does this for the
       compression model. Rebuild the main model with the new id, keep
@@ -265,6 +265,33 @@ these fields when they build `TokenUsage`.
       finish with a strong one. `/model` with no argument prints the current
       model id. Add the command to the completer list, `/help` table and
       `docs/CLI.md`.
+      LANDED (commit 5f2679f): `cmd_model` in `bp_cli.py` calls
+      `build_model(override_model_id=id)` (same class, endpoint, provider
+      order, `usage.include` and the unrotated OpenRouter session id),
+      assigns `agent.model`, re-derives `agent.stream_outputs`, and repoints
+      the two build-time references: `agent.compressor.main_model` (the
+      fallback when `BPSA_COMPRESSION_MODEL` is unset) and
+      `agent.monitor.tracked_model`; planning and memory tools read
+      `agent.model` at call time. The dispatcher updates the `run_repl`
+      locals `model` (used by `/clear`, `/repeat`) and `model_id` (banner).
+      `fail()` raises `SystemExit`, which `cmd_model` catches so a rejected
+      id keeps the old model without leaving the REPL. `bp_session.py`
+      stores no model id. Docs: `docs/CLI.md` (table row and a paragraph
+      after the table), `/help`. Tests: `tests/test_bp_model_switch.py`
+      (8 new). Full suite: 759 passed, 88 failed, 39 skipped, 4 errors vs
+      baseline 684/101/39/4; every failed id is in the baseline list except
+      `test_tools.py::TestToolCollection::test_integration_from_mcp_with_streamable_http`
+      (TimeoutError connecting to a local MCP server on port 8000; fails
+      alone too and `test_tools.py` never imports `bp_cli`); the litellm
+      tests now pass because the module is installed. Live check on
+      OpenRouter: turn 1 on `~deepseek/deepseek-flash-latest` answered
+      "pomegranate" (via DeepInfra, $0.0016); `/model` printed
+      `Current model: ~deepseek/deepseek-flash-latest (OpenAIModel)`;
+      `/model deepseek/deepseek-chat-v3-0324` printed `Model switched:
+      ~deepseek/deepseek-flash-latest -> deepseek/deepseek-chat-v3-0324`;
+      turn 2 ("Repeat the single word you replied with...") answered
+      "pomegranate" (Memory: 4 steps, via SiliconFlow, $0.0019);
+      `/show-steps` listed steps 0-4 with both answers.
 - [ ] **`/show-config`.** Print the effective settings in one table: model
       class, endpoint, model id, masked API key (first 4 and last 4
       characters), provider order, current OpenRouter session id
