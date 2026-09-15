@@ -420,7 +420,7 @@ these fields when they build `TokenUsage`.
 
 ## Interaction while the agent is working
 
-- [ ] **Steer while it runs.** A background thread reads lines while the
+- [x] **Steer while it runs.** A background thread reads lines while the
       agent works and puts them in a queue. At the next step boundary the
       agent drains the queue into memory, and the model sees
       "user update: also run the tests" at its next call. Non-blocking for
@@ -455,3 +455,28 @@ these fields when they build `TokenUsage`.
       `ad-infinitum` feed the same queue from a file such as
       `tasks/_inbox.md`, which also makes the mechanism testable without a
       terminal.
+      LANDED (commit c1fcbc1): `MultiStepAgent.steering_source` +
+      `_deliver_steering_messages` (top of every step in `_run_stream`,
+      before the interrupt check) fill `ActionStep.user_message`, which
+      `to_messages` emits as one USER message after the observation and
+      `dict()`, `bp_session` and `bp_compression` carry. `SteeringListener`
+      in `bp_cli.py` (one thread, own `PromptSession` under `patch_stdout`,
+      Enter queues + "queued:" echo, Esc = `agent.interrupt()` and "Stopped
+      after step N; memory kept.", Ctrl+C = SIGINT to the main thread) draws
+      the spinner line itself because Rich Live overwrote the input line;
+      `interactive_approval_callback` pauses/resumes it; no listener without
+      a tty (`steering_available`). `ad-infinitum` reads `_inbox.md` in the
+      task folder (`read_steering_inbox`, truncates). Prompt sentence in
+      `code_agent.yaml`. Verified live on OpenRouter: "also say the word
+      pomegranate" typed during step 2 was delivered at the step-3 boundary
+      and the final answer ended "Pomegranate!"; `/show-step 3` listed it
+      under "User message:"; Esc after step 2 printed "Stopped after step 3;
+      memory kept." with 3 ActionSteps in `/show-steps` and the next turn
+      ran; `_inbox.md` written after ad-infinitum step 1 was delivered at the
+      step-3 boundary and truncated to 0 bytes. Pre-existing, unchanged: a
+      Ctrl+C that lands inside a model call is swallowed by the bare
+      `except:` retry in `CodeAgent._step_stream`; a second press aborts.
+      Suite: 865 passed, 88 failed, 39 skipped, 4 errors; the only ids
+      outside the Baseline list are the two environment-flaky MCP
+      integration tests in tests/test_tools.py. Tests:
+      tests/test_bp_steering.py (25).
