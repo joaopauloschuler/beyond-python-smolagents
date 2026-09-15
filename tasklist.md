@@ -418,6 +418,45 @@ these fields when they build `TokenUsage`.
       skipped, 4 errors; no failure outside the Baseline list. Tests:
       tests/test_bp_session_budget.py.
 
+## Bugs found during feature work
+
+Pre-existing defects that the feature agents observed and left alone. None
+is caused by the entries above.
+
+- [ ] **First Ctrl+C during a model call is swallowed.**
+      `CodeAgent._step_stream` in `src/smolagents/agents.py` (around line
+      2050) wraps the model call in a bare `except:` that sleeps 30 s and
+      retries up to `MAX_TRIES`. A `KeyboardInterrupt` raised inside the
+      HTTP call is caught by that bare clause, so the first press does
+      nothing and only a second press, landing in the sleep, reaches the
+      REPL. Fix: catch `Exception` instead of everything, so
+      `KeyboardInterrupt` (a `BaseException`) propagates at once, and keep
+      the retry for provider errors only. Verify live: one Ctrl+C during a
+      slow call prints "Interrupted." immediately. Seen by the steering
+      agent (commit c1fcbc1), documented in the docs/CLI.md keys table.
+- [ ] **`bpsa run` without a TTY crashes in the approval prompt.** When
+      stdin is not a terminal and `--auto-approve` is off, a model that
+      emits a code block makes `interactive_approval_callback` call
+      `_getch` in `src/smolagents/bp_cli.py`, which raises
+      `termios.error: Inappropriate ioctl for device`. Fix: in
+      `interactive_approval_callback`, when `sys.stdin.isatty()` is false,
+      reject with a clear message (or honour an explicit
+      `BPSA_AUTO_APPROVE` env var if one is added) instead of reading a
+      keypress. Seen by the connectivity-check agent (commit c95042d).
+- [ ] **Stale tests from the upstream fork (34).** The "Failures not
+      explained by the environment" list in the Baseline section holds 34
+      failures that check upstream smolagents behaviour this fork changed
+      on purpose: executor default `exec` instead of `local`, compression
+      defaults 40/50/20/25, the system prompt emitted as a user message,
+      fake models lacking `postpend_string`, `MagicMock.__format__` in
+      metrics logging. A few may be real (both
+      `test_get_clean_message_list_image_encoding[*]` failing with
+      `'bytes' object has no attribute 'save'`, and the string-vs-float
+      final answer in `test_reset_conversations`). Task: go through the
+      list, update each stale assertion to the fork's intended behaviour,
+      fix the real ones, and record the new counts in the Baseline
+      section. Do not touch environment-caused failures.
+
 ## Interaction while the agent is working
 
 - [x] **Steer while it runs.** A background thread reads lines while the
