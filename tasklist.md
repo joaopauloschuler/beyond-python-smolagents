@@ -329,7 +329,7 @@ these fields when they build `TokenUsage`.
       thresholds at their defaults; after
       `/model deepseek/deepseek-chat-v3-0324` the Model id row read
       `deepseek/deepseek-chat-v3-0324` with source `/model`.
-- [ ] **Startup connectivity check.** After `build_model` and before the
+- [x] **Startup connectivity check.** After `build_model` and before the
       banner, send one tiny request (a single short user message with
       `max_tokens` around 8) and fail with a clear message on a bad key,
       wrong endpoint, or unknown model id. This matches the "fail fast" rule
@@ -338,6 +338,36 @@ these fields when they build `TokenUsage`.
       model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) and allow
       `BPSA_SKIP_CONNECTIVITY_CHECK=1` to bypass it. Report the round-trip
       time in the banner so the user also sees endpoint latency.
+      LANDED (commit c95042d): `check_model_connectivity` in `bp_cli.py`
+      sends "Reply with OK." through `model.generate` after `build_agent`
+      and before the banner (`run_repl`, `run_one_shot`) and returns the
+      round-trip seconds; `max_tokens=8` goes only to the OpenAI, LiteLLM
+      and InferenceClient classes (Bedrock and Colab forward unknown kwargs
+      to their clients). It returns None without a request for
+      `TransformersModel`, `MLXModel`, `VLLMModel` and when
+      `BPSA_SKIP_CONNECTIVITY_CHECK` is truthy. On an exception it calls
+      `fail()` with `connectivity_failure_reason`: 401/403 -> "rejected the
+      API key (check BPSA_KEY_VALUE)", 404 / not found / not a valid model
+      -> "unknown model id (check BPSA_MODEL_ID)", connection/DNS/timeout ->
+      "endpoint unreachable (check BPSA_API_ENDPOINT)", else the exception
+      text; the key value is masked with `mask_secret`. `print_banner` adds
+      an `Endpoint: N.Ns round trip` row; `/clear` reprints it and `/model`
+      clears it (`cmd_model` untouched; `/model` does not repeat the check).
+      Docs: module docstring, env var listing, `docs/CLI.md` (table row,
+      Startup Behavior step 4, banner example). Tests:
+      `tests/test_bp_connectivity_check.py` (10 new). Full suite: 781
+      passed, 88 failed, 39 skipped, 4 errors vs baseline 684/101/39/4;
+      every failed id is in the baseline list except the environment-flaky
+      `test_tools.py::TestToolCollection::test_integration_from_mcp_with_streamable_http`.
+      Live check on OpenRouter: `bpsa --auto-approve on run "Reply with
+      only the word OK."` answered "OK"; `BPSA_KEY_VALUE=sk-invalid` exited
+      before the prompt with "the endpoint rejected the API key (check
+      BPSA_KEY_VALUE): Error code: 401 - ... Missing Authentication
+      header"; `BPSA_MODEL_ID=nonexistent/model-xyz` with "unknown model id
+      (check BPSA_MODEL_ID): Error code: 400 - ... is not a valid model
+      ID"; `BPSA_API_ENDPOINT=https://127.0.0.1:9/v1` with "endpoint
+      unreachable (check BPSA_API_ENDPOINT): Connection error."; the REPL
+      banner under tmux showed `Endpoint: 2.2s round trip`.
 
 ## Context awareness and budgets
 
