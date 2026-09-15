@@ -66,6 +66,7 @@ All prefixed with `BPSA_`:
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_SKIP_CONNECTIVITY_CHECK` | No | `0` | `1`, `true` or `on` to skip the startup connectivity check (one tiny request that verifies the key, endpoint and model id; see Startup Behavior). Local model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) always skip it. |
+| `BPSA_CONTEXT_LENGTH` | No | `0` | Model context window in integer tokens. `0` or unset: when `BPSA_API_ENDPOINT` contains `openrouter`, `resolve_context_length` asks `GET <endpoint>/models` once at startup (and once per `/model`) for the model id's `context_length`; otherwise the window is unknown. When known, the banner shows `Context: N tokens`, the turn summary shows `Context: NN%` (last model call's input tokens over the window; yellow from 70%, red from 90%) instead of `Context: N chars`, and `BPSA_COMPRESSION_TOKEN_THRESHOLD` defaults to 75% of it. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
@@ -92,7 +93,7 @@ All optional. Configure `CompressionConfig` without touching code:
 | `BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS` | `50` | Trigger compression when uncompressed step count exceeds this |
 | `BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS` | `20` | Compressed steps to keep during a merge |
 | `BPSA_COMPRESSION_MAX_COMPRESSED_STEPS` | `25` | Trigger merge when compressed step count exceeds this |
-| `BPSA_COMPRESSION_TOKEN_THRESHOLD` | `0` | Token-based compression trigger (`0` = disabled) |
+| `BPSA_COMPRESSION_TOKEN_THRESHOLD` | `0` | Token-based compression trigger (`0` = disabled). Tokens are estimated as characters / 4 (`estimate_tokens`). When the variable is unset and the context length is known (`BPSA_CONTEXT_LENGTH` or OpenRouter, see the Environment Variables table), `apply_context_length` sets it to 75% of the context length; an explicit value, including `0`, always wins. |
 | `BPSA_COMPRESSION_MODEL` | _(main model)_ | Model ID for compression (uses main model if unset) |
 | `BPSA_COMPRESSION_MAX_SUMMARY_TOKENS` | `50000` | Max tokens in a generated summary |
 | `BPSA_COMPRESSION_PRESERVE_ERROR_STEPS` | `0` | Keep steps with errors uncompressed (`0` or `1`) |
@@ -138,6 +139,10 @@ export BPSA_MAX_TOKENS=64000
    (connection, DNS or timeout errors). Set `BPSA_SKIP_CONNECTIVITY_CHECK=1` to skip this request; local
    model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) never send it. The banner shows the
    round-trip time of this request as endpoint latency. `/model` does not repeat the check.
+5. Resolve the model's context length: `BPSA_CONTEXT_LENGTH` when positive, else one `GET <endpoint>/models`
+   request on OpenRouter endpoints (5 s timeout; the model id is matched exactly, then without a leading `~`).
+   Any failure leaves the window unknown and keeps the `Context: N chars` figure in the turn summary.
+   `/model` resolves it again for the new model; `/clear` reuses the stored value.
 
 ## Banner
 
@@ -148,6 +153,7 @@ Functional banner shown after successful startup:
 │ Beyond Python SmolAgents v1.24-bp       │
 │ Model: Gemini-2.5-Flash (OpenAIServer…) │
 │ Endpoint: 0.8s round trip               │
+│ Context: 1,048,576 tokens               │
 │ Tools: 38 loaded                        │
 ╰─────────────────────────────────────────╯
 Type /help for commands, /exit to quit.
@@ -258,6 +264,7 @@ the endpoint does not know fails on the next request, as at startup.
 `/show-config` prints one table with the model class, model id, endpoint, the
 API key masked as its first 4 and last 4 characters, provider order, the
 current OpenRouter session id, the system-prompt position, max tokens, the
+context length (source `env`, `openrouter` or `unknown`), the
 price variables when set, executor, max steps, planning interval,
 auto-approve, the compression thresholds and model, and which optional tool
 sets (browser, GUI, image, tmux, MCP) are enabled. The Source column says

@@ -29,6 +29,7 @@ Environment variables:
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
+    BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
 
     Context compression parameters (see CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
@@ -299,6 +300,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
+        console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("\nExample:")
         console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
         console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
@@ -453,6 +455,92 @@ def check_model_connectivity(model) -> float | None:
         model_id = getattr(model, "model_id", "?")
         fail(f"Startup connectivity check failed for {model_id}: {connectivity_failure_reason(error)}")
     return time.perf_counter() - started
+
+
+CONTEXT_LENGTH_FETCH_TIMEOUT_SECONDS = 5
+# Default BPSA_COMPRESSION_TOKEN_THRESHOLD as this share of the context length when the env var is unset.
+COMPRESSION_CONTEXT_FRACTION = 0.75
+CONTEXT_USE_WARN_PERCENT = 70
+CONTEXT_USE_ALERT_PERCENT = 90
+
+
+def env_context_length() -> int:
+    """BPSA_CONTEXT_LENGTH as a positive int; 0 when unset, not an int or not positive."""
+    try:
+        return max(0, int(get_env("BPSA_CONTEXT_LENGTH", "0")))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _model_context_length_entry(entries, model_id: str) -> dict | None:
+    """First /models entry whose id equals model_id, else the id without a leading "~" (an alias marker)."""
+    for candidate in (model_id, model_id.lstrip("~")):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("id") == candidate:
+                return entry
+    return None
+
+
+def model_endpoint(model) -> tuple[str | None, str | None]:
+    """(api_base, api_key) of a model: the api_base/api_key attributes (LiteLLM and friends), else the base_url and
+    api_key that OpenAIModel keeps in client_kwargs; (None, None) when neither is set."""
+    client_kwargs = getattr(model, "client_kwargs", None) or {}
+    api_base = getattr(model, "api_base", None) or client_kwargs.get("base_url")
+    api_key = getattr(model, "api_key", None) or client_kwargs.get("api_key")
+    return api_base, api_key
+
+
+def fetch_context_length(model) -> int | None:
+    """GET <api_base>/models on OpenRouter once and return context_length (else top_provider.context_length)
+    of the entry whose id matches model.model_id; None on any failure, timeout or missing field. Never raises."""
+    import requests
+
+    api_base, api_key = model_endpoint(model)
+    api_base = str(api_base or "")
+    if "openrouter" not in api_base.lower():
+        return None
+    try:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        response = requests.get(f"{api_base.rstrip('/')}/models", headers=headers,
+                                timeout=CONTEXT_LENGTH_FETCH_TIMEOUT_SECONDS)
+        entry = _model_context_length_entry(response.json().get("data", []), str(model.model_id))
+        if entry is None:
+            return None
+        value = entry.get("context_length")
+        if value is None and isinstance(entry.get("top_provider"), dict):
+            value = entry["top_provider"].get("context_length")
+        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+    except Exception:
+        return None
+
+
+def resolve_context_length(model) -> int | None:
+    """BPSA_CONTEXT_LENGTH when positive, else fetch_context_length(model); None when unknown."""
+    return env_context_length() or fetch_context_length(model)
+
+
+def apply_context_length(agent, context_length: int | None):
+    """Store context_length and its source on the agent and default the compression token threshold to
+    COMPRESSION_CONTEXT_FRACTION of it when BPSA_COMPRESSION_TOKEN_THRESHOLD is unset (tokens ~ chars / 4)."""
+    from copy import copy
+    from smolagents.bp_thinkers import DEFAULT_THINKER_COMPRESSION
+
+    agent.context_length = context_length
+    agent.context_length_source = "env" if env_context_length() else ("openrouter" if context_length else "unknown")
+    if get_env("BPSA_COMPRESSION_TOKEN_THRESHOLD"):
+        return  # an explicit threshold always wins
+    threshold = DEFAULT_THINKER_COMPRESSION.estimated_token_threshold
+    if context_length:
+        threshold = int(context_length * COMPRESSION_CONTEXT_FRACTION)
+    config = getattr(agent, "compression_config", None)
+    if config is None or config.estimated_token_threshold == threshold:
+        return
+    config = copy(config)  # DEFAULT_THINKER_COMPRESSION is shared; never mutate it
+    config.estimated_token_threshold = threshold
+    agent.compression_config = config
+    compressor = getattr(agent, "compressor", None)
+    if compressor is not None:
+        compressor.config = config
 
 
 def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, image_enabled=False, tmux_enabled=False, mcp_servers=None):
@@ -668,6 +756,27 @@ def get_agent_token_usage(agent):
         return 0, 0, 0
 
 
+def get_agent_last_input_tokens(agent) -> int:
+    """input_tokens of the most recent memory step that reports token usage (the last model call); 0 when none."""
+    try:
+        for step in reversed(agent.memory.steps):
+            usage = getattr(step, "token_usage", None)
+            if usage is not None and usage.input_tokens > 0:
+                return usage.input_tokens
+    except Exception:
+        pass
+    return 0
+
+
+def format_context_percent(percent: int) -> str:
+    """Colour a context-use percentage: green, yellow from CONTEXT_USE_WARN_PERCENT, red from ALERT."""
+    if percent >= CONTEXT_USE_ALERT_PERCENT:
+        return f"[red]{percent}%[/]"
+    if percent >= CONTEXT_USE_WARN_PERCENT:
+        return f"[yellow]{percent}%[/]"
+    return f"[green]{percent}%[/]"
+
+
 def get_agent_cost_usd(agent) -> float:
     """Accumulated request cost in USD from the agent's monitor; 0.0 when unavailable."""
     try:
@@ -712,7 +821,8 @@ def print_turn_summary(
     cost_usd: float = 0.0,
 ):
     """Print a one-line summary after each turn; Cache: only when cached_tokens > 0, "via <provider>" only when
-    the agent's monitor knows the last provider, and the `$` cost only when cost_usd > 0."""
+    the agent's monitor knows the last provider, the `$` cost only when cost_usd > 0, and Context: as a percentage
+    of agent.context_length (last model call's input tokens over the window) when known, else in chars."""
     total = input_tokens + output_tokens
     line = (
         f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
@@ -726,9 +836,14 @@ def print_turn_summary(
         if compressed_count > 0:
             line += f" | Compressed: {compressed_count} (from {compressed_original} steps)"
         line += f" | Memory: {total_steps} steps"
-        ctx_chars = agent.get_context_char_size()
-        if ctx_chars > 0:
-            line += f" | Context: {format_tokens(ctx_chars)} chars"
+        context_length = getattr(agent, "context_length", None)
+        last_input_tokens = get_agent_last_input_tokens(agent) if context_length else 0
+        if context_length and last_input_tokens > 0:
+            line += f" | Context: {format_context_percent(round(100 * last_input_tokens / context_length))}"
+        else:
+            ctx_chars = agent.get_context_char_size()
+            if ctx_chars > 0:
+                line += f" | Context: {format_tokens(ctx_chars)} chars"
         knowledge = getattr(agent.memory, "knowledge", "")
         if knowledge:
             line += f" | Knowledge: {format_tokens(len(knowledge))} chars"
@@ -743,11 +858,13 @@ def print_turn_summary(
 
 
 def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None,
-                 round_trip_seconds: float | None = None):
+                 round_trip_seconds: float | None = None, context_length: int | None = None):
     dictation_line = f"\nDictation: [magenta]{dictation_transcriber}[/]" if dictation_transcriber else ""
     endpoint_line = ""
     if round_trip_seconds is not None:
         endpoint_line = f"Endpoint: [cyan]{round_trip_seconds:.1f}s[/] round trip\n"
+    if context_length:
+        endpoint_line += f"Context: [cyan]{context_length:,}[/] tokens\n"
     console.print(
         Panel.fit(
             f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
@@ -1154,6 +1271,9 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
     table.add_row("System prompt position", prompt_position, env_source("BPSA_SYSTEM_PROMPT_FIRST"))
     table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))
+    context_length = getattr(agent, "context_length", None)
+    table.add_row("Context length", f"{context_length:,} tokens" if context_length else "unknown",
+                  getattr(agent, "context_length_source", "unknown"))
     for price_var in ("BPSA_PRICE_INPUT_PER_M", "BPSA_PRICE_OUTPUT_PER_M", "BPSA_PRICE_CACHED_INPUT_PER_M"):
         if get_env(price_var):
             table.add_row(price_var, get_env(price_var), env_source(price_var))
@@ -1183,8 +1303,10 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
             ("estimated_token_threshold", "BPSA_COMPRESSION_TOKEN_THRESHOLD", "(changed in code)"),
         ):
             value = getattr(config, attr)
-            table.add_row(f"Compression {attr}", str(value),
-                          _setting_source(env_name, value, getattr(defaults, attr), command))
+            source = _setting_source(env_name, value, getattr(defaults, attr), command)
+            if attr == "estimated_token_threshold" and context_length and not get_env(env_name):
+                source = f"{round(100 * COMPRESSION_CONTEXT_FRACTION)}% of context length"
+            table.add_row(f"Compression {attr}", str(value), source)
         comp_model_id = getattr(config.compression_model, "model_id", None) if config.compression_model else None
         table.add_row("Compression model", comp_model_id or "same as main",
                       _setting_source("BPSA_COMPRESSION_MODEL", comp_model_id, get_env("BPSA_COMPRESSION_MODEL"),
@@ -2149,6 +2271,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
     round_trip_seconds = check_model_connectivity(model)
+    context_length = resolve_context_length(model)
+    apply_context_length(agent, context_length)
     global _verbose
     verbose = get_env("BPSA_VERBOSE", default="1") == "1"
     _verbose = verbose
@@ -2156,7 +2280,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     console.clear()
     dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
     print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber,
-                 round_trip_seconds=round_trip_seconds)
+                 round_trip_seconds=round_trip_seconds, context_length=context_length)
 
     instructions = None
     if not skip_instructions:
@@ -2371,6 +2495,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 _shutdown_mcp(agent)
                 rotate_session_id(model)  # new conversation -> new OpenRouter session id
                 agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
                 session_stats = {
                     "turns": 0,
                     "total_time": 0.0,
@@ -2384,7 +2509,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 console.clear()
                 _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
                 print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
-                             round_trip_seconds=round_trip_seconds)
+                             round_trip_seconds=round_trip_seconds, context_length=context_length)
                 continue
             elif cmd == "/show-tools":
                 print_tools(agent)
@@ -2499,6 +2624,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     model = new_model  # /clear and /repeat build agents from this
                     model_id = new_model.model_id  # banner
                     round_trip_seconds = None  # measured for the old model only
+                    context_length = resolve_context_length(new_model)
+                    apply_context_length(agent, context_length)
                 continue
             elif cmd == "/save-step":
                 cmd_save_step(agent, cmd_args)
