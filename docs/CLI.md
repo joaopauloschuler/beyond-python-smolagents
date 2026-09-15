@@ -37,13 +37,19 @@ Uses `DEFAULT_THINKER_COMPRESSION` from `bp_thinkers.py`:
 
 ```python
 CompressionConfig(
-    keep_recent_steps=22,        # DEFAULT_THINKER_PLANNING_INTERVAL
-    max_uncompressed_steps=32,   # planning_interval + 10
-    keep_compressed_steps=44,    # planning_interval * 2
-    max_compressed_steps=66,     # planning_interval * 3
-    preserve_error_steps=False
+    enabled=True,                  # BPSA_COMPRESSION_ENABLED
+    keep_recent_steps=40,          # BPSA_COMPRESSION_KEEP_RECENT_STEPS
+    max_uncompressed_steps=50,     # BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS
+    keep_compressed_steps=20,      # BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS
+    max_compressed_steps=25,       # BPSA_COMPRESSION_MAX_COMPRESSED_STEPS
+    estimated_token_threshold=0,   # BPSA_COMPRESSION_TOKEN_THRESHOLD (0 = off; 75% of the context length when known)
+    max_summary_tokens=50000,      # BPSA_COMPRESSION_MAX_SUMMARY_TOKENS
+    preserve_error_steps=False,    # BPSA_COMPRESSION_PRESERVE_ERROR_STEPS
+    preserve_final_answer_steps=True,  # BPSA_COMPRESSION_PRESERVE_FINAL_ANSWER_STEPS
 )
 ```
+
+Each value is the built-in default; the named environment variable overrides it (see the Context Compression Variables table below).
 
 ## Environment Variables
 
@@ -374,7 +380,7 @@ CLI `--mcp` entries and `BPSA_MCP` entries are merged, so both can be used simul
 
 Priority (highest to lowest):
 
-1. CLI flags (e.g., `--model`, `--verbose`)
+1. CLI flags (`--load-instructions`, `--auto-approve`, `--browser`, `--gui-x11`, `--image`, `--tmux`, `--mcp`); there is no `--model` flag, use `/model <id>` inside the REPL
 2. Environment variables (`BPSA_*`)
 3. Config file (`~/.bpsa.yaml`) - documented but not implemented: `bp_cli.py` does not read it
 4. Built-in defaults
