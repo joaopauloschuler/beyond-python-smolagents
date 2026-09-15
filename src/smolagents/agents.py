@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
-from .bp_utils import bp_parse_code_blobs, fix_nested_tags
+from .bp_utils import bp_parse_code_blobs, fix_nested_tags, strip_trailing_tags
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
@@ -2149,6 +2149,7 @@ will run in his device.
             else:
                 code_action = bp_parse_code_blobs(model_output_for_parsing)
             code_action = fix_final_answer_code(code_action)
+            code_action = strip_trailing_tags(code_action)  # drop stray tags left just before </runcode>
             # if (len(saved_files)==0):
             #     code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
             # """+code_action

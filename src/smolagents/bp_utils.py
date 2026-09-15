@@ -127,6 +127,24 @@ def fix_nested_tags(tagname, text):
 
     return result
 
+def strip_trailing_tags(code):
+    """
+    Removes any XML/HTML-like tags (e.g. </parameter>, </invoke>, <br>) that
+    appear at the very end of a code block. Some models add stray tags just
+    before closing </runcode>; this cleans the extracted code before execution.
+    Only the tail of the text is touched, so tags inside strings stay intact.
+    """
+    if not code or not isinstance(code, str):
+        return code
+    pattern = re.compile(r'</?[A-Za-z_][\w\-]*\s*/?>\s*$')
+    result = code.rstrip()
+    while True:
+        match = pattern.search(result)
+        if not match:
+            break
+        result = result[:match.start()].rstrip()
+    return result
+
 def bp_parse_code_blobs(text: str) -> str:
     """Extract code blocs from the LLM's output.
 
