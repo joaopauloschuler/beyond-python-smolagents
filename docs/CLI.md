@@ -228,6 +228,7 @@ are available, the line has no `$` part. `/show-stats` shows "Total cost" and
 | `/session-load <file>` | Load a session from a JSON file |
 | `/session-save <file>` | Save entire session to a JSON file |
 | `/show-compression-stats` | Show compression config and stats |
+| `/show-config` | Show the effective settings and where each came from (env, `.env`, default, or a slash command) |
 | `/show-memory-stats` | Show memory breakdown: steps, tokens, compressed vs uncompressed |
 | `/show-stats` | Show session statistics (token usage, time) |
 | `/show-step <N>` | Show full content of a specific step |
@@ -245,6 +246,18 @@ conversation history, the compressor's fallback model and the token counters
 stay in place, so you can draft with a cheap model and finish with a strong
 one. A model id that `build_model` rejects leaves the old model in place; an id
 the endpoint does not know fails on the next request, as at startup.
+
+`/show-config` prints one table with the model class, model id, endpoint, the
+API key masked as its first 4 and last 4 characters, provider order, the
+current OpenRouter session id, the system-prompt position, max tokens, the
+price variables when set, executor, max steps, planning interval,
+auto-approve, the compression thresholds and model, and which optional tool
+sets (browser, GUI, image, tmux, MCP) are enabled. The Source column says
+`env` when the process environment set the variable, `.env` when
+`try_load_dotenv` loaded it from `./.env` at startup, `default` when neither
+did, or the slash command that changed the value mid-session. `bp_cli.py`
+never reads the `~/.bpsa.yaml` file listed under Configuration Layering; only
+these three sources apply.
 
 ## Tmux Multi-Screen Tools
 
@@ -325,7 +338,7 @@ Priority (highest to lowest):
 
 1. CLI flags (e.g., `--model`, `--verbose`)
 2. Environment variables (`BPSA_*`)
-3. Config file (`~/.bpsa.yaml`)
+3. Config file (`~/.bpsa.yaml`) - documented but not implemented: `bp_cli.py` does not read it
 4. Built-in defaults
 
 ## Utility CLIs

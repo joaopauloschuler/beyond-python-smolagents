@@ -241,9 +241,15 @@ def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
     sys.exit(1)
 
+# Names that try_load_dotenv added from ./.env (load_dotenv never overrides a name already in the process env).
+_dotenv_keys: set[str] = set()
+
+
 def try_load_dotenv():
     env_path = os.path.join(os.getcwd(), ".env")
     if os.path.isfile(env_path):
+        from dotenv import dotenv_values
+        _dotenv_keys.update(k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ)
         load_dotenv(env_path)
         console.print(f"[green]Loaded .env from:[/] {env_path}")
     else:
@@ -761,7 +767,7 @@ SLASH_COMMANDS = [
     "/dictation", "/exit", "/help", "/instructions-load", "/model", "/plan", "/pwd",
     "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py",
     "/save", "/save-step", "/session-load", "/session-save", "/set-max-steps",
-    "/show-compression-stats", "/show-knowledge", "/show-memory-stats", "/show-stats",
+    "/show-compression-stats", "/show-config", "/show-knowledge", "/show-memory-stats", "/show-stats",
     "/show-step", "/show-steps", "/show-tools", "/undo-steps", "/verbose",
 ]
 
@@ -806,6 +812,7 @@ def print_help():
     table.add_row("/session-save <file>", "Save entire session to a JSON file")
     table.add_row("/set-max-steps <N>", "Change max_steps for the agent")
     table.add_row("/show-compression-stats", "Show compression config and stats")
+    table.add_row("/show-config", "Show the effective settings (model, key masked, session id, compression, tools)")
     table.add_row("/show-knowledge", "Show the full content of the knowledge store")
     table.add_row("/show-memory-stats", "Show memory breakdown: steps, tokens, compressed vs uncompressed")
     table.add_row("/show-stats", "Show session statistics")
@@ -1046,6 +1053,105 @@ def print_stats(session_stats: dict, agent=None):
         table.add_row("Knowledge", f"{knowledge_chars:,} chars")
         table.add_row("Last provider", get_agent_last_provider(agent) or "unknown")
     console.print(table)
+    console.print()
+
+
+def env_source(name: str) -> str:
+    """Where the value of env var `name` came from: "env", ".env" (added by try_load_dotenv) or "default"."""
+    if name not in os.environ:
+        return "default"
+    return ".env" if name in _dotenv_keys else "env"
+
+
+def mask_secret(value: str | None) -> str:
+    """First 4 + "..." + last 4 chars of a secret; "****" when it is too short to mask that way."""
+    if not value:
+        return "(not set)"
+    if len(value) < 12:
+        return "****"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _setting_source(env_name: str, current, startup_value, command: str) -> str:
+    """Source of a value that an env var sets at startup and `command` may change later."""
+    return command if current != startup_value else env_source(env_name)
+
+
+def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabled=False, tmux_enabled=False,
+                    mcp_servers=None):
+    """Print the effective settings with the source of each (env, .env, default or the slash command that changed it).
+    The API key is shown masked (mask_secret); the full value is never printed."""
+    from smolagents.bp_thinkers import DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS
+    from smolagents.bp_utils import get_env_bool
+
+    model = agent.model
+    model_id = getattr(model, "model_id", "?")
+    console.print(Rule("[bold]Effective Configuration", style="blue"))
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Setting", style="bold")
+    table.add_column("Value", style="cyan")
+    table.add_column("Source", style="dim")
+    table.add_row("Model class", type(model).__name__, env_source("BPSA_SERVER_MODEL"))
+    table.add_row("Model id", str(model_id),
+                  _setting_source("BPSA_MODEL_ID", model_id, get_env("BPSA_MODEL_ID"), "/model"))
+    endpoint = getattr(model, "api_base", None) or get_env("BPSA_API_ENDPOINT")
+    table.add_row("Endpoint", endpoint or "(not set)", env_source("BPSA_API_ENDPOINT"))
+    table.add_row("API key", mask_secret(get_env("BPSA_KEY_VALUE")), env_source("BPSA_KEY_VALUE"))
+    table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
+    table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_source("BPSA_HAS_SESSION_ID"))
+    prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
+    table.add_row("System prompt position", prompt_position, env_source("BPSA_SYSTEM_PROMPT_FIRST"))
+    table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))
+    for price_var in ("BPSA_PRICE_INPUT_PER_M", "BPSA_PRICE_OUTPUT_PER_M", "BPSA_PRICE_CACHED_INPUT_PER_M"):
+        if get_env(price_var):
+            table.add_row(price_var, get_env(price_var), env_source(price_var))
+    table.add_row("", "", "")
+    table.add_row("Executor", str(getattr(agent, "executor_type", "?")), env_source("BPSA_GLOBAL_EXECUTOR"))
+    max_steps = getattr(agent, "max_steps", None)
+    table.add_row("Max steps", str(max_steps),
+                  "/set-max-steps" if max_steps != DEFAULT_THINKER_MAX_STEPS else "default")
+    planning_interval = getattr(agent, "planning_interval", None)
+    table.add_row("Planning interval", str(planning_interval) if planning_interval else "off",
+                  "/plan" if planning_interval else "default")
+    table.add_row("Auto-approve", "on" if _auto_approve else "off", "--auto-approve or /auto-approve")
+    table.add_row("", "", "")
+    config = getattr(agent, "compression_config", None)
+    if config is None:
+        table.add_row("Compression", "no config on this agent", "")
+    else:
+        defaults = DEFAULT_THINKER_COMPRESSION
+        table.add_row("Compression enabled", str(config.enabled),
+                      _setting_source("BPSA_COMPRESSION_ENABLED", config.enabled, defaults.enabled, "/compression"))
+        for attr, env_name, command in (
+            ("keep_recent_steps", "BPSA_COMPRESSION_KEEP_RECENT_STEPS", "/compression-keep-recent-steps"),
+            ("max_uncompressed_steps", "BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS",
+             "/compression-max-uncompressed-steps"),
+            ("keep_compressed_steps", "BPSA_COMPRESSION_KEEP_COMPRESSED_STEPS", "/compression-keep-compressed-steps"),
+            ("max_compressed_steps", "BPSA_COMPRESSION_MAX_COMPRESSED_STEPS", "/compression-max-compressed-steps"),
+            ("estimated_token_threshold", "BPSA_COMPRESSION_TOKEN_THRESHOLD", "(changed in code)"),
+        ):
+            value = getattr(config, attr)
+            table.add_row(f"Compression {attr}", str(value),
+                          _setting_source(env_name, value, getattr(defaults, attr), command))
+        comp_model_id = getattr(config.compression_model, "model_id", None) if config.compression_model else None
+        table.add_row("Compression model", comp_model_id or "same as main",
+                      _setting_source("BPSA_COMPRESSION_MODEL", comp_model_id, get_env("BPSA_COMPRESSION_MODEL"),
+                                      "/compression-model"))
+    table.add_row("", "", "")
+    for label, enabled, env_name, flag in (
+        ("Browser tools", browser_enabled, "BPSA_BROWSER", "--browser"),
+        ("GUI tools", gui_enabled, "BPSA_GUI", "--gui-x11"),
+        ("Image tools", image_enabled, "BPSA_IMAGE", "--image"),
+        ("Tmux tools", tmux_enabled, "BPSA_TMUX", "--tmux"),
+    ):
+        source = env_source(env_name) if env_name in os.environ else (flag if enabled else "default")
+        table.add_row(label, "on" if enabled else "off", source)
+    mcp_count = len(mcp_servers) if mcp_servers else 0
+    table.add_row("MCP servers", str(mcp_count), (env_source("BPSA_MCP") if "BPSA_MCP" in os.environ else "--mcp")
+                  if mcp_count else "default")
+    console.print(table)
+    console.print("[dim]Sources: env = process environment, .env = loaded from ./.env at startup, "
+                  "default = built in. The ~/.bpsa.yaml file named in docs/CLI.md is not read.[/]")
     console.print()
 
 
@@ -2237,6 +2343,10 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-stats":
                 print_stats(session_stats, agent)
+                continue
+            elif cmd == "/show-config":
+                cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
+                                image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
                 continue
             elif cmd == "/run-prompt":
                 file_content = load_file_as_prompt(cmd_args)
