@@ -371,7 +371,7 @@ these fields when they build `TokenUsage`.
 
 ## Context awareness and budgets
 
-- [ ] **Know the model's context length.** OpenRouter's `GET /models`
+- [x] **Know the model's context length.** OpenRouter's `GET /models`
       endpoint returns `context_length` per model id; OpenAI-compatible
       endpoints that do not serve it fall back to a `BPSA_CONTEXT_LENGTH`
       env var. With that number `print_turn_summary` can show `Context: 61%`
@@ -380,6 +380,19 @@ these fields when they build `TokenUsage`.
       can default to a fraction of the real window. Fetch once at startup,
       never on the hot path; on any failure keep the current character
       display.
+      LANDED (commit c6c6b9d): resolve_context_length / fetch_context_length /
+      apply_context_length in bp_cli.py; BPSA_CONTEXT_LENGTH wins, else one
+      OpenRouter GET /models at startup and per /model (exact id, then
+      without a leading "~"; context_length, else top_provider.context_length).
+      Banner "Context: N tokens", turn summary "Context: NN%" (last call's
+      input_tokens over the window; chars figure when unknown), /show-config
+      "Context length" row, compression token threshold defaulted to 75% of
+      the window when the env var is unset. Verified live on OpenRouter:
+      "~deepseek/deepseek-flash-latest" matched exactly (1,048,576 tokens),
+      /model deepseek/deepseek-chat-v3-0324 re-resolved to 163,840. Suite:
+      813 passed, 88 failed, 39 skipped, 4 errors; no failure outside the
+      Baseline list except the environment-flaky MCP streamable_http test.
+      Tests: tests/test_bp_context_length.py.
 - [ ] **Session budget.** `BPSA_MAX_SESSION_TOKENS` and
       `BPSA_MAX_SESSION_COST` (USD, requires the cost task above). The REPL
       warns once at 80% and stops accepting new agent turns at 100%
