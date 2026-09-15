@@ -28,6 +28,7 @@ Environment variables:
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
+    BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
 
     Context compression parameters (see CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
@@ -297,6 +298,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
+        console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("\nExample:")
         console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
         console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
@@ -406,6 +408,51 @@ def build_model(override_model_id=None):
 
     model.postpend_string = postpend_string
     return model
+
+
+# Model classes that run in-process: there is no endpoint to verify.
+LOCAL_MODEL_CLASSES = ("TransformersModel", "MLXModel", "VLLMModel")
+# Model classes whose generate forwards max_tokens to the completion call; Bedrock and Colab reject unknown kwargs.
+MAX_TOKENS_KWARG_CLASSES = ("OpenAIModel", "LiteLLMModel", "InferenceClientModel")
+CONNECTIVITY_CHECK_PROMPT = "Reply with OK."
+
+
+def connectivity_failure_reason(error: Exception) -> str:
+    """Name the likely cause of a failed startup request from the exception text, with the key value masked."""
+    text = str(error)
+    api_key = get_env("BPSA_KEY_VALUE")
+    if api_key:
+        text = text.replace(api_key, mask_secret(api_key))
+    lowered = text.lower()
+    if any(mark in lowered for mark in ("401", "403", "unauthorized", "authentication", "invalid api key")):
+        return f"the endpoint rejected the API key (check BPSA_KEY_VALUE): {text}"
+    if any(mark in lowered for mark in ("404", "model not found", "model_not_found", "not a valid model",
+                                          "does not exist", "no such model")):
+        return f"unknown model id (check BPSA_MODEL_ID): {text}"
+    if any(mark in lowered for mark in ("connection", "connect", "dns", "name or service", "timed out",
+                                          "timeout", "unreachable", "refused")):
+        return f"endpoint unreachable (check BPSA_API_ENDPOINT): {text}"
+    return text
+
+
+def check_model_connectivity(model) -> float | None:
+    """Send one tiny request through model.generate and return the round-trip seconds; fail() names the cause.
+    Returns None without a request for LOCAL_MODEL_CLASSES and when BPSA_SKIP_CONNECTIVITY_CHECK is truthy."""
+    from smolagents.bp_utils import get_env_bool
+    from smolagents.models import ChatMessage, MessageRole
+
+    class_names = {cls.__name__ for cls in type(model).__mro__}
+    if get_env_bool("BPSA_SKIP_CONNECTIVITY_CHECK") or class_names.intersection(LOCAL_MODEL_CLASSES):
+        return None
+    kwargs = {"max_tokens": 8} if class_names.intersection(MAX_TOKENS_KWARG_CLASSES) else {}
+    messages = [ChatMessage(role=MessageRole.USER, content=[{"type": "text", "text": CONNECTIVITY_CHECK_PROMPT}])]
+    started = time.perf_counter()
+    try:
+        model.generate(messages, **kwargs)
+    except Exception as error:
+        model_id = getattr(model, "model_id", "?")
+        fail(f"Startup connectivity check failed for {model_id}: {connectivity_failure_reason(error)}")
+    return time.perf_counter() - started
 
 
 def build_agent(model, approval_callback=None, browser_enabled=False, gui_enabled=False, image_enabled=False, tmux_enabled=False, mcp_servers=None):
@@ -695,12 +742,17 @@ def print_turn_summary(
     console.print(line)
 
 
-def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None):
+def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None,
+                 round_trip_seconds: float | None = None):
     dictation_line = f"\nDictation: [magenta]{dictation_transcriber}[/]" if dictation_transcriber else ""
+    endpoint_line = ""
+    if round_trip_seconds is not None:
+        endpoint_line = f"Endpoint: [cyan]{round_trip_seconds:.1f}s[/] round trip\n"
     console.print(
         Panel.fit(
             f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
+            f"{endpoint_line}"
             f"Tools: [green]{tool_count}[/] loaded{dictation_line}",
             border_style="blue",
         )
@@ -2060,6 +2112,7 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
     check_required_env()
     model = build_model()
     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+    check_model_connectivity(model)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -2095,13 +2148,15 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     model_id = get_env("BPSA_MODEL_ID")
     server_model = get_env("BPSA_SERVER_MODEL", default="OpenAIServerModel")
     tool_count = count_tools(agent)
+    round_trip_seconds = check_model_connectivity(model)
     global _verbose
     verbose = get_env("BPSA_VERBOSE", default="1") == "1"
     _verbose = verbose
 
     console.clear()
     dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
-    print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber)
+    print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber,
+                 round_trip_seconds=round_trip_seconds)
 
     instructions = None
     if not skip_instructions:
@@ -2328,7 +2383,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 first_turn = True
                 console.clear()
                 _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
-                print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None)
+                print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
+                             round_trip_seconds=round_trip_seconds)
                 continue
             elif cmd == "/show-tools":
                 print_tools(agent)
@@ -2442,6 +2498,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 if new_model is not None:
                     model = new_model  # /clear and /repeat build agents from this
                     model_id = new_model.model_id  # banner
+                    round_trip_seconds = None  # measured for the old model only
                 continue
             elif cmd == "/save-step":
                 cmd_save_step(agent, cmd_args)

@@ -65,6 +65,7 @@ All prefixed with `BPSA_`:
 | `BPSA_PRICE_CACHED_INPUT_PER_M` | No | _(input price)_ | USD per million cached input tokens, applied to the cached share of the input when the provider reports it. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
+| `BPSA_SKIP_CONNECTIVITY_CHECK` | No | `0` | `1`, `true` or `on` to skip the startup connectivity check (one tiny request that verifies the key, endpoint and model id; see Startup Behavior). Local model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) always skip it. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
@@ -131,6 +132,12 @@ export BPSA_MAX_TOKENS=64000
 1. Check `BPSA_MODEL_ID` is set. If not: `Error: BPSA_MODEL_ID is not set. Export it with: export BPSA_MODEL_ID=<value>`
 2. Validate `BPSA_SERVER_MODEL` is a supported model class.
 3. Load all tools. If any fail, report which ones and exit.
+4. Send one tiny request through the model (`Reply with OK.`, `max_tokens` 8 where the model class accepts it)
+   and exit with `Error: Startup connectivity check failed for <model id>: ...` naming the likely cause: a
+   rejected API key (401/403), an unknown model id (404 / model not found) or an unreachable endpoint
+   (connection, DNS or timeout errors). Set `BPSA_SKIP_CONNECTIVITY_CHECK=1` to skip this request; local
+   model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) never send it. The banner shows the
+   round-trip time of this request as endpoint latency. `/model` does not repeat the check.
 
 ## Banner
 
@@ -140,6 +147,7 @@ Functional banner shown after successful startup:
 ╭─────────────────────────────────────────╮
 │ Beyond Python SmolAgents v1.24-bp       │
 │ Model: Gemini-2.5-Flash (OpenAIServer…) │
+│ Endpoint: 0.8s round trip               │
 │ Tools: 38 loaded                        │
 ╰─────────────────────────────────────────╯
 Type /help for commands, /exit to quit.
