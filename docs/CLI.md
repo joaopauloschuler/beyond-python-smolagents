@@ -244,6 +244,51 @@ sum over every prompt task of the run (`add_agent_usage` in
 `bp_ad_infinitum.py`); when a limit is reached it stops after the current
 task and exits with code 3 (`BUDGET_EXIT_CODE`).
 
+### Steering the agent while it runs
+
+While `agent.run` is working the REPL keeps the spinner line on screen and
+shows a plain `> ` input line under it. Type a message and press Enter: the
+line is echoed dimmed as `queued: <text>` and the spinner goes on. At the next
+step boundary `MultiStepAgent._deliver_steering_messages` (called at the top
+of every step in `_run_stream`, right before the `interrupt_switch` check)
+drains the queue into the `user_message` field of the ActionStep that just
+finished, and `ActionStep.to_messages` sends that text to the model as one
+user-role message placed right after the step's execution logs. Several
+queued lines join with newlines into that one field. The system prompt tells
+the model that such a message takes priority over the original task.
+`/show-step N` prints the text under "User message:", `/session-save` and
+`/session-load` keep it, and context compression hands it to the summariser
+together with the step's run output. A message queued before the first step
+of a turn has finished is held until that step exists; a line typed after the
+agent's last step boundary is printed back as `Not delivered (the agent
+finished first): <text>`.
+
+Keys while the agent runs:
+
+| Key | Effect |
+|-----|--------|
+| Enter | Queue the typed line for the next step boundary |
+| Esc | Clean stop: `agent.interrupt()`; the current step finishes, the REPL prints `Stopped after step N; memory kept.` and returns to the prompt with every finished step in memory |
+| Ctrl+C | Hard abort, exactly as before: the in-flight step is lost, `Interrupted.` is printed. As before, a Ctrl+C that lands inside a model call is swallowed by the retry loop in `CodeAgent._step_stream` (bare `except:` plus a 30 s sleep); press it again |
+
+Mechanics: `SteeringListener` in `bp_cli.py` is one thread that owns stdin
+for the whole turn with its own `prompt_toolkit` `PromptSession` inside
+`patch_stdout`, so step output printed by the main thread scrolls above the
+input line. The Rich `Live` spinner overwrites that input line, so while the
+listener is active `Spinner.start` does nothing and the listener draws the
+spinner text (with its frame) as the first line of its two-line prompt.
+`interactive_approval_callback` reads a key with `_getch`, so it calls
+`SteeringListener.pause()` before printing the approval box and `resume()`
+after a `y`; the listener does not run in one-shot or piped mode
+(`steering_available` requires stdin and stdout to be terminals), during
+`/repeat` cycles, and cannot cancel a model call in progress.
+
+`ad-infinitum` reads the same kind of message from a file: write text into
+`_inbox.md` in the task folder while a prompt task runs; at the next step
+boundary `read_steering_inbox` reads it, truncates the file to empty and
+hands the text to the agent exactly as a typed line. A single task file has
+no inbox.
+
 ### Slash Commands
 
 | Command | Description |

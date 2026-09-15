@@ -72,6 +72,8 @@ class ActionStep(MemoryStep):
     code_action: str | None = None
     observations: str | None = None
     observations_images: list["PIL.Image.Image"] | None = None
+    # Steering text the user sent while this step ran; delivered as a user turn after the observation.
+    user_message: str | None = None
     action_output: Any = None
     token_usage: TokenUsage | None = None
     context_chars: int | None = None
@@ -101,6 +103,7 @@ class ActionStep(MemoryStep):
             "observations_images": [image.tobytes() for image in self.observations_images]
             if self.observations_images
             else None,
+            "user_message": self.user_message,
             "action_output": make_json_serializable(self.action_output),
             "token_usage": asdict(self.token_usage) if self.token_usage else None,
             "is_final_answer": self.is_final_answer,
@@ -168,6 +171,10 @@ class ActionStep(MemoryStep):
             message_content += error_message
             messages.append(
                 ChatMessage(role=MessageRole.TOOL_RESPONSE, content=[{"type": "text", "text": message_content}])
+            )
+        if self.user_message is not None:
+            messages.append(
+                ChatMessage(role=MessageRole.USER, content=[{"type": "text", "text": self.user_message}])
             )
 
         return messages

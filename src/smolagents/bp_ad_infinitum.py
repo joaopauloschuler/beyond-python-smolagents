@@ -26,6 +26,7 @@ Folder convention:
     +-- 03-validate.py        script: programmatic validation
     +-- 04-refine.md          prompt: agent fixes issues
     +-- _postamble.md         (optional) appended to ALL prompt tasks
+    +-- _inbox.md             (optional) steering: text written here mid-run reaches the model at the next step
 
 Files starting with '_' are modifiers, not tasks. All other task files are
 loaded in alphabetical order. Each becomes one element in the task array.
@@ -191,6 +192,30 @@ def inject_tree(folder: str) -> str:
     return _inject_tree(folder)
 
 
+STEERING_INBOX_NAME = "_inbox.md"
+
+
+def read_steering_inbox(inbox_path: str | None) -> list[str]:
+    """Return the inbox file's text as one message and truncate the file; [] when missing, empty or unreadable."""
+    if not inbox_path or not os.path.isfile(inbox_path):
+        return []
+    try:
+        with open(inbox_path, "r+", encoding="utf-8") as fh:
+            text = fh.read().strip()
+            fh.seek(0)
+            fh.truncate()
+    except OSError:
+        return []
+    return [text] if text else []
+
+
+def steering_inbox_path(task_source: str) -> str | None:
+    """Path of the _inbox.md steering file for a task folder; None for a single task file."""
+    if not os.path.isdir(task_source):
+        return None
+    return os.path.join(task_source, STEERING_INBOX_NAME)
+
+
 def run_script(task: TaskItem) -> subprocess.CompletedProcess:
     """Execute a .py or .sh script directly via subprocess."""
     if task.kind == "python":
@@ -258,8 +283,9 @@ def print_banner(config: dict):
 
 
 def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=False, gui_enabled=False, image_enabled=False, mcp_servers=None):
-    """Core autonomous loop: cycles x tasks, fresh agent per task. Returns True when the session budget stopped it."""
+             browser_enabled=False, gui_enabled=False, image_enabled=False, mcp_servers=None, inbox_path=None):
+    """Core autonomous loop: cycles x tasks, fresh agent per task. Returns True when the session budget stopped it.
+    inbox_path (the task folder's _inbox.md) feeds each prompt task's agent.steering_source."""
     from smolagents.bp_cli import (
         _shutdown_browser, _shutdown_gui, _shutdown_mcp, build_agent, get_agent_token_usage, session_budget_state,
     )
@@ -299,6 +325,8 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                 agent = build_agent(model, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
                 if plan_interval:
                     agent.planning_interval = plan_interval
+                if inbox_path:
+                    agent.steering_source = lambda: read_steering_inbox(inbox_path)
 
                 try:
                     agent.run(prompt, reset=True)
@@ -477,7 +505,7 @@ def run_ad_infinitum(
     budget_exceeded = run_loop(
         model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
         browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled,
-        mcp_servers=mcp_servers,
+        mcp_servers=mcp_servers, inbox_path=steering_inbox_path(task_source),
     )
     return BUDGET_EXIT_CODE if budget_exceeded else 0
 

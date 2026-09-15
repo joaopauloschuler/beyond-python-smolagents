@@ -140,6 +140,8 @@ $ bpsa --mcp 'npx -y @modelcontextprotocol/server-filesystem /'  # Connect a std
 
 Before showing the banner, `bpsa` sends one tiny request through the model and exits with `Error: Startup connectivity check failed for <model id>: ...` on a rejected API key, an unknown model id or an unreachable endpoint; set `BPSA_SKIP_CONNECTIVITY_CHECK=1` to skip this request (local model classes never send it). The banner then shows the round-trip time of that request and, when known, the model's context length.
 
+While the agent works you can keep typing: a line followed by Enter is echoed as `queued: ...` and reaches the model as a user turn at the next step boundary, where it takes priority over the original task (the text is stored on that step's `user_message` field, shown by `/show-step N` and kept by `/session-save`). Esc asks for a clean stop after the current step and keeps memory; Ctrl+C still aborts at once. See "Steering the agent while it runs" in [CLI.md](docs/CLI.md).
+
 The REPL supports command history, tab completion for slash commands, and multi-line input via Alt+Enter. Use `/session-save <file>` and `/session-load <file>` to persist and restore sessions across restarts. `/model <id>` switches the main model mid-session and keeps the conversation history, endpoint, key and token counters; `/model` alone shows the current id. `/show-config` prints the effective settings (model, endpoint, masked key, prices, context length, budgets, compression thresholds, enabled tool sets) and where each came from: the environment, `.env`, a default or a slash command. You can also launch `ad-infinitum` from within the REPL via `!ad-infinitum ...`. Type `/help` to see all available commands.
 
 #### Shell commands from the REPL
@@ -184,11 +186,13 @@ tasks/
 +-- 03-validate.py        script: programmatic validation
 +-- 04-refine.md          prompt: agent fixes issues
 +-- _postamble.md         (optional) appended to ALL prompt tasks
++-- _inbox.md             (optional) steering: text written here mid-run reaches the model at the next step
 ```
 
 - Files starting with `_` are **modifiers**, not tasks
 - `_preamble.md` is prepended to every **prompt** task (e.g., project context, coding standards)
 - `_postamble.md` is appended to every **prompt** task (e.g., "commit when done", "call final_answer with a summary")
+- `_inbox.md` steers a running prompt task: write text into it from another shell and, at the next step boundary, the agent reads it, truncates the file to empty and passes the text to the model as a user turn (same mechanism as typing in the `bpsa` REPL)
 - All other `.md`, `.py`, and `.sh` files are tasks, loaded in **alphabetical order**
 - Numbering prefixes (`01-`, `02-`) give natural sequencing
 - Script tasks (`.py`, `.sh`) are executed directly and report exit codes instead of token usage

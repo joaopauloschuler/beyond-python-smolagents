@@ -344,6 +344,9 @@ class MultiStepAgent(ABC):
         self.max_steps = max_steps
         self.step_number = 0
         self._next_actionstep_id = 1
+        # Called at every step boundary; returns user messages typed (or filed) while the last step ran.
+        self.steering_source: Callable[[], list[str]] | None = None
+        self._held_steering_messages: list[str] = []
         self.planning_interval = planning_interval
         self._last_plan_step = 0
         self.state: dict[str, Any] = {}
@@ -546,6 +549,7 @@ class MultiStepAgent(ABC):
         max_steps = max_steps or self.max_steps
         self.task = task
         self.interrupt_switch = False
+        self._held_steering_messages = []
         if additional_args:
             self.state.update(additional_args)
             self.task += f"""
@@ -640,6 +644,7 @@ You have been provided with these additional arguments, that you can access dire
         self.step_number = 1
         returned_final_answer = False
         while not returned_final_answer and self.step_number <= max_steps:
+            self._deliver_steering_messages()
             if self.interrupt_switch:
                 raise AgentError("Agent interrupted.", self.logger)
 
@@ -713,6 +718,20 @@ You have been provided with these additional arguments, that you can access dire
         final_answer_step = FinalAnswerStep(handle_agent_output_types(final_answer))
         self._finalize_step(final_answer_step)
         yield final_answer_step
+
+    def _deliver_steering_messages(self) -> None:
+        """Drain steering_source into the last ActionStep's user_message; without an ActionStep yet, hold them."""
+        if self.steering_source is not None:
+            self._held_steering_messages.extend(text for text in self.steering_source() if text and text.strip())
+        if not self._held_steering_messages:
+            return
+        last_step = self.memory.steps[-1] if self.memory.steps else None
+        if not isinstance(last_step, ActionStep):
+            return
+        text = "\n".join(message.strip() for message in self._held_steering_messages)
+        last_step.user_message = text if last_step.user_message is None else last_step.user_message + "\n" + text
+        self._held_steering_messages = []
+        self.logger.log(Text(f"User message delivered to the model: {text}", style="bold cyan"), level=LogLevel.INFO)
 
     def _validate_final_answer(self, final_answer: Any):
         for check_function in self.final_answer_checks:

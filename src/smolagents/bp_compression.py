@@ -267,6 +267,8 @@ def _build_post_steps_section(post_steps: list["MemoryStep"] | None) -> str:
             if step.observations:
                 obs = str(step.observations)[:300]
                 desc += f"\n<result>{obs}</result>"
+            if step.user_message:
+                desc += f"\n<user_message>{step.user_message[:300]}</user_message>"
             post_step_descs.append("<step>" + desc + "</step>")
         elif isinstance(step, PlanningStep):
             plan = (step.plan or "")[:400]
@@ -329,6 +331,8 @@ def create_compression_prompt(
             if step.observations:
                 obs = str(step.observations)
                 desc += f"\n<result>{obs}</result>"
+            if step.user_message:
+                desc += f"\n<user_message>{step.user_message}</user_message>"
             # There is no point in compressing code action. It is already present in model_output.
             #if step.code_action:
             #    code = step.code_action

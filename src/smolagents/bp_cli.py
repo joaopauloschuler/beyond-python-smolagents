@@ -58,8 +58,10 @@ Environment variables:
 import os
 import queue
 import re
+import signal
 import subprocess
 import sys
+import threading
 import time
 
 from dotenv import load_dotenv
@@ -142,7 +144,9 @@ class Spinner:
         self.live = None
     
     def start(self):
-        """Start the spinner animation."""
+        """Start the spinner animation (the steering prompt draws it instead while the listener runs)."""
+        if _steering_listener is not None and _steering_listener.active:
+            return
         if not self.live:
             from rich.live import Live
             self.live = Live(
@@ -193,7 +197,7 @@ def _compact_step_callback(step):
 
     _spinner.stop()
     # Reset the spinner message for next step (token counter restarts per step)
-    _spinner.spinner.text = f"[{_spinner.color}]Agent is thinking...[/{_spinner.color}]"
+    _spinner.update("Agent is thinking...")
 
     step_num = getattr(step, "step_number", "?")
     duration = ""
@@ -1224,6 +1228,168 @@ def _drain_voice_queue_into_buffer(buffer):
         buffer.insert_text(text)
 
 
+# ── Steering while the agent runs ────────────────────────────────────────────
+
+_steering_listener = None  # SteeringListener while agent.run is in progress in run_repl, else None
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class _ListenerPaused(Exception):
+    """Raised inside the steering prompt to leave it without a submitted line."""
+
+
+def steering_available() -> bool:
+    """True when the steering listener can run: stdin and stdout are terminals and prompt_toolkit imports."""
+    try:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return False
+        import prompt_toolkit  # noqa: F401
+    except (ImportError, AttributeError, ValueError):
+        return False
+    return True
+
+
+def drain_queue(source: queue.Queue) -> list[str]:
+    """Return and remove every item waiting in the queue without blocking."""
+    items = []
+    while True:
+        try:
+            items.append(source.get_nowait())
+        except queue.Empty:
+            return items
+
+
+class SteeringListener:
+    """Thread that owns stdin during agent.run: Enter queues a line for agent.steering_source, Esc calls
+    agent.interrupt(), Ctrl+C sends SIGINT to the process. pause()/resume() free the terminal for _getch."""
+
+    def __init__(self, agent):
+        self.agent = agent
+        self.queue: queue.Queue = queue.Queue()
+        self.stop_requested = False
+        self._session = None
+        self._thread = None
+        self._stopping = False
+        self._resume = threading.Event()
+        self._idle = threading.Event()
+        self._idle.set()
+
+    @property
+    def active(self) -> bool:
+        """True from start() until pause() or stop(): the listener, not Rich Live, draws the spinner line."""
+        return self._thread is not None and self._resume.is_set() and not self._stopping
+
+    def drain(self) -> list[str]:
+        return drain_queue(self.queue)
+
+    def start(self):
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.key_binding import KeyBindings
+
+        bindings = KeyBindings()
+
+        @bindings.add("escape", eager=True)
+        def request_stop(event):
+            self.request_stop()
+
+        @bindings.add("c-c")
+        def hard_abort(event):
+            # Target the main thread so its blocking model read gets EINTR and raises KeyboardInterrupt there.
+            signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+
+        self._session = PromptSession(key_bindings=bindings, refresh_interval=0.1, erase_when_done=True)
+        self._resume.set()
+        self._thread = threading.Thread(target=self._read_lines, name="bpsa-steering", daemon=True)
+        self._thread.start()
+
+    def request_stop(self):
+        if not self.stop_requested:
+            self.stop_requested = True
+            self.agent.interrupt()
+            _spinner.update("Stopping after the current step...")
+            console.print("[yellow]Stop requested: the agent stops after the current step (Ctrl+C aborts now).[/]")
+
+    def pause(self):
+        """Leave the prompt and restore the terminal; returns once the listener thread is idle."""
+        self._resume.clear()
+        self._exit_prompt()
+        self._idle.wait(timeout=5)
+
+    def resume(self):
+        if not self._stopping:
+            self._resume.set()
+
+    def stop(self):
+        self._stopping = True
+        self._resume.set()
+        self._exit_prompt()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+
+    def _exit_prompt(self):
+        app = self._session.app if self._session is not None else None
+        if app is not None and app.is_running and app.loop is not None:
+            app.loop.call_soon_threadsafe(self._exit_running_app, app)
+
+    @staticmethod
+    def _exit_running_app(app):
+        if app.is_running and not app.is_done:
+            app.exit(exception=_ListenerPaused())
+
+    def _leave_prompt_if_paused(self):
+        if not self._resume.is_set() or self._stopping:
+            self._exit_running_app(self._session.app)
+
+    def _prompt_message(self):
+        from prompt_toolkit.formatted_text import FormattedText
+
+        frame = _SPINNER_FRAMES[int(time.time() * 10) % len(_SPINNER_FRAMES)]
+        return FormattedText([("ansicyan", f"{frame} {_spinner.message.rstrip()}"), ("", "\n> ")])
+
+    def _read_lines(self):
+        from prompt_toolkit.patch_stdout import patch_stdout
+
+        while True:
+            self._resume.wait()
+            if self._stopping:
+                return
+            self._idle.clear()
+            try:
+                with patch_stdout(raw=True):
+                    line = self._session.prompt(self._prompt_message, pre_run=self._leave_prompt_if_paused)
+            except (_ListenerPaused, EOFError, KeyboardInterrupt):
+                line = None
+            finally:
+                self._idle.set()
+            if line and line.strip():
+                self.queue.put(line.strip())
+                console.print(f"[dim]queued: {line.strip()}[/]")
+
+
+def start_steering_listener(agent):
+    """Start the listener for one agent.run and point agent.steering_source at it; None when unavailable."""
+    global _steering_listener
+    if not steering_available():
+        return None
+    listener = SteeringListener(agent)
+    _steering_listener = listener
+    agent.steering_source = listener.drain
+    listener.start()
+    return listener
+
+
+def stop_steering_listener(listener) -> list[str]:
+    """Stop the listener, detach it from the agent and return the lines it queued but never delivered."""
+    global _steering_listener
+    if listener is None:
+        return []
+    listener.stop()
+    listener.agent.steering_source = None
+    _steering_listener = None
+    return listener.drain()
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -1231,8 +1397,10 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
         console.print(f"[dim]Auto-approved: {tag_type}[/]")
         return True
 
-    # Stop spinner while prompting
+    # Stop spinner while prompting; the steering listener must release stdin before _getch reads it
     _spinner.stop()
+    if _steering_listener is not None:
+        _steering_listener.pause()
 
     # Show tag type header
     tag_label = tag_type.upper()
@@ -1263,6 +1431,8 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(content)
             continue
         if response in ('y',):
+            if _steering_listener is not None:
+                _steering_listener.resume()
             _spinner.start()
             return True
         if response in ('n',):
@@ -2042,6 +2212,9 @@ def _print_step_detail(step):
         if step.observations:
             console.print(f"[bold]Run output:[/]")
             console.print(str(step.observations)[:2000])
+        if step.user_message:
+            console.print(f"[bold]User message:[/]")
+            console.print(step.user_message[:2000])
     elif isinstance(step, CompressedHistoryStep):
         console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
         console.print(f"[bold]Step numbers:[/] {step.compressed_step_numbers}")
@@ -2860,7 +3033,6 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             # Reset stream token counter for this turn
             if hasattr(agent, "_stream_token_counter"):
                 agent._stream_token_counter["count"] = 0
-            _spinner.start()
             last_prompt = text
             task_text = prepend_instructions(text, instructions) if first_turn else text
             first_turn = False
@@ -2871,7 +3043,13 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 )
                 task_text = task_text + "\n" + shell_context
                 pending_shell_outputs.clear()
-            result = agent.run(task_text, reset=False)
+            listener = start_steering_listener(agent)  # before the spinner, so no Rich Live starts
+            _spinner.start()
+            try:
+                result = agent.run(task_text, reset=False)
+            finally:
+                undelivered = stop_steering_listener(listener)
+                print_undelivered_steering(undelivered)
             _spinner.stop()
             elapsed = time.time() - start_time
 
@@ -2920,8 +3098,22 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             from smolagents.utils import AgentExecutionRejected
             if isinstance(e, AgentExecutionRejected):
                 console.print("\n[yellow]Execution rejected by user.[/]")
+            elif is_clean_stop(agent, e):
+                console.print(f"\n[yellow]Stopped after step {agent.step_number - 1}; memory kept.[/]\n")
             else:
                 console.print(f"\n[bold red]Error:[/] {e}\n")
+
+
+def is_clean_stop(agent, error: Exception) -> bool:
+    """True when agent.run raised because agent.interrupt() was requested (Esc), not because of a failure."""
+    from smolagents.utils import AgentError
+    return isinstance(error, AgentError) and getattr(agent, "interrupt_switch", False)
+
+
+def print_undelivered_steering(messages: list[str]) -> None:
+    """Show steering lines the agent never reached (typed after its last step boundary)."""
+    for text in messages:
+        console.print(f"[yellow]Not delivered (the agent finished first): {text}[/]")
 
 
 def main():

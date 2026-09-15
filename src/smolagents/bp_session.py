@@ -192,6 +192,7 @@ def serialize_step(step: MemoryStep) -> dict:
             "observations_images": (
                 [_serialize_image(img) for img in step.observations_images] if step.observations_images else None
             ),
+            "user_message": step.user_message,
             "action_output": make_json_serializable(step.action_output),
             "token_usage": _serialize_token_usage(step.token_usage),
             "is_final_answer": step.is_final_answer,
@@ -249,6 +250,7 @@ def deserialize_step(data: dict) -> MemoryStep:
             code_action=data.get("code_action"),
             observations=data.get("observations"),
             observations_images=observations_images,
+            user_message=data.get("user_message"),
             action_output=data.get("action_output"),
             token_usage=_deserialize_token_usage(data.get("token_usage")),
             is_final_answer=data.get("is_final_answer", False),
