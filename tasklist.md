@@ -393,13 +393,30 @@ these fields when they build `TokenUsage`.
       813 passed, 88 failed, 39 skipped, 4 errors; no failure outside the
       Baseline list except the environment-flaky MCP streamable_http test.
       Tests: tests/test_bp_context_length.py.
-- [ ] **Session budget.** `BPSA_MAX_SESSION_TOKENS` and
+- [x] **Session budget.** `BPSA_MAX_SESSION_TOKENS` and
       `BPSA_MAX_SESSION_COST` (USD, requires the cost task above). The REPL
       warns once at 80% and stops accepting new agent turns at 100%
       (slash commands still work so the user can `/session-save`).
       `ad-infinitum` (`bp_ad_infinitum.py`) stops the cycle loop at 100% and
       exits with a non-zero code. Protects unattended runs from an open-ended
       bill. `0` or unset means no limit.
+      LANDED (commit 4cabf57): session_budget_state / warn_session_budget /
+      session_budget_blocks_turn in bp_cli.py (tokens = input + output from
+      session_stats, cost = total_cost_usd; warn at 80%, exceeded at 100%;
+      0/unset/invalid = no limit). run_repl warns once per limit, refuses
+      plain prompts, !!!, /redo, /run-prompt, /repeat and /repeat-prompt at
+      100%, resets the warned set on /clear and /session-load; /show-stats
+      and /show-config show "Token budget" / "Cost budget" rows only when a
+      limit is set. ad-infinitum sums every prompt task (add_agent_usage),
+      stops after the task that reaches a limit and exits with code 3
+      (BUDGET_EXIT_CODE). Verified live on OpenRouter with
+      BPSA_MAX_SESSION_TOKENS=20000: three one-word turns (7,835 + 7,736 +
+      7,818 tokens) printed "Session budget exceeded: Session tokens: 23,389
+      of 20,000 (116%)", a fourth prompt was refused, /show-stats and
+      /show-config showed the row; ad-infinitum with a 5,000-token limit
+      stopped in cycle 1 with exit code 3. Suite: 842 passed, 86 failed, 39
+      skipped, 4 errors; no failure outside the Baseline list. Tests:
+      tests/test_bp_session_budget.py.
 
 ## Interaction while the agent is working
 
