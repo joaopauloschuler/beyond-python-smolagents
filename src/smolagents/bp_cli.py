@@ -758,7 +758,7 @@ SLASH_COMMANDS = [
     "/compression-max-compressed-steps", "/compression-max-uncompressed-steps",
     "/compression-model",
     "/compression-set-high", "/compression-set-low", "/compression-set-medium", "/compression-set-ultra",
-    "/dictation", "/exit", "/help", "/instructions-load", "/plan", "/pwd",
+    "/dictation", "/exit", "/help", "/instructions-load", "/model", "/plan", "/pwd",
     "/redo", "/repeat", "/repeat-prompt", "/run-prompt", "/run-py",
     "/save", "/save-step", "/session-load", "/session-save", "/set-max-steps",
     "/show-compression-stats", "/show-knowledge", "/show-memory-stats", "/show-stats",
@@ -792,6 +792,7 @@ def print_help():
     table.add_row("/exit", "Exit the REPL")
     table.add_row("/help", "Show this help message")
     table.add_row("/instructions-load", "Load agent instruction files into next prompt")
+    table.add_row(r"/model \[id]", "Switch the main model mid-session (keeps memory); no id shows the current one")
     table.add_row(r"/plan \[on|off|N]", "Toggle or set planning interval (default: 22)")
     table.add_row("/pwd", "Show current working directory")
     table.add_row("/redo", "Re-run the last prompt (undo last steps and run again)")
@@ -1453,6 +1454,36 @@ def cmd_compression_model(agent, args: str):
         console.print(f"[green]Compression model set to {args}[/]")
     except Exception as e:
         console.print(f"[red]Failed to set compression model: {e}[/]")
+
+
+def cmd_model(agent, args: str):
+    """Switch the main model to `args` (build_model with the same class, endpoint and session id); no args prints it.
+    Keeps agent.memory; returns the new model, or None when nothing changed."""
+    args = args.strip()
+    old_model = agent.model
+    old_id = getattr(old_model, "model_id", "?")
+    if not args:
+        console.print(f"[cyan]Current model: {old_id} ({type(old_model).__name__})[/]")
+        console.print("[dim]Usage: /model <model_id>[/]")
+        return None
+    try:
+        new_model = build_model(override_model_id=args)
+    except SystemExit:  # build_model's fail() already printed the reason
+        console.print(f"[red]Model unchanged: {old_id}[/]")
+        return None
+    except Exception as e:
+        console.print(f"[red]Failed to switch model, keeping {old_id}: {e}[/]")
+        return None
+    agent.model = new_model
+    agent.stream_outputs = hasattr(new_model, "generate_stream")
+    compressor = getattr(agent, "compressor", None)
+    if compressor is not None:
+        compressor.main_model = new_model
+    monitor = getattr(agent, "monitor", None)
+    if monitor is not None:
+        monitor.tracked_model = new_model
+    console.print(f"[green]Model switched: {old_id} -> {new_model.model_id}[/]")
+    return new_model
 
 
 def cmd_show_step(agent, args: str):
@@ -2295,6 +2326,12 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/compression-model":
                 cmd_compression_model(agent, cmd_args)
+                continue
+            elif cmd == "/model":
+                new_model = cmd_model(agent, cmd_args)
+                if new_model is not None:
+                    model = new_model  # /clear and /repeat build agents from this
+                    model_id = new_model.model_id  # banner
                 continue
             elif cmd == "/save-step":
                 cmd_save_step(agent, cmd_args)

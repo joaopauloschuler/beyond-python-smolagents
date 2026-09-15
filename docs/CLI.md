@@ -216,6 +216,7 @@ are available, the line has no `$` part. `/show-stats` shows "Total cost" and
 | `/exit` | Exit the REPL |
 | `/help` | Show available commands and brief descriptions |
 | `/instructions-load` | Load agent instruction files into next prompt |
+| `/model [id]` | Switch the main model mid-session (memory is kept); no id shows the current one |
 | `/plan [on\|off\|N]` | Toggle or set planning interval (default: 22) |
 | `/pwd` | Show current working directory |
 | `/repeat <N> <prompt>` | Run the same prompt N times, each on a fresh agent with current context |
@@ -236,6 +237,14 @@ are available, the line has no `$` part. `/show-stats` shows "Total cost" and
 | `/undo-steps [N]` | Remove last N steps from memory (default: 1) |
 | `/verbose` | Toggle verbose output |
 | `/dictation [on\|off]` | Toggle dictation (requires `BPSA_DICTATION_TRANSCRIBER`) |
+
+`/model <id>` rebuilds the main model with `build_model`, so the new model uses
+the same `BPSA_SERVER_MODEL` class, endpoint, key, provider order and
+OpenRouter session id as the old one; only the model id changes. The
+conversation history, the compressor's fallback model and the token counters
+stay in place, so you can draft with a cheap model and finish with a strong
+one. A model id that `build_model` rejects leaves the old model in place; an id
+the endpoint does not know fails on the next request, as at startup.
 
 ## Tmux Multi-Screen Tools
 
