@@ -292,7 +292,7 @@ these fields when they build `TokenUsage`.
       turn 2 ("Repeat the single word you replied with...") answered
       "pomegranate" (Memory: 4 steps, via SiliconFlow, $0.0019);
       `/show-steps` listed steps 0-4 with both answers.
-- [ ] **`/show-config`.** Print the effective settings in one table: model
+- [x] **`/show-config`.** Print the effective settings in one table: model
       class, endpoint, model id, masked API key (first 4 and last 4
       characters), provider order, current OpenRouter session id
       (`current_session_id()`), system-prompt position
@@ -303,6 +303,32 @@ these fields when they build `TokenUsage`.
       hand. Note that `docs/CLI.md` promises a `~/.bpsa.yaml` config layer
       that `bp_cli.py` never reads; `/show-config` should state the actual
       source of each value (env, `.env`, default).
+      LANDED (commit 8154ed6): `cmd_show_config` in `bp_cli.py` prints a
+      Setting / Value / Source table: model class and id, endpoint, key
+      masked by `mask_secret` (first 4 + "..." + last 4), provider order,
+      `current_session_id()` or "(disabled)", system-prompt position, max
+      tokens, `BPSA_PRICE_*` when set, executor, max steps, planning
+      interval, auto-approve, the `agent.compression_config` thresholds and
+      compression model, and the browser/GUI/image/tmux/MCP tool sets.
+      `env_source` returns "env", ".env" or "default"; `try_load_dotenv`
+      records in `_dotenv_keys` the names that `./.env` added (load_dotenv
+      never overrides a name already in the process env). `_setting_source`
+      names the slash command (`/model`, `/set-max-steps`, `/plan`,
+      `/compression-*`) when the live value differs from the startup value.
+      The footer and `docs/CLI.md` say `~/.bpsa.yaml` is not read. Tests:
+      `tests/test_bp_show_config.py` (11 new; the masked key is asserted and
+      the full fake key is asserted absent). Full suite: 771 passed, 87
+      failed, 39 skipped, 4 errors vs baseline 684/101/39/4; every failed id
+      is in the baseline list except
+      `test_tools.py::TestToolCollection::test_integration_from_mcp_with_sse`
+      (TimeoutError connecting to a local MCP server, same environment cause
+      as the streamable_http one; `test_tools.py` never imports `bp_cli`).
+      Live check under tmux (no model calls): `/show-config` showed
+      `OpenAIModel`, `~deepseek/deepseek-flash-latest` (env), the key as
+      `sk-o...a367`, a `bpsa-...` session id (env), all compression
+      thresholds at their defaults; after
+      `/model deepseek/deepseek-chat-v3-0324` the Model id row read
+      `deepseek/deepseek-chat-v3-0324` with source `/model`.
 - [ ] **Startup connectivity check.** After `build_model` and before the
       banner, send one tiny request (a single short user message with
       `max_tokens` around 8) and fail with a clear message on a bad key,
