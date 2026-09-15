@@ -519,3 +519,8 @@ is caused by the entries above.
       outside the Baseline list are the two environment-flaky MCP
       integration tests in tests/test_tools.py. Tests:
       tests/test_bp_steering.py (25).
+
+
+## CLI ergonomics (continued)
+
+- [ ] **`BPSA_DEFAULT_AUTO_APPROVE` environment variable.** The `--auto-approve on|off` flag exists but the default lives only on the command line, so a user who always wants `on` (or always wants `off`) cannot set it once in `.env` for every `bpsa` invocation. Add an env var `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, unset = keep the current default) read once in `main()` in `src/smolagents/bp_cli.py` before `run_repl` / `run_one_shot`, so it seeds the same `_auto_approve` global the CLI flag and `/auto-approve` already toggle. Precedence: an explicit `--auto-approve on|off` on the command line wins over the env var; the env var wins over the built-in default. `/show-config` must show the row with source `env`, `.env` or `default`. Document the variable in `docs/CLI.md` (Environment Variables table) and in the `--help` text. Intended mainly for `ad-infinitum` and other unattended runs where no terminal is present, and for the `--auto-approve off` operator who wants to stop flipping it on every launch.
