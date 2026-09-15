@@ -191,6 +191,8 @@ $ ad-infinitum ../tasks/ --cycles 0   # Run ad infinitum
 | `BPSA_PLAN_INTERVAL` | off | Planning interval (e.g., `22`) |
 | `BPSA_COOLDOWN` | `0` | Seconds to wait between cycles |
 | `BPSA_INJECT_FOLDER` | `true` | Inject directory tree (see `bpsa` section above). Only applies to `.md` prompt tasks. |
+| `BPSA_MAX_SESSION_TOKENS` | `0` | Token budget (input + output) summed over every `.md` task of the run; warns once at 80%, stops the loop at 100% and exits with code 3. `0` = no limit. |
+| `BPSA_MAX_SESSION_COST` | `0` | Same for cost in USD; needs a reported (OpenRouter) or estimated (`BPSA_PRICE_*`) cost. |
 
 Example `.env` file:
 ```

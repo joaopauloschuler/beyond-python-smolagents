@@ -38,6 +38,9 @@ Environment variables (same BPSA_* as bpsa — including BPSA_SYSTEM_PROMPT_FIRS
     BPSA_INJECT_FOLDER  - Inject directory tree (default: true = cwd, false = off, or a path)
     BPSA_BROWSER        - Enable Playwright browser integration (default: false)
     BPSA_GUI            - Enable native GUI interaction tools (default: false)
+    BPSA_MAX_SESSION_TOKENS / BPSA_MAX_SESSION_COST - Budget over every prompt task of the run (input + output
+                          tokens; USD when the model reports or estimates a cost): warn once at 80%, stop the loop
+                          at 100% and exit with code BUDGET_EXIT_CODE (3). 0/unset = no limit.
 
     Context compression parameters (see bpsa --help or CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED, BPSA_COMPRESSION_KEEP_RECENT_STEPS,
@@ -64,6 +67,9 @@ from smolagents.bp_utils import get_env, get_env_bool, get_env_int
 
 
 console = Console()
+
+# Exit code of `ad-infinitum` when BPSA_MAX_SESSION_TOKENS or BPSA_MAX_SESSION_COST stops the loop.
+BUDGET_EXIT_CODE = 3
 
 _EXTENSION_TO_KIND = {".md": "prompt", ".py": "python", ".sh": "shell"}
 
@@ -196,6 +202,23 @@ def run_script(task: TaskItem) -> subprocess.CompletedProcess:
     return subprocess.run(cmd)
 
 
+def add_agent_usage(budget_stats: dict, agent) -> None:
+    """Add the agent's monitor token counts and cost to the run totals the session budget compares."""
+    from smolagents.bp_cli import get_agent_cost_usd, get_agent_token_usage
+
+    input_tokens, output_tokens, _ = get_agent_token_usage(agent)
+    budget_stats["total_input_tokens"] += input_tokens
+    budget_stats["total_output_tokens"] += output_tokens
+    budget_stats["total_cost_usd"] += get_agent_cost_usd(agent)
+
+
+def budget_stops_loop(budget_stats: dict, warned: set) -> bool:
+    """Print the once-per-limit budget warnings for the run totals; True when a limit is reached."""
+    from smolagents.bp_cli import warn_session_budget
+
+    return warn_session_budget(budget_stats, warned, stop_hint="Stopping the loop.") == "exceeded"
+
+
 def print_banner(config: dict):
     cycles_str = str(config["cycles"]) if config["cycles"] > 0 else "infinite"
     plan_str = str(config["plan_interval"]) if config["plan_interval"] else "off"
@@ -236,13 +259,18 @@ def print_banner(config: dict):
 
 def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
              browser_enabled=False, gui_enabled=False, image_enabled=False, mcp_servers=None):
-    """Core autonomous loop: cycles x tasks, fresh agent per task."""
-    from smolagents.bp_cli import _shutdown_browser, _shutdown_gui, _shutdown_mcp, build_agent
+    """Core autonomous loop: cycles x tasks, fresh agent per task. Returns True when the session budget stopped it."""
+    from smolagents.bp_cli import (
+        _shutdown_browser, _shutdown_gui, _shutdown_mcp, build_agent, get_agent_token_usage, session_budget_state,
+    )
 
     original_dir = os.getcwd()
     total_start = time.time()
     cycle = 0
     total_tasks_run = 0
+    budget_stats = {"total_input_tokens": 0, "total_output_tokens": 0, "total_cost_usd": 0.0}
+    budget_warned = set()
+    budget_exceeded = False
 
     while cycles == 0 or cycle < cycles:
         cycle += 1
@@ -277,13 +305,7 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                     elapsed = time.time() - task_start
                     total_tasks_run += 1
 
-                    # Get token usage
-                    try:
-                        usage = agent.monitor.get_total_token_counts()
-                        in_tok, out_tok = usage.input_tokens, usage.output_tokens
-                    except Exception:
-                        in_tok, out_tok = 0, 0
-
+                    in_tok, out_tok, _ = get_agent_token_usage(agent)
                     console.print(
                         f"[green]OK[/] {task_label} | {elapsed:.1f}s | "
                         f"In: {in_tok:,} | Out: {out_tok:,}"
@@ -296,9 +318,13 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                     total_tasks_run += 1
                     console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
                 finally:
+                    add_agent_usage(budget_stats, agent)
                     _shutdown_mcp(agent)
                     _shutdown_browser(agent)
                     _shutdown_gui(agent)
+                if budget_stops_loop(budget_stats, budget_warned):
+                    budget_exceeded = True
+                    break
 
             else:
                 # Script execution (python or shell)
@@ -321,6 +347,9 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
                     total_tasks_run += 1
                     console.print(f"[red]FAIL[/] {task_label} | {elapsed:.1f}s | {e}")
 
+        if budget_exceeded:
+            console.print(f"\n[bold red]Session budget reached: stopped in cycle {cycle}.[/]")
+            break
         if _stop_requested:
             console.print(f"\n[yellow]Stopped after cycle {cycle}.[/]")
             break
@@ -338,6 +367,10 @@ def run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldo
     console.print(f"  Cycles completed: [green]{cycle}[/]")
     console.print(f"  Tasks run: [green]{total_tasks_run}[/]")
     console.print(f"  Total time: [green]{total_elapsed:.1f}s[/]")
+    budget_message = session_budget_state(budget_stats)[1]
+    if budget_message:
+        console.print(f"  Budget: {budget_message}")
+    return budget_exceeded
 
 
 def _resolve_tree_folder(tree_folder):
@@ -386,6 +419,8 @@ def run_ad_infinitum(
         image_enabled: Enable image tools. Default: BPSA_IMAGE or False.
         mcp_servers: List of MCP server specs (URLs or commands).
         banner: Whether to print the startup banner. Default: True.
+
+    Returns BUDGET_EXIT_CODE when BPSA_MAX_SESSION_TOKENS or BPSA_MAX_SESSION_COST stopped the loop, else 0.
 
     Example::
 
@@ -439,8 +474,12 @@ def run_ad_infinitum(
         model = build_model()
 
     # Run the loop
-    run_loop(model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
-             browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, mcp_servers=mcp_servers)
+    budget_exceeded = run_loop(
+        model, tasks, cycles, max_steps, plan_interval, tree_folder, cooldown,
+        browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled,
+        mcp_servers=mcp_servers,
+    )
+    return BUDGET_EXIT_CODE if budget_exceeded else 0
 
 
 def main():
@@ -481,7 +520,7 @@ def main():
     from smolagents.bp_cli import _parse_mcp_servers
     mcp_servers = _parse_mcp_servers(args.mcp or []) or None
 
-    run_ad_infinitum(
+    exit_code = run_ad_infinitum(
         task_source=args.task_source,
         cycles=args.cycles,
         browser_enabled=args.browser if args.browser else None,
@@ -489,6 +528,8 @@ def main():
         image_enabled=args.image if args.image else None,
         mcp_servers=mcp_servers,
     )
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

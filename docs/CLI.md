@@ -67,6 +67,8 @@ All prefixed with `BPSA_`:
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_SKIP_CONNECTIVITY_CHECK` | No | `0` | `1`, `true` or `on` to skip the startup connectivity check (one tiny request that verifies the key, endpoint and model id; see Startup Behavior). Local model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) always skip it. |
 | `BPSA_CONTEXT_LENGTH` | No | `0` | Model context window in integer tokens. `0` or unset: when `BPSA_API_ENDPOINT` contains `openrouter`, `resolve_context_length` asks `GET <endpoint>/models` once at startup (and once per `/model`) for the model id's `context_length`; otherwise the window is unknown. When known, the banner shows `Context: N tokens`, the turn summary shows `Context: NN%` (last model call's input tokens over the window; yellow from 70%, red from 90%) instead of `Context: N chars`, and `BPSA_COMPRESSION_TOKEN_THRESHOLD` defaults to 75% of it. |
+| `BPSA_MAX_SESSION_TOKENS` | No | `0` | Session token budget: input + output tokens over the whole session (`session_stats`). At 80% `warn_session_budget` prints one yellow warning; at 100% the REPL prints a red message and starts no further agent turn (plain prompts, `!!!`, `/redo`, `/run-prompt`, `/repeat`, `/repeat-prompt`) while slash commands keep working. `/clear` resets the totals and so the budget; `/session-load` counts the loaded totals. `ad-infinitum` sums every prompt task and exits with code 3 at 100%. `0`, unset or an invalid value = no limit. |
+| `BPSA_MAX_SESSION_COST` | No | `0` | Session cost budget in USD, same rule, compared against the session's `total_cost_usd`. It only works when the model reports a cost (OpenRouter `usage.cost`) or the `BPSA_PRICE_*` variables allow an estimate; without a known cost the total stays 0 and the limit never triggers. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
@@ -214,6 +216,27 @@ cached input tokens are charged at `BPSA_PRICE_CACHED_INPUT_PER_M` when set,
 else at the input price. When neither a reported cost nor both price variables
 are available, the line has no `$` part. `/show-stats` shows "Total cost" and
 "Avg cost/turn"; `/session-save` and `/session-load` keep the totals.
+
+### Session Budget
+
+`BPSA_MAX_SESSION_TOKENS` (input + output tokens) and `BPSA_MAX_SESSION_COST`
+(USD) cap a session. After each turn `warn_session_budget` compares the
+`session_stats` totals with each limit: at 80% it prints
+`Session budget warning: Session tokens: 16,500 of 20,000 (82%)` once per
+limit; at 100% it prints a red `Session budget exceeded:` message, and from
+then on `session_budget_blocks_turn` refuses every new agent turn (plain
+prompts, `!!!`, `/redo`, `/run-prompt`, `/repeat`, `/repeat-prompt`) with the
+same red message. Slash commands keep working, so `/session-save`,
+`/show-stats` and `/show-config` remain available. `/show-stats` and
+`/show-config` show a "Token budget" / "Cost budget" row (used of limit,
+percent) only when the limit is set. `/clear` resets `session_stats` and
+therefore the budget; `/session-load` restores the saved totals, which count
+against the budget, and prints the warnings again from those totals. Turns
+interrupted with Ctrl+C and `/repeat` cycles are not added to `session_stats`
+today, so they do not count. `ad-infinitum` applies the same limits to the
+sum over every prompt task of the run (`add_agent_usage` in
+`bp_ad_infinitum.py`); when a limit is reached it stops after the current
+task and exits with code 3 (`BUDGET_EXIT_CODE`).
 
 ### Slash Commands
 

@@ -30,6 +30,8 @@ Environment variables:
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
+    BPSA_MAX_SESSION_TOKENS - Session budget in tokens (input + output); warn at 80%, no new turns at 100% (0 = off)
+    BPSA_MAX_SESSION_COST - Session budget in USD, same rule; needs a known cost (0 = off); /clear resets both
 
     Context compression parameters (see CompressionConfig for details):
     BPSA_COMPRESSION_ENABLED                  - Enable compression (default: 1)
@@ -301,6 +303,8 @@ def check_required_env():
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
+        console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
+        console.print("  [bold]BPSA_MAX_SESSION_COST[/] Session cost budget in USD, same rule (default: 0 = off)")
         console.print("\nExample:")
         console.print("  export BPSA_MODEL_ID=Gemini-2.5-Flash")
         console.print("  export BPSA_SERVER_MODEL=OpenAIServerModel")
@@ -464,12 +468,17 @@ CONTEXT_USE_WARN_PERCENT = 70
 CONTEXT_USE_ALERT_PERCENT = 90
 
 
-def env_context_length() -> int:
-    """BPSA_CONTEXT_LENGTH as a positive int; 0 when unset, not an int or not positive."""
+def env_positive_number(name: str, cast=int):
+    """Env var `name` parsed with `cast` (int or float); 0 when unset, not parseable or not positive."""
     try:
-        return max(0, int(get_env("BPSA_CONTEXT_LENGTH", "0")))
+        return max(0, cast(get_env(name, "0")))
     except (TypeError, ValueError):
         return 0
+
+
+def env_context_length() -> int:
+    """BPSA_CONTEXT_LENGTH as a positive int; 0 when unset, not an int or not positive."""
+    return env_positive_number("BPSA_CONTEXT_LENGTH", int)
 
 
 def _model_context_length_entry(entries, model_id: str) -> dict | None:
@@ -788,6 +797,95 @@ def get_agent_cost_usd(agent) -> float:
 def format_cost_usd(cost: float) -> str:
     """Format a USD amount as `$0.0123`; six decimals below one tenth of a cent so tiny costs stay visible."""
     return f"${cost:.6f}" if cost < 0.001 else f"${cost:.4f}"
+
+
+# Session budget: BPSA_MAX_SESSION_TOKENS / BPSA_MAX_SESSION_COST against session_stats totals.
+SESSION_BUDGET_WARN_FRACTION = 0.8
+SESSION_BUDGET_ENV = {"tokens": "BPSA_MAX_SESSION_TOKENS", "cost": "BPSA_MAX_SESSION_COST"}
+SESSION_BUDGET_LABEL = {"tokens": "Session tokens", "cost": "Session cost"}
+SESSION_BUDGET_STOP_HINT = ("No further agent turns; slash commands still work "
+                            "(/session-save, /show-stats; /clear resets the budget).")
+
+
+def session_budget_limits() -> dict[str, float]:
+    """Configured limits {"tokens": int, "cost": float USD}; a limit that is unset, invalid or 0 is left out."""
+    limits = {}
+    for name, cast in (("tokens", int), ("cost", float)):
+        limit = env_positive_number(SESSION_BUDGET_ENV[name], cast)
+        if limit:
+            limits[name] = limit
+    return limits
+
+
+def session_budget_used(session_stats: dict) -> dict[str, float]:
+    """Totals the budget compares: tokens = total_input_tokens + total_output_tokens, cost = total_cost_usd."""
+    input_tokens = int(session_stats.get("total_input_tokens", 0) or 0)
+    output_tokens = int(session_stats.get("total_output_tokens", 0) or 0)
+    return {"tokens": input_tokens + output_tokens, "cost": float(session_stats.get("total_cost_usd", 0.0) or 0.0)}
+
+
+def budget_level(used: float, limit: float) -> str:
+    """"exceeded" at or above the limit, "warn" at or above SESSION_BUDGET_WARN_FRACTION of it, else "ok"."""
+    if used >= limit:
+        return "exceeded"
+    if used >= limit * SESSION_BUDGET_WARN_FRACTION:
+        return "warn"
+    return "ok"
+
+
+def format_budget_usage(name: str, used: float, limit: float) -> str:
+    """`16,500 of 20,000 (82%)` for tokens, `$0.8000 of $1.0000 (80%)` for cost."""
+    percent = int(100 * used / limit)
+    if name == "cost":
+        return f"{format_cost_usd(used)} of {format_cost_usd(limit)} ({percent}%)"
+    return f"{used:,} of {limit:,} ({percent}%)"
+
+
+def session_budget_row_label(name: str) -> str:
+    """Table row label for a limit: "Token budget" or "Cost budget"."""
+    return "Token budget" if name == "tokens" else "Cost budget"
+
+
+def session_budget_levels(session_stats: dict) -> list[tuple[str, str, str]]:
+    """(limit name, level, usage text) per configured limit, in SESSION_BUDGET_ENV order; empty without limits."""
+    used = session_budget_used(session_stats)
+    return [(name, budget_level(used[name], limit), format_budget_usage(name, used[name], limit))
+            for name, limit in session_budget_limits().items()]
+
+
+def session_budget_state(session_stats: dict) -> tuple[str, str]:
+    """("ok" | "warn" | "exceeded", message): the worst level over the configured limits; the message names the
+    limits at that level (all of them when "ok") and is empty when no limit is set."""
+    levels = session_budget_levels(session_stats)
+    for state in ("exceeded", "warn"):
+        messages = [f"{SESSION_BUDGET_LABEL[name]}: {usage}" for name, level, usage in levels if level == state]
+        if messages:
+            return state, "; ".join(messages)
+    return "ok", "; ".join(f"{SESSION_BUDGET_LABEL[name]}: {usage}" for name, _, usage in levels)
+
+
+def warn_session_budget(session_stats: dict, warned: set, stop_hint: str = SESSION_BUDGET_STOP_HINT) -> str:
+    """Print the 80% warning (yellow) or the exceeded message (red, followed by `stop_hint`) once per limit and
+    level, recording each in `warned`; returns the state from session_budget_state."""
+    for name, level, usage in session_budget_levels(session_stats):
+        if level == "ok" or (name, level) in warned:
+            continue
+        warned.add((name, level))
+        message = f"{SESSION_BUDGET_LABEL[name]}: {usage}"
+        if level == "exceeded":
+            console.print(f"[bold red]Session budget exceeded:[/] {message}. {stop_hint}")
+        else:
+            console.print(f"[yellow]Session budget warning:[/] {message}")
+    return session_budget_state(session_stats)[0]
+
+
+def session_budget_blocks_turn(session_stats: dict) -> bool:
+    """True, after printing the red refusal, when a session limit is reached; the REPL then starts no agent turn."""
+    state, message = session_budget_state(session_stats)
+    if state != "exceeded":
+        return False
+    console.print(f"[bold red]Session budget exceeded:[/] {message}. {SESSION_BUDGET_STOP_HINT}")
+    return True
 
 
 def get_agent_last_provider(agent) -> str | None:
@@ -1209,6 +1307,9 @@ def print_stats(session_stats: dict, agent=None):
         table.add_row("Avg tokens/turn", f"{avg_tokens:,}")
         if total_cost > 0:
             table.add_row("Avg cost/turn", format_cost_usd(total_cost / session_stats["turns"]))
+    for name, level, usage in session_budget_levels(session_stats):
+        style = {"ok": "green", "warn": "yellow", "exceeded": "bold red"}[level]
+        table.add_row(session_budget_row_label(name), f"[{style}]{usage}[/]")
     if agent and hasattr(agent, 'get_prompt_char_breakdown'):
         breakdown = agent.get_prompt_char_breakdown()
         table.add_row("", "")
@@ -1247,9 +1348,9 @@ def _setting_source(env_name: str, current, startup_value, command: str) -> str:
 
 
 def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabled=False, tmux_enabled=False,
-                    mcp_servers=None):
+                    mcp_servers=None, session_stats=None):
     """Print the effective settings with the source of each (env, .env, default or the slash command that changed it).
-    The API key is shown masked (mask_secret); the full value is never printed."""
+    The API key is shown masked (mask_secret), never in full; budget rows appear only when a limit is set."""
     from smolagents.bp_thinkers import DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS
     from smolagents.bp_utils import get_env_bool
 
@@ -1277,6 +1378,8 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     for price_var in ("BPSA_PRICE_INPUT_PER_M", "BPSA_PRICE_OUTPUT_PER_M", "BPSA_PRICE_CACHED_INPUT_PER_M"):
         if get_env(price_var):
             table.add_row(price_var, get_env(price_var), env_source(price_var))
+    for name, _, usage in session_budget_levels(session_stats or {}):
+        table.add_row(session_budget_row_label(name), usage, env_source(SESSION_BUDGET_ENV[name]))
     table.add_row("", "", "")
     table.add_row("Executor", str(getattr(agent, "executor_type", "?")), env_source("BPSA_GLOBAL_EXECUTOR"))
     max_steps = getattr(agent, "max_steps", None)
@@ -2386,6 +2489,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
         "total_cached_input_tokens": 0,
         "total_cost_usd": 0.0,
     }
+    budget_warned = set()  # (limit name, level) pairs warn_session_budget already printed
     first_turn = True
 
     while True:
@@ -2504,6 +2608,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     "total_cached_input_tokens": 0,
                     "total_cost_usd": 0.0,
                 }
+                budget_warned = set()
                 last_answer = None
                 first_turn = True
                 console.clear()
@@ -2527,7 +2632,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 continue
             elif cmd == "/show-config":
                 cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
-                                image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                                image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers,
+                                session_stats=session_stats)
                 continue
             elif cmd == "/run-prompt":
                 file_content = load_file_as_prompt(cmd_args)
@@ -2654,6 +2760,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 except ValueError:
                     console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
                     continue
+                if session_budget_blocks_turn(session_stats):
+                    continue
                 cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
                 continue
             elif cmd == "/repeat-prompt":
@@ -2669,7 +2777,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                     console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
                     continue
                 file_content = load_file_as_prompt(parts[1])
-                if file_content is None:
+                if file_content is None or session_budget_blocks_turn(session_stats):
                     continue
                 cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
                 continue
@@ -2681,6 +2789,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 if result is not None:
                     session_stats = result
                     first_turn = False
+                    budget_warned = set()  # loaded totals count; warn again from what they are now
+                    warn_session_budget(session_stats, budget_warned)
                 continue
             elif cmd == "/auto-approve":
                 arg = cmd_args.strip().lower()
@@ -2726,6 +2836,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             else:
                 console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
                 continue
+
+        if session_budget_blocks_turn(session_stats):
+            continue
 
         # Visual separator before agent run
         turn_num = session_stats["turns"] + 1
@@ -2787,6 +2900,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
             print_turn_summary(
                 turn_num, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached, cost_usd=turn_cost
             )
+            warn_session_budget(session_stats, budget_warned)
             console.print()
 
             # Auto-save session periodically
