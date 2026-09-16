@@ -42,7 +42,7 @@ limitations under the License.
 Install the project, including the dictation support, CLIs, OpenAI protocol and LiteLLM dependencies.
 
 ```bash
-$ pip install bpsa[dictation,browser,openai,litellm]
+$ pip install bpsa[dictation,browser,openai,litellm,tmux]
 ```
 
 This will set up the necessary libraries and the Beyond Python Smolagents framework in your environment.
