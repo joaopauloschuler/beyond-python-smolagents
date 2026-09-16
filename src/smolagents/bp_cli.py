@@ -23,6 +23,7 @@ Environment variables:
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_HAS_SESSION_ID - Send a random OpenRouter session_id for sticky provider routing, 1/true/on (default: 0; OpenAI-compatible models only)
+    BPSA_REASONING_EFFORT - reasoning_effort sent with every request, e.g. low/medium/high/xhigh/max (default: unset; OpenAI-compatible models only)
     BPSA_PRICE_INPUT_PER_M  - USD per million input tokens, used to estimate cost when the response has no usage.cost
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
@@ -301,6 +302,7 @@ def check_required_env():
         console.print("  [bold]BPSA_MAX_TOKENS[/]       Max tokens for model (default: 64000)")
         console.print("  [bold]BPSA_PROVIDER_ORDER[/]   OpenRouter provider order, comma-separated (default: '')")
         console.print("  [bold]BPSA_HAS_SESSION_ID[/]   Send a random OpenRouter session_id, 1/true/on (default: 0)")
+        console.print("  [bold]BPSA_REASONING_EFFORT[/] reasoning_effort for reasoning models, e.g. high or max (default: unset)")
         console.print("  [bold]BPSA_PRICE_INPUT_PER_M[/]  USD per million input tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
@@ -361,6 +363,7 @@ def build_model(override_model_id=None):
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
     provider_order = get_env("BPSA_PROVIDER_ORDER", "")
+    reasoning_effort = (get_env("BPSA_REASONING_EFFORT", "") or "").strip()
     session_id = current_session_id()
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
     
@@ -396,6 +399,10 @@ def build_model(override_model_id=None):
             extra_body["usage"] = {"include": True}
         if extra_body:
             extra_kwargs["extra_body"] = extra_body
+        # Standard OpenAI field (also accepted by OpenRouter), so it goes as a plain kwarg:
+        # OpenAIModel forwards constructor kwargs to every chat.completions.create call.
+        if reasoning_effort:
+            extra_kwargs["reasoning_effort"] = reasoning_effort
         model = model_class(model_id, api_key=api_key, api_base=api_endpoint, **extra_kwargs)
     elif canonical_name == "LiteLLMModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
@@ -1539,6 +1546,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_row("API key", mask_secret(get_env("BPSA_KEY_VALUE")), env_source("BPSA_KEY_VALUE"))
     table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
     table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_source("BPSA_HAS_SESSION_ID"))
+    table.add_row("Reasoning effort", get_env("BPSA_REASONING_EFFORT") or "(model default)", env_source("BPSA_REASONING_EFFORT"))
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
     table.add_row("System prompt position", prompt_position, env_source("BPSA_SYSTEM_PROMPT_FIRST"))
     table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))

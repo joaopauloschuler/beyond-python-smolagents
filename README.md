@@ -76,6 +76,8 @@ export BPSA_MODEL_ID="z-ai/glm-5.3-flash"
 export BPSA_PROVIDER_ORDER="openai,together"
 # Optional: send a random OpenRouter session_id so requests stick to one provider (prompt cache)
 export BPSA_HAS_SESSION_ID=1
+# Optional: reasoning effort for reasoning models (e.g. low, medium, high, xhigh, max)
+# export BPSA_REASONING_EFFORT=max
 # Optional: prices in USD per million tokens, for a cost estimate on endpoints that report no cost
 # export BPSA_PRICE_INPUT_PER_M=0.30
 # export BPSA_PRICE_OUTPUT_PER_M=1.20
