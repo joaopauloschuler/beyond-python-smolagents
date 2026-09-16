@@ -98,10 +98,19 @@ class TmuxCreateTool(Tool):
         "Each session is a full shell you can send commands to and read output from."
         "* Create a new bash session:" 
         "  tmux_create(\"newsession\") or tmux_create(\"newsession\",\"bash\")"
-        "* Type ls -l:"
-        "  tmux_send(\"newsession\",\"ls -l\")"
-        "* Create a fresh clone of yourself without your context/history:"
-        "  tmux_create(\"myclone\",\"bpsa\")"
+        "* Type ls -l:\n"
+        "  tmux_send(\"newsession\", \"ls -l\")\n"
+        "\n"
+        "* Create a fresh BPSA instance on Linux without this conversation's context/history:\n"
+        "  tmux_create(\"myclone\", \"BPSA_VERBOSE=0 bpsa\")\n"
+        "Wait for the BPSA startup prompt (for example, `>` and `Enter to submit`) "
+        "before sending input with tmux_send. "
+        "After sending input, use tmux_wait or tmux_read to wait for and inspect the response. "
+        "Do not treat echoed input as the child agent's reply. "
+        "If an approval prompt appears, send `y` or `n` as appropriate.\n"
+        "\n"
+        "* Destroy a session when it is no longer needed:\n"
+        "  tmux_destroy(\"myclone\")"
     )
     inputs = {
         "session_name": {
