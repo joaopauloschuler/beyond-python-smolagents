@@ -76,6 +76,7 @@ from .models import (
     ChatMessageToolCall,
     MessageRole,
     Model,
+    ModelRefusalError,
     agglomerate_stream_deltas,
     parse_json_if_needed,
 )
@@ -2047,6 +2048,9 @@ class CodeAgent(MultiStepAgent):
                         memory_step.model_output_message = chat_message
                         model_output = chat_message.content
                     success_flag = True
+                except ModelRefusalError:
+                    # A refusal repeats for the same prompt, so retrying only wastes time.
+                    raise
                 except:
                     if (retry_cnt == MAX_TRIES):
                         raise
@@ -2062,10 +2066,10 @@ class CodeAgent(MultiStepAgent):
             memory_step.model_output = model_output
         except Exception as e:
             error_message = f"Error in generating model output:\n{e}"
-            if (not self.model.flatten_messages_as_text):
+            if (not self.model.flatten_messages_as_text) and not isinstance(e, ModelRefusalError):
                 error_message += f"\nConsider using `flatten_messages_as_text=True` when creating the model."
             raise AgentGenerationError(error_message, self.logger) from e
-        
+
         str_len = 0
         str_len_str = '0'
         saved_files = []

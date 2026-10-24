@@ -42,6 +42,21 @@ RETRY_MAX_ATTEMPTS = 3
 RETRY_EXPONENTIAL_BASE = 2
 RETRY_JITTER = True
 STRUCTURED_GENERATION_PROVIDERS = ["cerebras", "fireworks-ai"]
+
+
+class ModelRefusalError(Exception):
+    """Raised when the provider refuses to answer (finish_reason "content_filter"), e.g. a safety filter."""
+
+    pass
+
+
+def raise_if_refused(finish_reason: str | None, model_id: str):
+    # Refusals are deterministic for a given prompt, so they must not be mistaken for an empty answer or retried.
+    if finish_reason == "content_filter":
+        raise ModelRefusalError(
+            f"The provider refused to answer with model {model_id} (finish_reason=content_filter, no output). "
+            "The prompt likely triggered the provider's safety filter."
+        )
 CODEAGENT_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
@@ -1391,6 +1406,7 @@ class LiteLLMModel(ApiModel):
                 " This may indicate a possible API or upstream issue. "
                 f"Response details: {response.model_dump()}"
             )
+        raise_if_refused(response.choices[0].finish_reason, self.model_id)
         content = response.choices[0].message.content
         if stop_sequences is not None and not self.supports_stop_parameter:
             content = remove_content_after_stop_sequences(content, stop_sequences)
@@ -1439,6 +1455,7 @@ class LiteLLMModel(ApiModel):
                 )
             if event.choices:
                 choice = event.choices[0]
+                raise_if_refused(getattr(choice, "finish_reason", None), self.model_id)
                 if choice.delta:
                     yield ChatMessageStreamDelta(
                         content=choice.delta.content,
@@ -1847,6 +1864,7 @@ class OpenAIModel(ApiModel):
                 )
             if event.choices:
                 choice = event.choices[0]
+                raise_if_refused(getattr(choice, "finish_reason", None), self.model_id)
                 if choice.delta:
                     yield ChatMessageStreamDelta(
                         content=choice.delta.content,
@@ -1886,6 +1904,7 @@ class OpenAIModel(ApiModel):
         )
         self._apply_rate_limit()
         response = self.retryer(self.client.chat.completions.create, **completion_kwargs)
+        raise_if_refused(response.choices[0].finish_reason, self.model_id)
         content = response.choices[0].message.content
         if stop_sequences is not None and not self.supports_stop_parameter:
             content = remove_content_after_stop_sequences(content, stop_sequences)
@@ -2347,4 +2366,5 @@ __all__ = [
     "AmazonBedrockModel",
     "GoogleColabModel",
     "ChatMessage",
+    "ModelRefusalError",
 ]
