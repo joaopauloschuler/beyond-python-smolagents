@@ -1359,6 +1359,8 @@ class LiteLLMModel(ApiModel):
             if flatten_messages_as_text is not None
             else model_id.startswith(("ollama", "groq", "cerebras"))
         )
+        # Ask LiteLLM to mark the first message (the system prompt) for prompt caching.
+        kwargs.setdefault("cache_control_injection_points", [{"location": "message", "index": 0}])
         super().__init__(
             model_id=model_id,
             custom_role_conversions=custom_role_conversions,
@@ -1418,6 +1420,7 @@ class LiteLLMModel(ApiModel):
             token_usage=TokenUsage(
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
+                cached_input_tokens=extract_cached_input_tokens(response.usage),
             ),
         )
 
@@ -1451,6 +1454,7 @@ class LiteLLMModel(ApiModel):
                     token_usage=TokenUsage(
                         input_tokens=event.usage.prompt_tokens,
                         output_tokens=event.usage.completion_tokens,
+                        cached_input_tokens=extract_cached_input_tokens(event.usage),
                     ),
                 )
             if event.choices:
