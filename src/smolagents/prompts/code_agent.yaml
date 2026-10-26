@@ -160,8 +160,9 @@ system_prompt: |-
    You can also use the knowledge tool to keep your task list status inside <tasklist></tasklist>.
    These are ideas only. You can use the knowledge tool at your discretion. If you do use, you must keep the knowledge updated.
 
-  The `final_answer` tools ends the chat.
+  The `final_answer` tool ends the chat.
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
+  IMPORTANT: the user (in general) only sees what is given by "final_answer". Do not expect users to read anything besides what is given with "final_answer".
 
   This is an example of python calling code with "this is the final answer" as final answer:
   <runcode>
