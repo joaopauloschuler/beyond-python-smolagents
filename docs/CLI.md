@@ -70,7 +70,7 @@ All prefixed with `BPSA_`:
 | `BPSA_PRICE_INPUT_PER_M` | No | - | USD per million input tokens. With `BPSA_PRICE_OUTPUT_PER_M` it lets `OpenAIModel` estimate the cost of each request when the response carries no `usage.cost` (OpenAI, DeepSeek). |
 | `BPSA_PRICE_OUTPUT_PER_M` | No | - | USD per million output tokens. Both price variables must be set for an estimate; otherwise no cost is shown. |
 | `BPSA_PRICE_CACHED_INPUT_PER_M` | No | _(input price)_ | USD per million cached input tokens, applied to the cached share of the input when the provider reports it. |
-| `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`) |
+| `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`). The `--verbose on\|off` CLI flag overrides it when given. Applies to interactive, `run` and piped modes. |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_SKIP_CONNECTIVITY_CHECK` | No | `0` | `1`, `true` or `on` to skip the startup connectivity check (one tiny request that verifies the key, endpoint and model id; see Startup Behavior). Local model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) always skip it. |
 | `BPSA_CONTEXT_LENGTH` | No | `0` | Model context window in integer tokens. `0` or unset: when `BPSA_API_ENDPOINT` contains `openrouter`, `resolve_context_length` asks `GET <endpoint>/models` once at startup (and once per `/model`) for the model id's `context_length`; otherwise the window is unknown. When known, the banner shows `Context: N tokens`, the turn summary shows `Context: NN%` (last model call's input tokens over the window; yellow from 70%, red from 90%) instead of `Context: N chars`, and `BPSA_COMPRESSION_TOKEN_THRESHOLD` defaults to 75% of it. |
@@ -426,7 +426,7 @@ CLI `--mcp` entries and `BPSA_MCP` entries are merged, so both can be used simul
 
 Priority (highest to lowest):
 
-1. CLI flags (`--load-instructions`, `--auto-approve`, `--browser`, `--gui-x11`, `--image`, `--tmux`, `--mcp`); there is no `--model` flag, use `/model <id>` inside the REPL
+1. CLI flags (`--load-instructions`, `--auto-approve`, `--verbose`, `--browser`, `--gui-x11`, `--image`, `--tmux`, `--mcp`); there is no `--model` flag, use `/model <id>` inside the REPL
 2. Environment variables (`BPSA_*`)
 3. Config file (`~/.bpsa.yaml`) - documented but not implemented: `bp_cli.py` does not read it
 4. Built-in defaults

@@ -78,6 +78,8 @@ export BPSA_PROVIDER_ORDER="openai,together"
 export BPSA_HAS_SESSION_ID=1
 # Optional: reasoning effort for reasoning models (e.g. low, medium, high, xhigh, max)
 # export BPSA_REASONING_EFFORT=max
+# Optional: verbose step output, 0 or 1 (default 0). The --verbose on|off flag overrides it.
+# export BPSA_VERBOSE=1
 # Optional: prices in USD per million tokens, for a cost estimate on endpoints that report no cost
 # export BPSA_PRICE_INPUT_PER_M=0.30
 # export BPSA_PRICE_OUTPUT_PER_M=1.20
