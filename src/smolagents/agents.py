@@ -2037,7 +2037,12 @@ class CodeAgent(MultiStepAgent):
                                 input_tokens=count_messages_chars(input_messages) // CHARS_PER_TOKEN,
                                 output_tokens=len(output_text) // CHARS_PER_TOKEN if output_text else 0,
                             )
-                        chat_message = ChatMessage(role="assistant", content=output_text, token_usage=stream_usage)
+                        chat_message = ChatMessage(
+                            role="assistant",
+                            content=output_text,
+                            token_usage=stream_usage,
+                            finish_reason=chat_message.finish_reason,
+                        )
                         memory_step.model_output_message = chat_message
                         model_output = chat_message.content
                     else:
@@ -2065,6 +2070,7 @@ class CodeAgent(MultiStepAgent):
             #     memory_step.model_output_message.content = model_output
             memory_step.token_usage = chat_message.token_usage
             memory_step.model_output = model_output
+            output_truncated = was_output_truncated(chat_message)
         except Exception as e:
             error_message = f"Error in generating model output:\n{e}"
             if (not self.model.flatten_messages_as_text) and not isinstance(e, ModelRefusalError):
@@ -2075,6 +2081,8 @@ class CodeAgent(MultiStepAgent):
         str_len_str = '0'
         saved_files = []
 
+        if model_output is None and output_truncated:
+            model_output = ''  # reasoning used the whole output budget; still tell the model below
         if model_output is not None:
             model_output = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', str(model_output)) # remove escaped tags
             model_output = remove_after_markers(model_output, STOP_SEQUENCES, True)
@@ -2098,7 +2106,7 @@ class CodeAgent(MultiStepAgent):
             # len2 = len(model_output)
             appended_files = self.append_files_from_text(model_output)
             model_output = self.remove_tags('appendtofile', model_output)
-            if (is_valid_python_code(model_output)):
+            if is_valid_python_code(model_output) and not (output_truncated and not model_output.strip()):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
@@ -2116,7 +2124,13 @@ class CodeAgent(MultiStepAgent):
             skip_next_approval = False
             if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
                 skip_next_approval = True  # system-generated reminders, no approval needed
-                if ( (len(saved_files)>0) or (len(appended_files)>0)):
+                if output_truncated:
+                    model_output_for_parsing = model_output_for_parsing + """
+```py
+print(\"Your previous response was cut off at the output token limit before it reached a <runcode> block. Keep your reasoning and text brief, and write the <runcode> block early.\")
+```<end_code>
+"""
+                elif ( (len(saved_files)>0) or (len(appended_files)>0)):
                     model_output_for_parsing = model_output_for_parsing + """
 ```py
 print(\"Files have been updated.\")
@@ -2256,13 +2270,7 @@ You can combine the above to be able to run very large portions of python code i
                 observation = "Execution logs:\n" + code_output.logs
             else:
                 if not(code_output.is_final_answer):
-                    if was_output_truncated(memory_step.model_output_message):
-                        observation = (
-                            "# Your previous response was cut off at the output token limit and contained no code. "
-                            "Reasoning used up the budget. Keep your reasoning brief and write the code block right away."
-                        )
-                    else:
-                        observation = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
+                    observation = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
                     execution_outputs_console = [
                         Text("Message:", style="bold"),
                         Text(observation),

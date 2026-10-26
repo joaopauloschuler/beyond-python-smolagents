@@ -57,11 +57,16 @@ def raise_if_refused(finish_reason: str | None, model_id: str):
             f"The provider refused to answer with model {model_id} (finish_reason=content_filter, no output). "
             "The prompt likely triggered the provider's safety filter."
         )
+
+
 def was_output_truncated(message) -> bool:
-    """True when the provider stopped because it hit the output token limit (finish_reason "length")."""
-    raw = getattr(message, "raw", None)
-    choices = getattr(raw, "choices", None) or []
-    return bool(choices) and getattr(choices[0], "finish_reason", None) == "length"
+    """True when the provider stopped because it hit the output token limit (finish_reason "length").
+    Reads message.finish_reason (set from streams), else the raw response of a non-streamed call."""
+    finish_reason = getattr(message, "finish_reason", None)
+    if finish_reason is None:
+        choices = getattr(getattr(message, "raw", None), "choices", None) or []
+        finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
+    return finish_reason == "length"
 
 
 CODEAGENT_RESPONSE_FORMAT = {
@@ -151,6 +156,7 @@ class ChatMessage:
     tool_calls: list[ChatMessageToolCall] | None = None
     raw: Any | None = None  # Stores the raw output from the API
     token_usage: TokenUsage | None = None
+    finish_reason: str | None = None
 
     def __post_init__(self) -> None:
         if self.tool_calls is None:
@@ -239,6 +245,7 @@ class ChatMessageStreamDelta:
     content: str | None = None
     tool_calls: list[ChatMessageToolCallStreamDelta] | None = None
     token_usage: TokenUsage | None = None
+    finish_reason: str | None = None
 
 
 def extract_cached_input_tokens(usage) -> int:
@@ -340,7 +347,9 @@ def agglomerate_stream_deltas(
     total_cached_input_tokens = 0
     total_cost_usd = 0.0
     provider = None
+    finish_reason = None
     for stream_delta in stream_deltas:
+        finish_reason = stream_delta.finish_reason or finish_reason
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
             total_output_tokens += stream_delta.token_usage.output_tokens
@@ -395,6 +404,7 @@ def agglomerate_stream_deltas(
             provider=provider,
             cost_usd=total_cost_usd,
         ),
+        finish_reason=finish_reason,
     )
 
 
@@ -1481,10 +1491,12 @@ class LiteLLMModel(ApiModel):
                         ]
                         if choice.delta.tool_calls
                         else None,
+                        finish_reason=getattr(choice, "finish_reason", None),
                     )
                 else:
                     if not getattr(choice, "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
+                    yield ChatMessageStreamDelta(content="", finish_reason=choice.finish_reason)
 
 
 class LiteLLMRouterModel(LiteLLMModel):
@@ -1764,10 +1776,12 @@ class InferenceClientModel(ApiModel):
                         ]
                         if choice.delta.tool_calls
                         else None,
+                        finish_reason=getattr(choice, "finish_reason", None),
                     )
                 else:
                     if not getattr(choice, "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
+                    yield ChatMessageStreamDelta(content="", finish_reason=choice.finish_reason)
 
 
 class OpenAIModel(ApiModel):
@@ -1890,10 +1904,12 @@ class OpenAIModel(ApiModel):
                         ]
                         if choice.delta.tool_calls
                         else None,
+                        finish_reason=getattr(choice, "finish_reason", None),
                     )
                 else:
                     if not getattr(choice, "finish_reason", None):
                         raise ValueError(f"No content or tool calls in event: {event}")
+                    yield ChatMessageStreamDelta(content="", finish_reason=choice.finish_reason)
 
     def generate(
         self,
