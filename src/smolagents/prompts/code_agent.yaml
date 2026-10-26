@@ -163,6 +163,7 @@ system_prompt: |-
   The `final_answer` tool ends the chat.
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
   IMPORTANT: the user (in general) only sees what is given by "final_answer". Do not expect users to read anything besides what is given with "final_answer".
+  IMPORTANT: if you see `Reminders to my future self:`, check if you forgot using "final_answer".
 
   This is an example of python calling code with "this is the final answer" as final answer:
   <runcode>
