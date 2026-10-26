@@ -2543,7 +2543,7 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         _shutdown_mcp(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None):
+def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve
     _auto_approve = auto_approve
     try_load_dotenv()
@@ -2558,7 +2558,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     context_length = resolve_context_length(model)
     apply_context_length(agent, context_length)
     global _verbose
-    verbose = get_env("BPSA_VERBOSE", default="1") == "1"
+    verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="1") == "1"
     _verbose = verbose
 
     console.clear()
@@ -3156,6 +3156,10 @@ def main():
         help="Enable tmux multi-screen tools (create, send, read, list, destroy, wait)",
     )
     parser.add_argument(
+        "--verbose", choices=["on", "off"], default=None,
+        help="Verbose output on/off. Overrides BPSA_VERBOSE when set",
+    )
+    parser.add_argument(
         "--mcp", action="append", metavar="URL_OR_CMD", dest="mcp",
         help="Connect an MCP server. Use a URL for HTTP servers or a shell command for stdio servers. Can be repeated for multiple servers.",
     )
@@ -3188,7 +3192,7 @@ def main():
     if args.command == "run":
         run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=None if args.verbose is None else args.verbose == "on")
 
 
 if __name__ == "__main__":
