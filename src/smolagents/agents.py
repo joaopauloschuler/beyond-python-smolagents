@@ -77,6 +77,7 @@ from .models import (
     MessageRole,
     Model,
     ModelRefusalError,
+    was_output_truncated,
     agglomerate_stream_deltas,
     parse_json_if_needed,
 )
@@ -2255,7 +2256,13 @@ You can combine the above to be able to run very large portions of python code i
                 observation = "Execution logs:\n" + code_output.logs
             else:
                 if not(code_output.is_final_answer):
-                    observation = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
+                    if was_output_truncated(memory_step.model_output_message):
+                        observation = (
+                            "# Your previous response was cut off at the output token limit and contained no code. "
+                            "Reasoning used up the budget. Keep your reasoning brief and write the code block right away."
+                        )
+                    else:
+                        observation = '# The code did not produce any output. Remember that you need to print results to be able to see results.'
                     execution_outputs_console = [
                         Text("Message:", style="bold"),
                         Text(observation),

@@ -57,6 +57,13 @@ def raise_if_refused(finish_reason: str | None, model_id: str):
             f"The provider refused to answer with model {model_id} (finish_reason=content_filter, no output). "
             "The prompt likely triggered the provider's safety filter."
         )
+def was_output_truncated(message) -> bool:
+    """True when the provider stopped because it hit the output token limit (finish_reason "length")."""
+    raw = getattr(message, "raw", None)
+    choices = getattr(raw, "choices", None) or []
+    return bool(choices) and getattr(choices[0], "finish_reason", None) == "length"
+
+
 CODEAGENT_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
