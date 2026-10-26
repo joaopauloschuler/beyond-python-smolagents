@@ -1,4 +1,4 @@
-"""Tests for BPSA_REASONING_EFFORT: build_model forwards it as reasoning_effort to OpenAI-compatible models only."""
+"""Tests for BPSA_REASONING_EFFORT: build_model forwards it as reasoning_effort to OpenAI-compatible and LiteLLM models."""
 
 from unittest.mock import MagicMock
 
@@ -68,7 +68,7 @@ def test_reasoning_effort_reaches_completion_call(monkeypatch):
     assert completion_kwargs["reasoning_effort"] == "max"
 
 
-def test_litellm_model_ignores_reasoning_effort(monkeypatch):
+def test_litellm_model_forwards_reasoning_effort(monkeypatch):
     import smolagents
     from smolagents import bp_cli
 
@@ -77,7 +77,7 @@ def test_litellm_model_ignores_reasoning_effort(monkeypatch):
     model_class = MagicMock(side_effect=lambda **kwargs: MagicMock(model_id=kwargs["model_id"]))
     monkeypatch.setattr(smolagents, "LiteLLMModel", model_class)
     bp_cli.build_model()
-    assert "reasoning_effort" not in model_class.call_args.kwargs
+    assert model_class.call_args.kwargs["reasoning_effort"] == "max"
 
 
 def test_show_config_row(monkeypatch):

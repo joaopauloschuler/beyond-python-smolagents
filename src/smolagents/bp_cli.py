@@ -23,7 +23,7 @@ Environment variables:
     BPSA_MAX_TOKENS     - Max tokens for model (default: 64000)
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_HAS_SESSION_ID - Send a random OpenRouter session_id for sticky provider routing, 1/true/on (default: 0; OpenAI-compatible models only)
-    BPSA_REASONING_EFFORT - reasoning_effort sent with every request, e.g. low/medium/high/xhigh/max (default: unset; OpenAI-compatible models only)
+    BPSA_REASONING_EFFORT - reasoning_effort sent with every request, e.g. low/medium/high/xhigh/max (default: unset; OpenAI-compatible and LiteLLM models only)
     BPSA_PRICE_INPUT_PER_M  - USD per million input tokens, used to estimate cost when the response has no usage.cost
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
@@ -405,7 +405,9 @@ def build_model(override_model_id=None):
             extra_kwargs["reasoning_effort"] = reasoning_effort
         model = model_class(model_id, api_key=api_key, api_base=api_endpoint, **extra_kwargs)
     elif canonical_name == "LiteLLMModel":
-        model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
+        # Standard reasoning_effort field, forwarded to litellm.completion only when set.
+        litellm_kwargs = {"reasoning_effort": reasoning_effort} if reasoning_effort else {}
+        model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens, **litellm_kwargs)
     elif canonical_name == "LiteLLMRouterModel":
         model = model_class(model_id=model_id, api_key=api_key, api_base=api_endpoint, max_tokens=max_tokens)
     elif canonical_name == "InferenceClientModel":
