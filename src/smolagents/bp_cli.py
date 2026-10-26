@@ -27,7 +27,7 @@ Environment variables:
     BPSA_PRICE_INPUT_PER_M  - USD per million input tokens, used to estimate cost when the response has no usage.cost
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
-    BPSA_VERBOSE        - Verbose output (0 or 1, default: 1)
+    BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -79,7 +79,7 @@ VERSION = "1.24-bp"
 console = Console()
 
 # Mutable state for verbose mode, accessible by the step callback
-_verbose = True
+_verbose = False
 # Mutable state for auto-approve mode
 _auto_approve = False
 
@@ -2511,9 +2511,10 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None):
-    global _auto_approve
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
+    global _auto_approve, _verbose
     _auto_approve = auto_approve
+    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
     check_required_env()
     model = build_model()
@@ -2544,8 +2545,9 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
 
 
 def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve
+    global _auto_approve, _verbose
     _auto_approve = auto_approve
+    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
     check_required_env()
 
@@ -2557,9 +2559,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
     round_trip_seconds = check_model_connectivity(model)
     context_length = resolve_context_length(model)
     apply_context_length(agent, context_length)
-    global _verbose
-    verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="1") == "1"
-    _verbose = verbose
+    verbose = _verbose
 
     console.clear()
     dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
@@ -3179,20 +3179,21 @@ def main():
     env_mcp = get_env("BPSA_MCP", "")
     env_mcp_list = [s.strip() for s in env_mcp.splitlines() if s.strip()]
     mcp_servers = _parse_mcp_servers((args.mcp or []) + env_mcp_list) or None
+    verbose_override = None if args.verbose is None else args.verbose == "on"
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:
         task = sys.stdin.read().strip()
         if task:
-            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+            run_one_shot(task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=verbose_override)
         else:
             fail("No input provided via pipe.")
         return
 
     if args.command == "run":
-        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+        run_one_shot(args.task, skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=verbose_override)
     else:
-        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=None if args.verbose is None else args.verbose == "on")
+        run_repl(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=verbose_override)
 
 
 if __name__ == "__main__":
