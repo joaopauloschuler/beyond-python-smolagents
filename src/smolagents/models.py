@@ -50,22 +50,34 @@ class ModelRefusalError(Exception):
     pass
 
 
+# Model ids whose provider refuses prompts asking for reasoning in the response text ("reasoning_extraction").
+REASONING_EXTRACTION_GUARDED_MODELS = re.compile(r"claude-(fable|opus|sonnet|mythos)", re.IGNORECASE)
+
+
 def raise_if_refused(finish_reason: str | None, model_id: str):
     # Refusals are deterministic for a given prompt, so they must not be mistaken for an empty answer or retried.
     if finish_reason == "content_filter":
+        hint = ""
+        if REASONING_EXTRACTION_GUARDED_MODELS.search(model_id or ""):
+            if accepts_reasoning_tags(model_id):
+                hint = (" This model refuses prompts with the <thoughts>/<plans>/<freewill> sections, which"
+                        " BPSA_REASONING_TAGS=on keeps; set BPSA_REASONING_TAGS=off.")
+            else:
+                hint = (" The <thoughts>/<plans>/<freewill> sections are already off (BPSA_REASONING_TAGS),"
+                        " so another policy area (e.g. cyber or bio) or the task text likely triggered it.")
         raise ModelRefusalError(
             f"The provider refused to answer with model {model_id} (finish_reason=content_filter, no output). "
-            "The prompt likely triggered the provider's safety filter."
+            "The prompt likely triggered the provider's safety filter." + hint
         )
 
 
 def accepts_reasoning_tags(model_id: str | None) -> bool:
-    """False for models whose provider refuses prompts asking for reasoning in the response text (Anthropic's
-    "reasoning_extraction" category: Claude Fable, Opus, Sonnet, Mythos). BPSA_REASONING_TAGS=on/off overrides."""
+    """False for models in REASONING_EXTRACTION_GUARDED_MODELS (Claude Fable, Opus, Sonnet, Mythos).
+    BPSA_REASONING_TAGS=on/off overrides."""
     override = os.environ.get("BPSA_REASONING_TAGS", "").strip().lower()
     if override in ("on", "off"):
         return override == "on"
-    return re.search(r"claude-(fable|opus|sonnet|mythos)", model_id or "", re.IGNORECASE) is None
+    return REASONING_EXTRACTION_GUARDED_MODELS.search(model_id or "") is None
 
 
 def was_output_truncated(message) -> bool:
