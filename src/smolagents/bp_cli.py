@@ -24,6 +24,7 @@ Environment variables:
     BPSA_PROVIDER_ORDER - Comma-separated OpenRouter provider order, e.g. "openai,together" (OpenAI-compatible models only)
     BPSA_HAS_SESSION_ID - Send a random OpenRouter session_id for sticky provider routing, 1/true/on (default: 0; OpenAI-compatible models only)
     BPSA_REASONING_EFFORT - reasoning_effort sent with every request, e.g. low/medium/high/xhigh/max (default: unset; OpenAI-compatible and LiteLLM models only)
+    BPSA_REASONING_TAGS - on/off: keep the <thoughts>/<plans>/<freewill> prompt sections (default: off for Claude Fable/Opus/Sonnet/Mythos, on otherwise)
     BPSA_PRICE_INPUT_PER_M  - USD per million input tokens, used to estimate cost when the response has no usage.cost
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
@@ -303,6 +304,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PROVIDER_ORDER[/]   OpenRouter provider order, comma-separated (default: '')")
         console.print("  [bold]BPSA_HAS_SESSION_ID[/]   Send a random OpenRouter session_id, 1/true/on (default: 0)")
         console.print("  [bold]BPSA_REASONING_EFFORT[/] reasoning_effort for reasoning models, e.g. high or max (default: unset)")
+        console.print("  [bold]BPSA_REASONING_TAGS[/]   on/off: <thoughts>/<plans>/<freewill> prompt sections (default: off for Claude Fable/Opus/Sonnet/Mythos)")
         console.print("  [bold]BPSA_PRICE_INPUT_PER_M[/]  USD per million input tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
@@ -1532,6 +1534,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     The API key is shown masked (mask_secret), never in full; budget rows appear only when a limit is set."""
     from smolagents.bp_thinkers import DEFAULT_THINKER_COMPRESSION, DEFAULT_THINKER_MAX_STEPS
     from smolagents.bp_utils import get_env_bool
+    from smolagents.models import accepts_reasoning_tags
 
     model = agent.model
     model_id = getattr(model, "model_id", "?")
@@ -1549,6 +1552,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
     table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_source("BPSA_HAS_SESSION_ID"))
     table.add_row("Reasoning effort", get_env("BPSA_REASONING_EFFORT") or "(model default)", env_source("BPSA_REASONING_EFFORT"))
+    table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off", env_source("BPSA_REASONING_TAGS"))
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
     table.add_row("System prompt position", prompt_position, env_source("BPSA_SYSTEM_PROMPT_FIRST"))
     table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))
