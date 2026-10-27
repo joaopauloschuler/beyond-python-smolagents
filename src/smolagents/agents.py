@@ -77,6 +77,7 @@ from .models import (
     MessageRole,
     Model,
     ModelRefusalError,
+    accepts_reasoning_tags,
     was_output_truncated,
     agglomerate_stream_deltas,
     parse_json_if_needed,
@@ -972,6 +973,7 @@ You have been provided with these additional arguments, that you can access dire
                 "managed_agents": self.managed_agents,
                 "custom_instructions": getattr(self, "instructions", None),
                 "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
+                "reasoning_tags": accepts_reasoning_tags(getattr(self.model, 'model_id', None)),
                 "current_folder": os.getcwd(),
             },
         )
@@ -1979,6 +1981,7 @@ class CodeAgent(MultiStepAgent):
                 "code_block_opening_tag": self.code_block_tags[0],
                 "code_block_closing_tag": self.code_block_tags[1],
                 "model_id": getattr(self.model, 'model_id', 'unknown') or 'unknown',
+                "reasoning_tags": accepts_reasoning_tags(getattr(self.model, 'model_id', None)),
             },
         )
         return system_prompt

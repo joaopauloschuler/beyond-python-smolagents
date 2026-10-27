@@ -59,6 +59,15 @@ def raise_if_refused(finish_reason: str | None, model_id: str):
         )
 
 
+def accepts_reasoning_tags(model_id: str | None) -> bool:
+    """False for models whose provider refuses prompts asking for reasoning in the response text (Anthropic's
+    "reasoning_extraction" category: Claude Fable, Opus, Sonnet, Mythos). BPSA_REASONING_TAGS=on/off overrides."""
+    override = os.environ.get("BPSA_REASONING_TAGS", "").strip().lower()
+    if override in ("on", "off"):
+        return override == "on"
+    return re.search(r"claude-(fable|opus|sonnet|mythos)", model_id or "", re.IGNORECASE) is None
+
+
 def was_output_truncated(message) -> bool:
     """True when the provider stopped because it hit the output token limit (finish_reason "length").
     Reads message.finish_reason (set from streams), else the raw response of a non-streamed call."""
