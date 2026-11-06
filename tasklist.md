@@ -457,6 +457,23 @@ is caused by the entries above.
       list, update each stale assertion to the fork's intended behaviour,
       fix the real ones, and record the new counts in the Baseline
       section. Do not touch environment-caused failures.
+- [x] **Some settings set only in `./.env` were ignored.** `main()` read
+      `BPSA_BROWSER`, `BPSA_GUI`, `BPSA_IMAGE`, `BPSA_TMUX` and `BPSA_MCP`,
+      and `run_one_shot()`/`run_repl()` read `BPSA_VERBOSE`, before
+      `try_load_dotenv()` loaded `./.env`, so these values had no effect when
+      set only there (shell exports worked). Found while checking
+      `BPSA_DEFAULT_AUTO_APPROVE` end to end.
+      LANDED (commit c5ea717): `main()` calls `try_load_dotenv()` right after
+      parsing the arguments (`--help` still loads nothing); `run_one_shot()`
+      and `run_repl()` load `./.env` before reading `BPSA_VERBOSE` and keep
+      their own call for direct callers; `try_load_dotenv()` handles each path
+      once, so "Loaded .env from" is printed once. Verified: 4 test cases (2
+      new tests, and the entry-point test for both entry points, which now
+      also checks `BPSA_VERBOSE`) failed before the fix and pass now;
+      `tests/test_bp_*.py` 478 passed; in a fresh process with seven settings
+      only in `./.env`, `bpsa run` (stopped before the model is built) used
+      all of them and printed "Loaded .env from" once, and `bpsa --help`
+      loaded nothing.
 
 ## Interaction while the agent is working
 
@@ -531,15 +548,15 @@ is caused by the entries above.
       `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, case-insensitive; any other
       value prints a warning and is ignored), else off. Unlike the plan above,
       it is resolved in `run_one_shot` and `run_repl` right after
-      `try_load_dotenv()`, not in `main()`: `./.env` is only loaded there, so
-      `main()` cannot see values set in `.env`. `/show-config` shows the
-      source (`--auto-approve`, env, `.env`, default, or `/auto-approve` after
-      the slash command). Documented in the module docstring, the
-      missing-config help, `--help`, the `docs/CLI.md` env table and
-      `README.md`. Verified: 6 new test cases in
-      `tests/test_bp_show_config.py` (precedence, invalid value, `.env` read
-      by both entry points, `main()` passing the flag through, `/show-config`
-      source); `tests/test_bp_*.py` 476 passed; in a fresh process, `main()`
-      for `bpsa run` (stopped before the model is built) with
-      `BPSA_DEFAULT_AUTO_APPROVE=on` only in `./.env` ended with auto-approve
-      on, source `.env`.
+      `try_load_dotenv()`, not in `main()`: `./.env` was only loaded there at
+      the time, so `main()` could not see values set in `.env` (since commit
+      c5ea717, `main()` loads it first). `/show-config` shows the source
+      (`--auto-approve`, env, `.env`, default, or `/auto-approve` after the
+      slash command). Documented in the module docstring, the missing-config
+      help, `--help`, the `docs/CLI.md` env table and `README.md`. Verified: 6
+      new test cases in `tests/test_bp_show_config.py` (precedence, invalid
+      value, `.env` read by both entry points, `main()` passing the flag
+      through, `/show-config` source); `tests/test_bp_*.py` 476 passed; in a
+      fresh process, `main()` for `bpsa run` (stopped before the model is
+      built) with `BPSA_DEFAULT_AUTO_APPROVE=on` only in `./.env` ended with
+      auto-approve on, source `.env`.
