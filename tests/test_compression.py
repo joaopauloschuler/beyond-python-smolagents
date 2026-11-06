@@ -1093,6 +1093,18 @@ class TestMergeContext:
         assert "old" not in result.lower() or "<old" not in result
         assert "<db>MySQL</db>" in result
 
+    @pytest.mark.parametrize(
+        "content",
+        [r"C:\Users\me", r"group \1", r"not a line break \n", r"two \\ backslashes", r"regex \s+\d"],
+        ids=["windows-path", "backreference", "newline-escape", "double-backslash", "regex-escape"],
+    )
+    def test_update_keeps_backslashes(self, content):
+        from smolagents.bp_compression import merge_context
+
+        result = merge_context("<notes>old</notes>", f"<notes>{content}</notes>")
+        assert f"<notes>{content}</notes>" in result
+        assert "old" not in result
+
     def test_empty_existing(self):
         from smolagents.bp_compression import merge_context
         result = merge_context("", "<info>New data</info>")

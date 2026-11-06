@@ -583,7 +583,7 @@ def merge_context(existing: str, updates: str) -> str:
             result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>\s*', '', result, flags=re.DOTALL)
         elif re.search(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>', result, re.DOTALL):
             # Tag exists -> UPDATE
-            result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>', full_tag, result, flags=re.DOTALL)
+            result = re.sub(rf'<{re.escape(tag)}>.*?</{re.escape(tag)}>', lambda _m: full_tag, result, flags=re.DOTALL)
         else:
             # Tag doesn't exist -> APPEND
             result = result.rstrip() + '\n' + full_tag + '\n'
