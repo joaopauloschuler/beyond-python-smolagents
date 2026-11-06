@@ -65,7 +65,11 @@ Each value is the built-in default; the named environment variable overrides it 
 
 Set these in the shell or in a `.env` file in the working directory, which
 `bpsa` loads at startup (a variable already set in the shell takes precedence).
-All are prefixed with `BPSA_`:
+All are prefixed with `BPSA_`.
+
+All on/off settings follow one rule. `1`, `true`, `yes` or `on` turns the setting on;
+`0`, `false`, `no`, `off` or an empty value turns it off. Case and outer spaces do not
+matter. For any other value, `bpsa` prints a warning and uses the setting's default.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|

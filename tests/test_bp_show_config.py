@@ -233,17 +233,71 @@ def test_resolve_auto_approve_precedence(monkeypatch):
     monkeypatch.setenv("BPSA_AUTO_APPROVE", "off")
     assert bp_cli.resolve_auto_approve(None) == (False, "env")
     assert bp_cli.resolve_auto_approve(True) == (True, "--auto-approve")
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", "1")
+    assert bp_cli.resolve_auto_approve(None) == (True, "env")
 
 
-def test_resolve_auto_approve_warns_and_ignores_invalid_value(monkeypatch):
-    from smolagents import bp_cli
+def test_resolve_auto_approve_warns_and_ignores_invalid_value(monkeypatch, capsys):
+    from smolagents import bp_cli, bp_utils
 
     _clear_bpsa_env(monkeypatch)
-    monkeypatch.setenv("BPSA_AUTO_APPROVE", "yes")
-    console = _capture(monkeypatch)
+    monkeypatch.setattr(bp_utils, "_warned_env_values", set())
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", "maybe")
     assert bp_cli.resolve_auto_approve(None) == (False, "default")
-    text = " ".join(console.export_text().split())
-    assert "Ignoring BPSA_AUTO_APPROVE='yes': expected on or off." in text
+    expected = "Ignoring BPSA_AUTO_APPROVE='maybe': expected 1, true, yes, on, 0, false, no or off."
+    assert expected in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "ON", " on "])
+@pytest.mark.parametrize("default", [False, True])
+def test_get_env_bool_true_values(monkeypatch, value, default):
+    from smolagents.bp_utils import get_env_bool
+
+    monkeypatch.setenv("BPSA_TEST_SWITCH", value)
+    assert get_env_bool("BPSA_TEST_SWITCH", default) is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "OFF", " off ", ""])
+@pytest.mark.parametrize("default", [False, True])
+def test_get_env_bool_false_values(monkeypatch, value, default):
+    from smolagents.bp_utils import get_env_bool
+
+    monkeypatch.setenv("BPSA_TEST_SWITCH", value)
+    assert get_env_bool("BPSA_TEST_SWITCH", default) is False
+
+
+@pytest.mark.parametrize("default", [False, True])
+def test_get_env_bool_uses_default_when_unset_or_invalid(monkeypatch, default):
+    from smolagents.bp_utils import get_env_bool
+
+    monkeypatch.delenv("BPSA_TEST_SWITCH", raising=False)
+    assert get_env_bool("BPSA_TEST_SWITCH", default) is default
+    monkeypatch.setenv("BPSA_TEST_SWITCH", "enabled")
+    assert get_env_bool("BPSA_TEST_SWITCH", default) is default
+
+
+def test_get_env_bool_warns_once_per_value(monkeypatch, capsys):
+    from smolagents import bp_utils
+
+    monkeypatch.setattr(bp_utils, "_warned_env_values", set())
+    monkeypatch.setenv("BPSA_TEST_SWITCH", "enabled")
+    bp_utils.get_env_bool("BPSA_TEST_SWITCH")
+    bp_utils.get_env_bool("BPSA_TEST_SWITCH")
+    assert capsys.readouterr().err.count("Ignoring BPSA_TEST_SWITCH='enabled'") == 1
+    monkeypatch.setenv("BPSA_TEST_SWITCH", "onn")
+    bp_utils.get_env_bool("BPSA_TEST_SWITCH")
+    assert capsys.readouterr().err.count("Ignoring BPSA_TEST_SWITCH='onn'") == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("1", True), ("on", True), ("0", False), ("off", False), ("maybe", False)],
+)
+def test_reasoning_tags_override_for_guarded_model(monkeypatch, value, expected):
+    from smolagents.models import accepts_reasoning_tags
+
+    monkeypatch.setenv("BPSA_REASONING_TAGS", value)
+    assert accepts_reasoning_tags("claude-opus-5-5") is expected
 
 
 @pytest.mark.parametrize("entry", ["run_one_shot", "run_repl"])

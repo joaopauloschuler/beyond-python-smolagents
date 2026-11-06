@@ -10,20 +10,37 @@ import glob
 import os
 import re
 import shutil
+import sys
 import time
 from textwrap import dedent
 
 
-def get_env_bool(name: str, default: bool = False) -> bool:
-    """Get an environment variable as a bool.
+ENV_TRUE_VALUES = ("1", "true", "yes", "on")
+ENV_FALSE_VALUES = ("0", "false", "no", "off", "")
+_warned_env_values: set[tuple[str, str]] = set()
 
-    If the variable is not set, returns default.
-    Truthy values: anything not in ('false', '0', 'no', '').
-    """
-    val = os.environ.get(name)
-    if val is None:
-        return default
-    return val.lower() not in ("false", "0", "no", "")
+
+def parse_env_bool(name: str) -> bool | None:
+    """Env var `name` as a bool, ignoring case and outer spaces; None when it is unset or invalid.
+    An invalid value prints one warning to stderr per name and value, because callers read some settings every step."""
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return None
+    value = raw_value.strip().lower()
+    if value in ENV_TRUE_VALUES:
+        return True
+    if value in ENV_FALSE_VALUES:
+        return False
+    if (name, raw_value) not in _warned_env_values:
+        _warned_env_values.add((name, raw_value))
+        print(f"Ignoring {name}={raw_value!r}: expected 1, true, yes, on, 0, false, no or off.", file=sys.stderr)
+    return None
+
+
+def get_env_bool(name: str, default: bool = False) -> bool:
+    """Env var `name` as a bool (see parse_env_bool); default when it is unset or invalid."""
+    value = parse_env_bool(name)
+    return default if value is None else value
 
 def get_env(name: str, default: str | None = None) -> str | None:
     return os.environ.get(name, default)

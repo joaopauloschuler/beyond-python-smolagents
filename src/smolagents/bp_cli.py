@@ -74,7 +74,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
-from smolagents.bp_utils import get_env
+from smolagents.bp_utils import get_env, get_env_bool, parse_env_bool
 
 
 VERSION = "1.24-bp"
@@ -1590,17 +1590,13 @@ def env_source(name: str) -> str:
 
 
 def resolve_auto_approve(cli_value: bool | None) -> tuple[bool, str]:
-    """Auto-approve state and its source: cli_value (--auto-approve) > BPSA_AUTO_APPROVE (on/off) > off."""
+    """Auto-approve state and its source: cli_value (--auto-approve) > BPSA_AUTO_APPROVE > off."""
     if cli_value is not None:
         return cli_value, "--auto-approve"
-    value = os.environ.get("BPSA_AUTO_APPROVE", "").strip().lower()
-    if value in ("on", "off"):
-        return value == "on", env_source("BPSA_AUTO_APPROVE")
-    if value:
-        console.print(
-            f"Ignoring BPSA_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False
-        )
-    return False, "default"
+    value = parse_env_bool("BPSA_AUTO_APPROVE")
+    if value is None:
+        return False, "default"
+    return value, env_source("BPSA_AUTO_APPROVE")
 
 
 def mask_secret(value: str | None) -> str:
@@ -2609,7 +2605,7 @@ The above should be treated as information only. What the user is asking (what y
 def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve, _auto_approve_source, _verbose
     try_load_dotenv()
-    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
+    _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     if not _auto_approve and approval_key_source() is None:
         fail(f"Cannot ask for approval: no terminal to read a key from. {_NO_TERMINAL_ADVICE}")
@@ -2644,7 +2640,7 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
 def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve, _auto_approve_source, _verbose
     try_load_dotenv()
-    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
+    _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     check_required_env()
 

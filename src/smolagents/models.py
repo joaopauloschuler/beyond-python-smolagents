@@ -24,6 +24,7 @@ from enum import Enum
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
+from .bp_utils import parse_env_bool
 from .monitoring import TokenUsage
 from .tools import Tool
 from .utils import RateLimiter, Retrying, _is_package_available, encode_image_base64, make_image_url, parse_json_blob, MAX_LENGTH_TRUNCATE_CONTENT
@@ -73,10 +74,10 @@ def raise_if_refused(finish_reason: str | None, model_id: str):
 
 def accepts_reasoning_tags(model_id: str | None) -> bool:
     """False for models in REASONING_EXTRACTION_GUARDED_MODELS (Claude Fable, Opus, Sonnet, Mythos).
-    BPSA_REASONING_TAGS=on/off overrides."""
-    override = os.environ.get("BPSA_REASONING_TAGS", "").strip().lower()
-    if override in ("on", "off"):
-        return override == "on"
+    BPSA_REASONING_TAGS overrides."""
+    override = parse_env_bool("BPSA_REASONING_TAGS")
+    if override is not None:
+        return override
     return REASONING_EXTRACTION_GUARDED_MODELS.search(model_id or "") is None
 
 
