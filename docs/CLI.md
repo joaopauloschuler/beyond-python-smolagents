@@ -12,6 +12,16 @@ bpsa run "task"   # One-shot mode
 echo "task" | bpsa  # Piped input (one-shot, detected via stdin.isatty())
 ```
 
+Unless auto-approve is on, `bpsa` asks before it runs code or writes files,
+in every mode. On Linux and macOS, when stdin is not a terminal:
+
+- If stdout is a terminal, `bpsa` reads your answer from the terminal itself
+  (`/dev/tty`), so `echo "task" | bpsa` can still be approved at the keyboard.
+- Otherwise nobody can answer (cron, CI, or a program that captures the
+  output of `bpsa`), so `bpsa run` and piped mode stop at startup with an
+  error and exit status 1. To run without asking, use `--auto-approve on` or
+  set `BPSA_DEFAULT_AUTO_APPROVE=on`.
+
 Entry point in `pyproject.toml`:
 ```toml
 [project.scripts]

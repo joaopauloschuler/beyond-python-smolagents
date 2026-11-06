@@ -1132,8 +1132,79 @@ def print_tools(agent):
 
 
 
+# Where the approval prompt reads keys when stdin is not a terminal, e.g. when the task was piped in.
+# Tests point it at a pseudo-terminal.
+_TTY_PATH = "/dev/tty"
+# Shown when no key can be read for the approval prompt
+_NO_TERMINAL_ADVICE = "To run without asking, use --auto-approve on or set BPSA_DEFAULT_AUTO_APPROVE=on."
+
+
+def _isatty(stream) -> bool:
+    """True when `stream` is an open terminal; False for None, closed or replaced streams."""
+    try:
+        return stream is not None and stream.isatty()
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def approval_key_source() -> str | None:
+    """Where the approval prompt reads a key from: "console" (Windows), "stdin", "tty", or None (nobody can answer).
+
+    "stdin" when stdin is a terminal. Otherwise, e.g. `echo task | bpsa`, "tty" when stdout is a terminal (so the
+    question can be seen) and the terminal itself can be opened. None in cron or CI, or when a caller captures the
+    output: run_one_shot() then stops at startup, and the prompt answers no.
+    """
+    try:
+        # Windows: _getch() reads the console directly, as before
+        import msvcrt  # noqa: F401
+
+        return "console"
+    except ImportError:
+        pass
+    if _isatty(sys.stdin):
+        return "stdin"
+    if not _isatty(sys.stdout):
+        return None
+    try:
+        fd = os.open(_TTY_PATH, os.O_RDONLY | os.O_NOCTTY)
+    except OSError:
+        return None
+    try:
+        return "tty" if os.isatty(fd) else None
+    finally:
+        os.close(fd)
+
+
+def _getch_unix() -> str:
+    """Read one keypress on Unix, from where approval_key_source() says. Raises EOFError when no key can be read."""
+    import termios
+    import tty
+
+    source = approval_key_source()
+    if source is None:
+        raise EOFError("no terminal to read a key from")
+    fd = None
+    try:
+        fd = sys.stdin.fileno() if source == "stdin" else os.open(_TTY_PATH, os.O_RDONLY | os.O_NOCTTY)
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            # From the terminal, read up to 4 bytes so that a multi-byte character arrives whole
+            key = sys.stdin.read(1) if source == "stdin" else os.read(fd, 4).decode("utf-8", errors="replace")[:1]
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except (termios.error, OSError, ValueError) as err:  # e.g. the terminal went away during the run
+        raise EOFError(f"cannot read a key from the terminal: {err}") from err
+    finally:
+        if source == "tty" and fd is not None:
+            os.close(fd)
+    if not key:  # end of input: the terminal was closed
+        raise EOFError("the terminal was closed")
+    return key.lower()
+
+
 def _getch():
-    """Read a single keypress without requiring Enter. Cross-platform."""
+    """Read a single keypress without requiring Enter. Cross-platform; on Unix, raises EOFError if none can be read."""
     try:
         # Try Windows first
         import msvcrt
@@ -1142,16 +1213,7 @@ def _getch():
         return key.decode('utf-8', errors='ignore').lower()
     except ImportError:
         # Unix/Linux/Mac
-        import tty
-        import termios
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            key = sys.stdin.read(1)
-            return key.lower()
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return _getch_unix()
 
 
 # ── Voice input ──────────────────────────────────────────────────────────────
@@ -1444,8 +1506,12 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(prompt_text, end='', style="bold cyan")
             response = _getch()
             console.print(response)  # Echo the key pressed
-        except (EOFError, KeyboardInterrupt):
+        except KeyboardInterrupt:
             console.print()  # New line
+            return False
+        except EOFError:  # no key can be read, so nobody can approve
+            console.print()  # New line
+            console.print(f"[yellow]Not approved: no key could be read from a terminal. {_NO_TERMINAL_ADVICE}[/]")
             return False
         if response == 'f' and truncated:
             console.print(content)
@@ -2545,6 +2611,8 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
     try_load_dotenv()
     _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+    if not _auto_approve and approval_key_source() is None:
+        fail(f"Cannot ask for approval: no terminal to read a key from. {_NO_TERMINAL_ADVICE}")
     check_required_env()
     model = build_model()
     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
