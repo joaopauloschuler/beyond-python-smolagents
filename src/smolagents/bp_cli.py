@@ -367,7 +367,8 @@ def rotate_session_id(*models) -> str | None:
 
 
 def sent_reasoning_effort(server_model: str | None) -> str:
-    """BPSA_REASONING_EFFORT as build_model sends it for server_model; "" when it is unset or that class does not send it."""
+    """BPSA_REASONING_EFFORT as build_model sends it for server_model.
+    "" when it is unset or that class does not send it."""
     if MODEL_CLASS_MAP.get(server_model) not in REASONING_EFFORT_MODEL_CLASSES:
         return ""
     return (get_env("BPSA_REASONING_EFFORT", "") or "").strip()
@@ -1600,7 +1601,8 @@ def env_source(name: str) -> str:
 
 
 def env_bool_source(name: str) -> str:
-    """env_source for an on/off setting: "default" when the value is invalid, because the setting then keeps its default."""
+    """env_source for an on/off setting.
+    "default" when the value is invalid, because the setting then keeps its default."""
     return env_source(name) if parse_env_bool(name) is not None else "default"
 
 
@@ -1650,11 +1652,13 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_row("Endpoint", endpoint or "(not set)", env_source("BPSA_API_ENDPOINT"))
     table.add_row("API key", mask_secret(get_env("BPSA_KEY_VALUE")), env_source("BPSA_KEY_VALUE"))
     table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
-    table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_bool_source("BPSA_HAS_SESSION_ID"))
+    table.add_row("OpenRouter session id", current_session_id() or "(disabled)",
+                  env_bool_source("BPSA_HAS_SESSION_ID"))
     reasoning_effort = sent_reasoning_effort(get_env("BPSA_SERVER_MODEL"))
     table.add_row("Reasoning effort", reasoning_effort or "(model default)",
                   env_source("BPSA_REASONING_EFFORT") if reasoning_effort else "default")
-    table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off", env_bool_source("BPSA_REASONING_TAGS"))
+    table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off",
+                  env_bool_source("BPSA_REASONING_TAGS"))
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
     table.add_row("System prompt position", prompt_position, env_bool_source("BPSA_SYSTEM_PROMPT_FIRST"))
     table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))
@@ -1682,7 +1686,8 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     else:
         defaults = DEFAULT_THINKER_COMPRESSION
         table.add_row("Compression enabled", str(config.enabled),
-                      "/compression" if config.enabled != defaults.enabled else env_bool_source("BPSA_COMPRESSION_ENABLED"))
+                      "/compression" if config.enabled != defaults.enabled
+                      else env_bool_source("BPSA_COMPRESSION_ENABLED"))
         for attr, env_name, command in (
             ("keep_recent_steps", "BPSA_COMPRESSION_KEEP_RECENT_STEPS", "/compression-keep-recent-steps"),
             ("max_uncompressed_steps", "BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS",
