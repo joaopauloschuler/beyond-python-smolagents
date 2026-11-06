@@ -29,6 +29,7 @@ Environment variables:
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
+    BPSA_DEFAULT_AUTO_APPROVE - on/off: auto-approve tag execution when --auto-approve is not given (default: off)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -83,6 +84,7 @@ console = Console()
 _verbose = False
 # Mutable state for auto-approve mode
 _auto_approve = False
+_auto_approve_source = "default"  # shown by /show-config: "--auto-approve", "env", ".env", "default" or "/auto-approve"
 
 TRUNCATE_PREVIEW_LINES = 5
 
@@ -309,6 +311,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
+        console.print("  [bold]BPSA_DEFAULT_AUTO_APPROVE[/] on/off: auto-approve tag execution without --auto-approve (default: off)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -1514,6 +1517,18 @@ def env_source(name: str) -> str:
     return ".env" if name in _dotenv_keys else "env"
 
 
+def resolve_auto_approve(cli_value: bool | None) -> tuple[bool, str]:
+    """Auto-approve state and its source: cli_value (--auto-approve) > BPSA_DEFAULT_AUTO_APPROVE (on/off) > off."""
+    if cli_value is not None:
+        return cli_value, "--auto-approve"
+    value = os.environ.get("BPSA_DEFAULT_AUTO_APPROVE", "").strip().lower()
+    if value in ("on", "off"):
+        return value == "on", env_source("BPSA_DEFAULT_AUTO_APPROVE")
+    if value:
+        console.print(f"Ignoring BPSA_DEFAULT_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False)
+    return False, "default"
+
+
 def mask_secret(value: str | None) -> str:
     """First 4 + "..." + last 4 chars of a secret; "****" when it is too short to mask that way."""
     if not value:
@@ -1572,7 +1587,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     planning_interval = getattr(agent, "planning_interval", None)
     table.add_row("Planning interval", str(planning_interval) if planning_interval else "off",
                   "/plan" if planning_interval else "default")
-    table.add_row("Auto-approve", "on" if _auto_approve else "off", "--auto-approve or /auto-approve")
+    table.add_row("Auto-approve", "on" if _auto_approve else "off", _auto_approve_source)
     table.add_row("", "", "")
     config = getattr(agent, "compression_config", None)
     if config is None:
@@ -2517,11 +2532,11 @@ The above should be treated as information only. What the user is asking (what y
     return task
 
 
-def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _verbose
-    _auto_approve = auto_approve
+def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
+    global _auto_approve, _auto_approve_source, _verbose
     _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
+    _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     check_required_env()
     model = build_model()
     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
@@ -2550,11 +2565,11 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         _shutdown_mcp(agent)
 
 
-def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _verbose
-    _auto_approve = auto_approve
+def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
+    global _auto_approve, _auto_approve_source, _verbose
     _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
+    _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     check_required_env()
 
     model = build_model()
@@ -2990,6 +3005,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool = True, browser
                 else:
                     console.print("[yellow]Usage: /auto-approve [on|off][/]")
                     continue
+                _auto_approve_source = "/auto-approve"
                 console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
                 continue
             elif cmd == "/dictation":
@@ -3142,8 +3158,8 @@ def main():
         help="Load agent instruction files (CLAUDE.md, AGENTS.md, etc.) at startup",
     )
     parser.add_argument(
-        "--auto-approve", choices=["on", "off"], default="off",
-        help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: off",
+        "--auto-approve", choices=["on", "off"], default=None,
+        help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: BPSA_DEFAULT_AUTO_APPROVE if set, else off",
     )
     parser.add_argument(
         "--browser", action="store_true",
@@ -3176,7 +3192,7 @@ def main():
 
     args = parser.parse_args()
     skip_instructions = not args.load_instructions
-    auto_approve = args.auto_approve == "on"
+    auto_approve = None if args.auto_approve is None else args.auto_approve == "on"
     from smolagents.bp_utils import get_env_bool
     browser_enabled = args.browser or get_env_bool("BPSA_BROWSER")
     gui_enabled = args.gui_x11 or get_env_bool("BPSA_GUI")

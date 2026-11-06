@@ -3,6 +3,7 @@
 import io
 from types import SimpleNamespace
 
+import pytest
 from rich.console import Console
 
 from smolagents.bp_compression import CompressionConfig
@@ -211,3 +212,81 @@ def test_completer_and_help_list_show_config():
     finally:
         bp_cli.console = original
     assert "/show-config" in console.export_text()
+
+
+def test_resolve_auto_approve_precedence(monkeypatch):
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    assert bp_cli.resolve_auto_approve(None) == (False, "default")
+    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", " ON ")
+    assert bp_cli.resolve_auto_approve(None) == (True, "env")
+    assert bp_cli.resolve_auto_approve(False) == (False, "--auto-approve")
+    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "off")
+    assert bp_cli.resolve_auto_approve(None) == (False, "env")
+    assert bp_cli.resolve_auto_approve(True) == (True, "--auto-approve")
+
+
+def test_resolve_auto_approve_warns_and_ignores_invalid_value(monkeypatch):
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "yes")
+    console = _capture(monkeypatch)
+    assert bp_cli.resolve_auto_approve(None) == (False, "default")
+    text = " ".join(console.export_text().split())
+    assert "Ignoring BPSA_DEFAULT_AUTO_APPROVE='yes': expected on or off." in text
+
+
+@pytest.mark.parametrize("entry", ["run_one_shot", "run_repl"])
+def test_entry_points_resolve_auto_approve_after_loading_dotenv(monkeypatch, tmp_path, entry):
+    from smolagents import bp_cli
+
+    class Stop(Exception):
+        pass
+
+    def stop():
+        raise Stop
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "")
+    monkeypatch.delenv("BPSA_DEFAULT_AUTO_APPROVE")  # registered, so the value load_dotenv writes is undone
+    (tmp_path / ".env").write_text("BPSA_DEFAULT_AUTO_APPROVE=on\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    for name in ("_auto_approve", "_auto_approve_source", "_verbose"):
+        monkeypatch.setattr(bp_cli, name, getattr(bp_cli, name))  # restored after the entry point sets them
+    monkeypatch.setattr(bp_cli, "check_required_env", stop)  # stop right after auto-approve is resolved
+    _capture(monkeypatch)
+    kwargs = {"task": "t"} if entry == "run_one_shot" else {}
+    with pytest.raises(Stop):
+        getattr(bp_cli, entry)(auto_approve=None, **kwargs)
+    assert (bp_cli._auto_approve, bp_cli._auto_approve_source) == (True, ".env")
+
+
+def test_main_passes_auto_approve_only_when_flag_given(monkeypatch):
+    import sys
+
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "on")  # resolved later, after .env is loaded
+    seen = []
+    monkeypatch.setattr(bp_cli, "run_one_shot", lambda task, **kwargs: seen.append(kwargs["auto_approve"]))
+    for flag in ([], ["--auto-approve", "on"], ["--auto-approve", "off"]):
+        monkeypatch.setattr(sys, "argv", ["bpsa", *flag, "run", "task"])
+        bp_cli.main()
+    assert seen == [None, True, False]
+
+
+def test_show_config_auto_approve_row_shows_its_source(monkeypatch):
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setattr(bp_cli, "_auto_approve", True)
+    monkeypatch.setattr(bp_cli, "_auto_approve_source", ".env")
+    console = _capture(monkeypatch)
+    bp_cli.cmd_show_config(_fake_agent())
+    cells = _row(console.export_text(), "Auto-approve").replace("│", " ").split()
+    assert cells == ["Auto-approve", "on", ".env"]
