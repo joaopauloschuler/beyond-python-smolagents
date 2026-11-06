@@ -39,6 +39,13 @@ def _clear_bpsa_env(monkeypatch):
             monkeypatch.delenv(name, raising=False)
 
 
+def _unset_env(monkeypatch, *names):
+    """Unset names and have monkeypatch restore them afterwards, even when load_dotenv sets them during the test."""
+    for name in names:
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
+
+
 def _row(text: str, label: str) -> str:
     lines = [line for line in text.splitlines() if line.strip().startswith(label)]
     assert lines, f"row {label!r} missing in:\n{text}"
@@ -240,7 +247,7 @@ def test_resolve_auto_approve_warns_and_ignores_invalid_value(monkeypatch):
 
 
 @pytest.mark.parametrize("entry", ["run_one_shot", "run_repl"])
-def test_entry_points_resolve_auto_approve_after_loading_dotenv(monkeypatch, tmp_path, entry):
+def test_entry_points_take_verbose_and_auto_approve_from_dotenv(monkeypatch, tmp_path, entry):
     from smolagents import bp_cli
 
     class Stop(Exception):
@@ -250,9 +257,8 @@ def test_entry_points_resolve_auto_approve_after_loading_dotenv(monkeypatch, tmp
         raise Stop
 
     _clear_bpsa_env(monkeypatch)
-    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "")
-    monkeypatch.delenv("BPSA_DEFAULT_AUTO_APPROVE")  # registered, so the value load_dotenv writes is undone
-    (tmp_path / ".env").write_text("BPSA_DEFAULT_AUTO_APPROVE=on\n")
+    _unset_env(monkeypatch, "BPSA_DEFAULT_AUTO_APPROVE", "BPSA_VERBOSE")
+    (tmp_path / ".env").write_text("BPSA_DEFAULT_AUTO_APPROVE=on\nBPSA_VERBOSE=1\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
     for name in ("_auto_approve", "_auto_approve_source", "_verbose"):
@@ -262,16 +268,18 @@ def test_entry_points_resolve_auto_approve_after_loading_dotenv(monkeypatch, tmp
     kwargs = {"task": "t"} if entry == "run_one_shot" else {}
     with pytest.raises(Stop):
         getattr(bp_cli, entry)(auto_approve=None, **kwargs)
-    assert (bp_cli._auto_approve, bp_cli._auto_approve_source) == (True, ".env")
+    assert (bp_cli._verbose, bp_cli._auto_approve, bp_cli._auto_approve_source) == (True, True, ".env")
 
 
-def test_main_passes_auto_approve_only_when_flag_given(monkeypatch):
+def test_main_passes_auto_approve_only_when_flag_given(monkeypatch, tmp_path):
     import sys
 
     from smolagents import bp_cli
 
     _clear_bpsa_env(monkeypatch)
     monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "on")  # resolved later, after .env is loaded
+    monkeypatch.chdir(tmp_path)  # main() loads ./.env; an empty folder keeps a local .env out of the test
+    _capture(monkeypatch)
     seen = []
     monkeypatch.setattr(bp_cli, "run_one_shot", lambda task, **kwargs: seen.append(kwargs["auto_approve"]))
     for flag in ([], ["--auto-approve", "on"], ["--auto-approve", "off"]):
@@ -290,3 +298,43 @@ def test_show_config_auto_approve_row_shows_its_source(monkeypatch):
     bp_cli.cmd_show_config(_fake_agent())
     cells = _row(console.export_text(), "Auto-approve").replace("│", " ").split()
     assert cells == ["Auto-approve", "on", ".env"]
+
+
+def test_main_reads_feature_flags_from_dotenv(monkeypatch, tmp_path):
+    import sys
+
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    _unset_env(monkeypatch, "BPSA_BROWSER", "BPSA_GUI", "BPSA_IMAGE", "BPSA_TMUX", "BPSA_MCP")
+    (tmp_path / ".env").write_text("BPSA_BROWSER=1\nBPSA_GUI=1\nBPSA_IMAGE=1\nBPSA_TMUX=1\nBPSA_MCP=my-mcp-server\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    _capture(monkeypatch)
+    monkeypatch.setattr(bp_cli, "_parse_mcp_servers", lambda servers: servers)  # skip building MCP server parameters
+    seen = {}
+    monkeypatch.setattr(bp_cli, "run_one_shot", lambda task, **kwargs: seen.update(kwargs))
+    monkeypatch.setattr(sys, "argv", ["bpsa", "run", "task"])
+    bp_cli.main()
+    flags = [seen[name] for name in ("browser_enabled", "gui_enabled", "image_enabled", "tmux_enabled")]
+    assert (flags, seen["mcp_servers"]) == ([True] * 4, ["my-mcp-server"])
+
+
+def test_try_load_dotenv_handles_each_path_once(monkeypatch, tmp_path):
+    import os
+
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    _unset_env(monkeypatch, "BPSA_MAX_TOKENS")
+    (tmp_path / "with_env").mkdir()
+    (tmp_path / "with_env" / ".env").write_text("BPSA_MAX_TOKENS=123\n")
+    (tmp_path / "without_env").mkdir()
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    console = _capture(monkeypatch)
+    for folder in ("with_env", "with_env", "without_env", "without_env"):
+        monkeypatch.chdir(tmp_path / folder)
+        bp_cli.try_load_dotenv()  # main() calls it, then run_one_shot() or run_repl() calls it again
+    text = console.export_text()
+    assert (text.count("Loaded .env from:"), text.count("No .env file found")) == (1, 1)
+    assert (os.environ["BPSA_MAX_TOKENS"], bp_cli._dotenv_keys) == ("123", {"BPSA_MAX_TOKENS"})

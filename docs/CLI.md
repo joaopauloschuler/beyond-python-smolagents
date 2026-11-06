@@ -53,7 +53,9 @@ Each value is the built-in default; the named environment variable overrides it 
 
 ## Environment Variables
 
-All prefixed with `BPSA_`:
+Set these in the shell or in a `.env` file in the working directory, which
+`bpsa` loads at startup (a variable already set in the shell takes precedence).
+All are prefixed with `BPSA_`:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -72,7 +74,7 @@ All prefixed with `BPSA_`:
 | `BPSA_PRICE_OUTPUT_PER_M` | No | - | USD per million output tokens. Both price variables must be set for an estimate; otherwise no cost is shown. |
 | `BPSA_PRICE_CACHED_INPUT_PER_M` | No | _(input price)_ | USD per million cached input tokens, applied to the cached share of the input when the provider reports it. |
 | `BPSA_VERBOSE` | No | `0` | Verbose output (`0` or `1`). The `--verbose on\|off` CLI flag overrides it when given. Applies to interactive, `run` and piped modes. |
-| `BPSA_DEFAULT_AUTO_APPROVE` | No | `off` | Auto-approve tag execution (`runcode`, `savetofile`, `appendtofile`) without asking (`on` or `off`). The `--auto-approve on\|off` CLI flag overrides it when given, and `/auto-approve` changes it mid-session. Applies to interactive, `run` and piped modes; it is read after `./.env` is loaded, so it can be set there. |
+| `BPSA_DEFAULT_AUTO_APPROVE` | No | `off` | Auto-approve tag execution (`runcode`, `savetofile`, `appendtofile`) without asking (`on` or `off`). The `--auto-approve on\|off` CLI flag overrides it when given, and `/auto-approve` changes it mid-session. Applies to interactive, `run` and piped modes. |
 | `BPSA_SYSTEM_PROMPT_FIRST` | No | `true` | Place system prompt before memory steps. Set to `0` to place it after the memory steps instead. |
 | `BPSA_SKIP_CONNECTIVITY_CHECK` | No | `0` | `1`, `true` or `on` to skip the startup connectivity check (one tiny request that verifies the key, endpoint and model id; see Startup Behavior). Local model classes (`TransformersModel`, `MLXModel`, `VLLMModel`) always skip it. |
 | `BPSA_CONTEXT_LENGTH` | No | `0` | Model context window in integer tokens. `0` or unset: when `BPSA_API_ENDPOINT` contains `openrouter`, `resolve_context_length` asks `GET <endpoint>/models` once at startup (and once per `/model`) for the model id's `context_length`; otherwise the window is unknown. When known, the banner shows `Context: N tokens`, the turn summary shows `Context: NN%` (last model call's input tokens over the window; yellow from 70%, red from 90%) instead of `Context: N chars`, and `BPSA_COMPRESSION_TOKEN_THRESHOLD` defaults to 75% of it. |

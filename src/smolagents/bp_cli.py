@@ -255,10 +255,16 @@ def fail(msg: str):
 
 # Names that try_load_dotenv added from ./.env (load_dotenv never overrides a name already in the process env).
 _dotenv_keys: set[str] = set()
+# .env paths try_load_dotenv already handled: main() loads ./.env before reading any setting, and
+# run_one_shot()/run_repl() call it again for direct callers, so each path is loaded (and reported) once.
+_dotenv_checked_paths: set[str] = set()
 
 
 def try_load_dotenv():
     env_path = os.path.join(os.getcwd(), ".env")
+    if env_path in _dotenv_checked_paths:
+        return
+    _dotenv_checked_paths.add(env_path)
     if os.path.isfile(env_path):
         from dotenv import dotenv_values
         _dotenv_keys.update(k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ)
@@ -2534,8 +2540,8 @@ The above should be treated as information only. What the user is asking (what y
 
 def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve, _auto_approve_source, _verbose
-    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
+    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     check_required_env()
     model = build_model()
@@ -2567,8 +2573,8 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
 
 def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve, _auto_approve_source, _verbose
-    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     try_load_dotenv()
+    _verbose = verbose_override if verbose_override is not None else get_env("BPSA_VERBOSE", default="0") == "1"
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
     check_required_env()
 
@@ -3191,6 +3197,7 @@ def main():
     run_parser.add_argument("task", type=str, help="The task to execute")
 
     args = parser.parse_args()
+    try_load_dotenv()  # before any BPSA_* setting is read, so values set only in ./.env take effect
     skip_instructions = not args.load_instructions
     auto_approve = None if args.auto_approve is None else args.auto_approve == "on"
     from smolagents.bp_utils import get_env_bool
