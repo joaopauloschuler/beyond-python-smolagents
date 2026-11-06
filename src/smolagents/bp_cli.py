@@ -102,6 +102,9 @@ MODEL_CLASS_MAP = {
     "GoogleColabModel": "GoogleColabModel",
 }
 
+# The canonical MODEL_CLASS_MAP names that build_model passes reasoning_effort to.
+REASONING_EFFORT_MODEL_CLASSES = ("OpenAIServerModel", "AzureOpenAIServerModel", "LiteLLMModel")
+
 
 AGENT_INSTRUCTION_FILES = [
     "CLAUDE.md",
@@ -363,6 +366,13 @@ def rotate_session_id(*models) -> str | None:
     return new_id
 
 
+def sent_reasoning_effort(server_model: str | None) -> str:
+    """BPSA_REASONING_EFFORT as build_model sends it for server_model; "" when it is unset or that class does not send it."""
+    if MODEL_CLASS_MAP.get(server_model) not in REASONING_EFFORT_MODEL_CLASSES:
+        return ""
+    return (get_env("BPSA_REASONING_EFFORT", "") or "").strip()
+
+
 def build_model(override_model_id=None):
     server_model = get_env("BPSA_SERVER_MODEL", None)
     model_id = override_model_id or get_env("BPSA_MODEL_ID")
@@ -371,7 +381,7 @@ def build_model(override_model_id=None):
     postpend_string = get_env("BPSA_POSTPEND_STRING", "")
     max_tokens = int(get_env("BPSA_MAX_TOKENS", "64000"))
     provider_order = get_env("BPSA_PROVIDER_ORDER", "")
-    reasoning_effort = (get_env("BPSA_REASONING_EFFORT", "") or "").strip()
+    reasoning_effort = sent_reasoning_effort(server_model)
     session_id = current_session_id()
     supported = ", ".join(sorted(MODEL_CLASS_MAP.keys()))
     
@@ -979,6 +989,8 @@ def print_turn_summary(
 def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None,
                  round_trip_seconds: float | None = None, context_length: int | None = None):
     dictation_line = f"\nDictation: [magenta]{dictation_transcriber}[/]" if dictation_transcriber else ""
+    reasoning_effort = sent_reasoning_effort(server_model)
+    reasoning_effort_line = f"Reasoning effort: [cyan]{reasoning_effort}[/]\n" if reasoning_effort else ""
     endpoint_line = ""
     if round_trip_seconds is not None:
         endpoint_line = f"Endpoint: [cyan]{round_trip_seconds:.1f}s[/] round trip\n"
@@ -988,6 +1000,7 @@ def print_banner(model_id: str, server_model: str, tool_count: int, dictation_tr
         Panel.fit(
             f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
             f"Model: [cyan]{model_id}[/] ({server_model})\n"
+            f"{reasoning_effort_line}"
             f"{endpoint_line}"
             f"Tools: [green]{tool_count}[/] loaded{dictation_line}",
             border_style="blue",
@@ -1638,7 +1651,9 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_row("API key", mask_secret(get_env("BPSA_KEY_VALUE")), env_source("BPSA_KEY_VALUE"))
     table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
     table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_bool_source("BPSA_HAS_SESSION_ID"))
-    table.add_row("Reasoning effort", get_env("BPSA_REASONING_EFFORT") or "(model default)", env_source("BPSA_REASONING_EFFORT"))
+    reasoning_effort = sent_reasoning_effort(get_env("BPSA_SERVER_MODEL"))
+    table.add_row("Reasoning effort", reasoning_effort or "(model default)",
+                  env_source("BPSA_REASONING_EFFORT") if reasoning_effort else "default")
     table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off", env_bool_source("BPSA_REASONING_TAGS"))
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
     table.add_row("System prompt position", prompt_position, env_bool_source("BPSA_SYSTEM_PROMPT_FIRST"))

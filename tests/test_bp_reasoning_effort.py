@@ -96,6 +96,7 @@ def test_show_config_row(monkeypatch):
         memory=SimpleNamespace(steps=[], knowledge=""),
     )
 
+    monkeypatch.setenv("BPSA_SERVER_MODEL", "OpenAIServerModel")
     monkeypatch.delenv("BPSA_REASONING_EFFORT", raising=False)
     bp_cli.cmd_show_config(agent)
     text = console.export_text()
@@ -104,3 +105,39 @@ def test_show_config_row(monkeypatch):
     monkeypatch.setenv("BPSA_REASONING_EFFORT", "max")
     bp_cli.cmd_show_config(agent)
     assert "max" in console.export_text().split("Reasoning effort", 1)[1].splitlines()[0]
+
+    monkeypatch.setenv("BPSA_SERVER_MODEL", "LiteLLMRouterModel")
+    bp_cli.cmd_show_config(agent)
+    row = console.export_text().split("Reasoning effort", 1)[1].splitlines()[0]
+    assert "(model default)" in row and "default" in row.replace("(model default)", "") and "max" not in row
+
+
+def _banner_text(monkeypatch, server_model, effort):
+    import io
+
+    from rich.console import Console
+
+    from smolagents import bp_cli
+
+    console = Console(file=io.StringIO(), record=True, width=300, force_terminal=False)
+    monkeypatch.setattr(bp_cli, "console", console)
+    if effort is None:
+        monkeypatch.delenv("BPSA_REASONING_EFFORT", raising=False)
+    else:
+        monkeypatch.setenv("BPSA_REASONING_EFFORT", effort)
+    bp_cli.print_banner("m", server_model, 3)
+    return console.export_text()
+
+
+def test_banner_shows_reasoning_effort_when_sent(monkeypatch):
+    for server_model in ("OpenAIServerModel", "OpenAIModel", "AzureOpenAIServerModel", "LiteLLMModel"):
+        assert "Reasoning effort: high" in _banner_text(monkeypatch, server_model, " high ")
+
+
+def test_banner_hides_reasoning_effort_when_unset_or_blank(monkeypatch):
+    for effort in (None, "", "   "):
+        assert "Reasoning effort" not in _banner_text(monkeypatch, "OpenAIServerModel", effort)
+
+
+def test_banner_hides_reasoning_effort_when_model_class_does_not_send_it(monkeypatch):
+    assert "Reasoning effort" not in _banner_text(monkeypatch, "LiteLLMRouterModel", "high")

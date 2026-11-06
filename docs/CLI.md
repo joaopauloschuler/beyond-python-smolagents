@@ -179,6 +179,7 @@ Functional banner shown after successful startup:
 ╭─────────────────────────────────────────╮
 │ Beyond Python SmolAgents v1.24-bp       │
 │ Model: Gemini-2.5-Flash (OpenAIServer…) │
+│ Reasoning effort: high                  │
 │ Endpoint: 0.8s round trip               │
 │ Context: 1,048,576 tokens               │
 │ Tools: 38 loaded                        │
@@ -186,6 +187,11 @@ Functional banner shown after successful startup:
 Type /help for commands, /exit to quit.
 >
 ```
+
+`print_banner` shows the `Reasoning effort` line only when `BPSA_REASONING_EFFORT`
+is set and `build_model` sends it for the model class (`OpenAIServerModel`,
+`AzureOpenAIServerModel` or `LiteLLMModel`). The line shows the requested value;
+the provider may ignore it.
 
 ## REPL
 
