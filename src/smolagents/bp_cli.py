@@ -84,7 +84,7 @@ console = Console()
 _verbose = False
 # Mutable state for auto-approve mode
 _auto_approve = False
-_auto_approve_source = "default"  # shown by /show-config: "--auto-approve", "env", ".env", "default" or "/auto-approve"
+_auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
 
 TRUNCATE_PREVIEW_LINES = 5
 
@@ -317,7 +317,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
-        console.print("  [bold]BPSA_DEFAULT_AUTO_APPROVE[/] on/off: auto-approve tag execution without --auto-approve (default: off)")
+        console.print("  [bold]BPSA_DEFAULT_AUTO_APPROVE[/] on/off: auto-approve tag execution (default: off)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -1531,7 +1531,9 @@ def resolve_auto_approve(cli_value: bool | None) -> tuple[bool, str]:
     if value in ("on", "off"):
         return value == "on", env_source("BPSA_DEFAULT_AUTO_APPROVE")
     if value:
-        console.print(f"Ignoring BPSA_DEFAULT_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False)
+        console.print(
+            f"Ignoring BPSA_DEFAULT_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False
+        )
     return False, "default"
 
 
