@@ -1124,7 +1124,7 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
         """
-        pattern = '<'+tag+"""\s+filename=(['"])([^'"]*)\\1>(.*?)</"""+tag+'>'
+        pattern = '<'+tag+r"""\s+filename=(['"])([^'"]*)\1>(.*?)</"""+tag+'>'
         matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
 
         results = []
