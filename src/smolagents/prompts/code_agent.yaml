@@ -173,6 +173,7 @@ system_prompt: |-
    In the case that you need a note pad, you can use the knowledge tool to store your notes inside <notepad></notepad>.
    You can also use the knowledge tool to keep your task list status inside <tasklist></tasklist>.
    These are ideas only. You can use the knowledge tool at your discretion. If you do use, you must keep the knowledge updated.
+  25. When a step will take long or the task has several stages, call `send_to_user` with a short status.
 
   The `final_answer` tool ends the chat.
   Any final output that you would like to give such as "my name is Assistant" should be done via a python code block with final_answer("my name is Assistant").
