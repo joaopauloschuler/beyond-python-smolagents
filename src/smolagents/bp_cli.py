@@ -29,7 +29,7 @@ Environment variables:
     BPSA_PRICE_OUTPUT_PER_M - USD per million output tokens (both price vars must be set for the estimate)
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
-    BPSA_DEFAULT_AUTO_APPROVE - on/off: auto-approve tag execution when --auto-approve is not given (default: off)
+    BPSA_AUTO_APPROVE - on/off: auto-approve tag execution when --auto-approve is not given (default: off)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -317,7 +317,7 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_OUTPUT_PER_M[/] USD per million output tokens for cost estimates (default: unset)")
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
-        console.print("  [bold]BPSA_DEFAULT_AUTO_APPROVE[/] on/off: auto-approve tag execution (default: off)")
+        console.print("  [bold]BPSA_AUTO_APPROVE[/] on/off: auto-approve tag execution (default: off)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -1136,7 +1136,7 @@ def print_tools(agent):
 # Tests point it at a pseudo-terminal.
 _TTY_PATH = "/dev/tty"
 # Shown when no key can be read for the approval prompt
-_NO_TERMINAL_ADVICE = "To run without asking, use --auto-approve on or set BPSA_DEFAULT_AUTO_APPROVE=on."
+_NO_TERMINAL_ADVICE = "To run without asking, use --auto-approve on or set BPSA_AUTO_APPROVE=on."
 
 
 def _isatty(stream) -> bool:
@@ -1590,15 +1590,15 @@ def env_source(name: str) -> str:
 
 
 def resolve_auto_approve(cli_value: bool | None) -> tuple[bool, str]:
-    """Auto-approve state and its source: cli_value (--auto-approve) > BPSA_DEFAULT_AUTO_APPROVE (on/off) > off."""
+    """Auto-approve state and its source: cli_value (--auto-approve) > BPSA_AUTO_APPROVE (on/off) > off."""
     if cli_value is not None:
         return cli_value, "--auto-approve"
-    value = os.environ.get("BPSA_DEFAULT_AUTO_APPROVE", "").strip().lower()
+    value = os.environ.get("BPSA_AUTO_APPROVE", "").strip().lower()
     if value in ("on", "off"):
-        return value == "on", env_source("BPSA_DEFAULT_AUTO_APPROVE")
+        return value == "on", env_source("BPSA_AUTO_APPROVE")
     if value:
         console.print(
-            f"Ignoring BPSA_DEFAULT_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False
+            f"Ignoring BPSA_AUTO_APPROVE={value!r}: expected on or off.", style="yellow", markup=False
         )
     return False, "default"
 
@@ -3235,7 +3235,7 @@ def main():
     )
     parser.add_argument(
         "--auto-approve", choices=["on", "off"], default=None,
-        help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: BPSA_DEFAULT_AUTO_APPROVE if set, else off",
+        help="Auto-approve tag execution (runcode, savetofile, appendtofile). Default: BPSA_AUTO_APPROVE if set, else off",
     )
     parser.add_argument(
         "--browser", action="store_true",

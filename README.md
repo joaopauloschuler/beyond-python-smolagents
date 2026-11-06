@@ -81,7 +81,7 @@ export BPSA_HAS_SESSION_ID=1
 # Optional: verbose step output, 0 or 1 (default 0). The --verbose on|off flag overrides it.
 # export BPSA_VERBOSE=1
 # Optional: auto-approve tag execution without asking, on or off (default off). The --auto-approve on|off flag overrides it.
-# export BPSA_DEFAULT_AUTO_APPROVE=on
+# export BPSA_AUTO_APPROVE=on
 # Optional: prices in USD per million tokens, for a cost estimate on endpoints that report no cost
 # export BPSA_PRICE_INPUT_PER_M=0.30
 # export BPSA_PRICE_OUTPUT_PER_M=1.20

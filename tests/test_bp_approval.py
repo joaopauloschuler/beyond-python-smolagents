@@ -21,7 +21,7 @@ from smolagents import bp_cli
 
 termios = pytest.importorskip("termios")  # Unix only: on Windows the prompt reads the console with msvcrt
 
-ADVICE = ("--auto-approve on", "BPSA_DEFAULT_AUTO_APPROVE=on")
+ADVICE = ("--auto-approve on", "BPSA_AUTO_APPROVE=on")
 
 
 class FakeStream(io.StringIO):

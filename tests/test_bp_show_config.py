@@ -227,10 +227,10 @@ def test_resolve_auto_approve_precedence(monkeypatch):
     _clear_bpsa_env(monkeypatch)
     monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
     assert bp_cli.resolve_auto_approve(None) == (False, "default")
-    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", " ON ")
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", " ON ")
     assert bp_cli.resolve_auto_approve(None) == (True, "env")
     assert bp_cli.resolve_auto_approve(False) == (False, "--auto-approve")
-    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "off")
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", "off")
     assert bp_cli.resolve_auto_approve(None) == (False, "env")
     assert bp_cli.resolve_auto_approve(True) == (True, "--auto-approve")
 
@@ -239,11 +239,11 @@ def test_resolve_auto_approve_warns_and_ignores_invalid_value(monkeypatch):
     from smolagents import bp_cli
 
     _clear_bpsa_env(monkeypatch)
-    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "yes")
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", "yes")
     console = _capture(monkeypatch)
     assert bp_cli.resolve_auto_approve(None) == (False, "default")
     text = " ".join(console.export_text().split())
-    assert "Ignoring BPSA_DEFAULT_AUTO_APPROVE='yes': expected on or off." in text
+    assert "Ignoring BPSA_AUTO_APPROVE='yes': expected on or off." in text
 
 
 @pytest.mark.parametrize("entry", ["run_one_shot", "run_repl"])
@@ -257,8 +257,8 @@ def test_entry_points_take_verbose_and_auto_approve_from_dotenv(monkeypatch, tmp
         raise Stop
 
     _clear_bpsa_env(monkeypatch)
-    _unset_env(monkeypatch, "BPSA_DEFAULT_AUTO_APPROVE", "BPSA_VERBOSE")
-    (tmp_path / ".env").write_text("BPSA_DEFAULT_AUTO_APPROVE=on\nBPSA_VERBOSE=1\n")
+    _unset_env(monkeypatch, "BPSA_AUTO_APPROVE", "BPSA_VERBOSE")
+    (tmp_path / ".env").write_text("BPSA_AUTO_APPROVE=on\nBPSA_VERBOSE=1\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
     for name in ("_auto_approve", "_auto_approve_source", "_verbose"):
@@ -277,7 +277,7 @@ def test_main_passes_auto_approve_only_when_flag_given(monkeypatch, tmp_path):
     from smolagents import bp_cli
 
     _clear_bpsa_env(monkeypatch)
-    monkeypatch.setenv("BPSA_DEFAULT_AUTO_APPROVE", "on")  # resolved later, after .env is loaded
+    monkeypatch.setenv("BPSA_AUTO_APPROVE", "on")  # resolved later, after .env is loaded
     monkeypatch.chdir(tmp_path)  # main() loads ./.env; an empty folder keeps a local .env out of the test
     _capture(monkeypatch)
     seen = []

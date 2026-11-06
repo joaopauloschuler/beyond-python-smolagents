@@ -441,7 +441,7 @@ is caused by the entries above.
       `termios.error: Inappropriate ioctl for device`. Fix: in
       `interactive_approval_callback`, when `sys.stdin.isatty()` is false,
       reject with a clear message (naming `--auto-approve on` and
-      `BPSA_DEFAULT_AUTO_APPROVE=on`, which already skip the prompt)
+      `BPSA_AUTO_APPROVE=on`, which already skip the prompt)
       instead of reading a keypress. Seen by the connectivity-check
       agent (commit c95042d).
       LANDED (commit d8558cb): a different fix than the one proposed above,
@@ -477,7 +477,7 @@ is caused by the entries above.
       and `run_one_shot()`/`run_repl()` read `BPSA_VERBOSE`, before
       `try_load_dotenv()` loaded `./.env`, so these values had no effect when
       set only there (shell exports worked). Found while checking
-      `BPSA_DEFAULT_AUTO_APPROVE` end to end.
+      `BPSA_AUTO_APPROVE` end to end.
       LANDED (commit c5ea717): `main()` calls `try_load_dotenv()` right after
       parsing the arguments (`--help` still loads nothing); `run_one_shot()`
       and `run_repl()` load `./.env` before reading `BPSA_VERBOSE` and keep
@@ -494,7 +494,7 @@ is caused by the entries above.
       Python read `\s` as an unknown string escape: Python 3.12 reports a
       `SyntaxWarning` each time the file is compiled, and a future version
       will make it a `SyntaxError`. Found while working on
-      `BPSA_DEFAULT_AUTO_APPROVE`.
+      `BPSA_AUTO_APPROVE`.
       LANDED (commit 062a04f): the regex is now a raw string that builds the
       same regex. Verified: the new `tests/test_bp_syntax_warnings.py`, which
       compiles every file under `src/` and fails on a `SyntaxWarning`,
@@ -578,11 +578,11 @@ is caused by the entries above.
 
 ## CLI ergonomics (continued)
 
-- [x] **`BPSA_DEFAULT_AUTO_APPROVE` environment variable.** The `--auto-approve on|off` flag exists but the default lives only on the command line, so a user who always wants `on` (or always wants `off`) cannot set it once in `.env` for every `bpsa` invocation. Add an env var `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, unset = keep the current default) read once in `main()` in `src/smolagents/bp_cli.py` before `run_repl` / `run_one_shot`, so it seeds the same `_auto_approve` global the CLI flag and `/auto-approve` already toggle. Precedence: an explicit `--auto-approve on|off` on the command line wins over the env var; the env var wins over the built-in default. `/show-config` must show the row with source `env`, `.env` or `default`. Document the variable in `docs/CLI.md` (Environment Variables table) and in the `--help` text. Intended mainly for `ad-infinitum` and other unattended runs where no terminal is present, and for the `--auto-approve off` operator who wants to stop flipping it on every launch.
+- [x] **`BPSA_AUTO_APPROVE` environment variable.** The `--auto-approve on|off` flag exists but the default lives only on the command line, so a user who always wants `on` (or always wants `off`) cannot set it once in `.env` for every `bpsa` invocation. Add an env var `BPSA_AUTO_APPROVE` (`on`/`off`, unset = keep the current default) read once in `main()` in `src/smolagents/bp_cli.py` before `run_repl` / `run_one_shot`, so it seeds the same `_auto_approve` global the CLI flag and `/auto-approve` already toggle. Precedence: an explicit `--auto-approve on|off` on the command line wins over the env var; the env var wins over the built-in default. `/show-config` must show the row with source `env`, `.env` or `default`. Document the variable in `docs/CLI.md` (Environment Variables table) and in the `--help` text. Intended mainly for `ad-infinitum` and other unattended runs where no terminal is present, and for the `--auto-approve off` operator who wants to stop flipping it on every launch.
       LANDED (commit 32f8090): `resolve_auto_approve` in `bp_cli.py` returns
       the auto-approve state and its source: the `--auto-approve` flag when
       given (its argparse default is now `None`), else
-      `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, case-insensitive; any other
+      `BPSA_AUTO_APPROVE` (`on`/`off`, case-insensitive; any other
       value prints a warning and is ignored), else off. Unlike the plan above,
       it is resolved in `run_one_shot` and `run_repl` right after
       `try_load_dotenv()`, not in `main()`: `./.env` was only loaded there at
@@ -595,5 +595,5 @@ is caused by the entries above.
       value, `.env` read by both entry points, `main()` passing the flag
       through, `/show-config` source); `tests/test_bp_*.py` 476 passed; in a
       fresh process, `main()` for `bpsa run` (stopped before the model is
-      built) with `BPSA_DEFAULT_AUTO_APPROVE=on` only in `./.env` ended with
+      built) with `BPSA_AUTO_APPROVE=on` only in `./.env` ended with
       auto-approve on, source `.env`.
