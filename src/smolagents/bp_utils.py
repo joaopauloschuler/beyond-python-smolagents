@@ -15,6 +15,23 @@ import time
 from textwrap import dedent
 
 
+dotenv_loaded_names: set[str] = set()
+
+
+def load_dotenv_recording_names(env_path: str | None = None) -> set[str]:
+    """load_dotenv that adds the names it set to dotenv_loaded_names and returns them; without env_path it searches
+    as load_dotenv does. All loads go through here because a name loaded earlier looks like a process env var later."""
+    from dotenv import dotenv_values, find_dotenv, load_dotenv
+
+    env_path = env_path or find_dotenv()
+    if not env_path:
+        return set()
+    added_names = {k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ}
+    load_dotenv(env_path)
+    dotenv_loaded_names.update(added_names)
+    return added_names
+
+
 ENV_TRUE_VALUES = ("1", "true", "yes", "on")
 ENV_FALSE_VALUES = ("0", "false", "no", "off", "")
 _warned_env_values: set[tuple[str, str]] = set()

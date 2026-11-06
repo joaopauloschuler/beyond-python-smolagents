@@ -300,6 +300,61 @@ def test_reasoning_tags_override_for_guarded_model(monkeypatch, value, expected)
     assert accepts_reasoning_tags("claude-opus-5-5") is expected
 
 
+def test_env_bool_source_is_default_for_invalid_value(monkeypatch):
+    from smolagents import bp_cli
+
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    monkeypatch.delenv("BPSA_TEST_SWITCH", raising=False)
+    assert bp_cli.env_bool_source("BPSA_TEST_SWITCH") == "default"
+    monkeypatch.setenv("BPSA_TEST_SWITCH", "enabled")
+    assert bp_cli.env_bool_source("BPSA_TEST_SWITCH") == "default"
+    monkeypatch.setenv("BPSA_TEST_SWITCH", "off")
+    assert bp_cli.env_bool_source("BPSA_TEST_SWITCH") == "env"
+
+
+@pytest.mark.parametrize(
+    ("env_value", "enabled", "expected"),
+    [("enabled", False, "default"), ("enabled", True, "--browser"), ("off", True, "--browser"), ("1", True, "env")],
+)
+def test_show_config_tool_row_source(monkeypatch, env_value, enabled, expected):
+    from smolagents import bp_cli
+
+    _clear_bpsa_env(monkeypatch)
+    monkeypatch.setattr(bp_cli, "_dotenv_keys", set())
+    monkeypatch.setenv("BPSA_BROWSER", env_value)
+    console = _capture(monkeypatch)
+    bp_cli.cmd_show_config(_fake_agent(), browser_enabled=enabled)
+    assert expected in _row(console.export_text(), "Browser tools")
+
+
+def test_load_dotenv_recording_names_records_only_names_it_added(monkeypatch, tmp_path):
+    from smolagents import bp_utils
+
+    _unset_env(monkeypatch, "BPSA_TEST_FROM_FILE")
+    monkeypatch.setenv("BPSA_TEST_FROM_SHELL", "shell")
+    monkeypatch.setattr(bp_utils, "dotenv_loaded_names", set())
+    env_path = tmp_path / ".env"
+    env_path.write_text("BPSA_TEST_FROM_FILE=1\nBPSA_TEST_FROM_SHELL=file\n")
+    assert bp_utils.load_dotenv_recording_names(str(env_path)) == {"BPSA_TEST_FROM_FILE"}
+    assert bp_utils.dotenv_loaded_names == {"BPSA_TEST_FROM_FILE"}
+    assert bp_utils.load_dotenv_recording_names(str(tmp_path / "missing.env")) == set()
+
+
+@pytest.mark.parametrize(("value", "writes"), [("0", False), ("off", False), ("1", True)])
+def test_debug_save_context_follows_the_on_off_rule(monkeypatch, tmp_path, value, writes):
+    from smolagents.agents import MultiStepAgent
+
+    monkeypatch.setenv("BPSA_DEBUG_CONTEXT", value)
+    opened = []
+    real_open = open
+    monkeypatch.setattr(
+        "builtins.open",
+        lambda path, *args, **kwargs: (opened.append(path), real_open(tmp_path / "debug.txt", *args, **kwargs))[1],
+    )
+    MultiStepAgent._debug_save_context(SimpleNamespace(), [])
+    assert bool(opened) is writes
+
+
 @pytest.mark.parametrize("entry", ["run_one_shot", "run_repl"])
 def test_entry_points_take_verbose_and_auto_approve_from_dotenv(monkeypatch, tmp_path, entry):
     from smolagents import bp_cli

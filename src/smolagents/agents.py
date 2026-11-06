@@ -889,9 +889,9 @@ You have been provided with these additional arguments, that you can access dire
         self.interrupt_switch = True
 
     def _debug_save_context(self, messages: list) -> None:
-        """Save context messages to /tmp/bpsa_debug_context_<pid>.txt if BPSA_DEBUG_CONTEXT is set."""
+        """Save context messages to /tmp/bpsa_debug_context_<pid>.txt if BPSA_DEBUG_CONTEXT is on."""
         import os, json
-        if not os.environ.get("BPSA_DEBUG_CONTEXT"):
+        if not get_env_bool("BPSA_DEBUG_CONTEXT"):
             return
         lines = []
         for i, msg in enumerate(messages):

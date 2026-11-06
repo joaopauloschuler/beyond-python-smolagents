@@ -67,14 +67,13 @@ import sys
 import threading
 import time
 
-from dotenv import load_dotenv
 from smolagents.utils import truncate_content
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
-from smolagents.bp_utils import get_env, get_env_bool, parse_env_bool
+from smolagents.bp_utils import dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool
 
 
 VERSION = "1.24-bp"
@@ -253,8 +252,8 @@ def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
     sys.exit(1)
 
-# Names that try_load_dotenv added from ./.env (load_dotenv never overrides a name already in the process env).
-_dotenv_keys: set[str] = set()
+# Names added from a .env file, including by the load in remote_executors.py while smolagents is imported.
+_dotenv_keys: set[str] = dotenv_loaded_names
 # .env paths try_load_dotenv already handled: main() loads ./.env before reading any setting, and
 # run_one_shot()/run_repl() call it again for direct callers, so each path is loaded (and reported) once.
 _dotenv_checked_paths: set[str] = set()
@@ -266,9 +265,7 @@ def try_load_dotenv():
         return
     _dotenv_checked_paths.add(env_path)
     if os.path.isfile(env_path):
-        from dotenv import dotenv_values
-        _dotenv_keys.update(k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ)
-        load_dotenv(env_path)
+        _dotenv_keys.update(load_dotenv_recording_names(env_path))
         console.print(f"[green]Loaded .env from:[/] {env_path}")
     else:
         console.print("[dim]No .env file found in current directory.[/]")
@@ -1583,10 +1580,15 @@ def print_stats(session_stats: dict, agent=None):
 
 
 def env_source(name: str) -> str:
-    """Where the value of env var `name` came from: "env", ".env" (added by try_load_dotenv) or "default"."""
+    """Where the value of env var `name` came from: "env", ".env" (added from a .env file) or "default"."""
     if name not in os.environ:
         return "default"
     return ".env" if name in _dotenv_keys else "env"
+
+
+def env_bool_source(name: str) -> str:
+    """env_source for an on/off setting: "default" when the value is invalid, because the setting then keeps its default."""
+    return env_source(name) if parse_env_bool(name) is not None else "default"
 
 
 def resolve_auto_approve(cli_value: bool | None) -> tuple[bool, str]:
@@ -1635,11 +1637,11 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_row("Endpoint", endpoint or "(not set)", env_source("BPSA_API_ENDPOINT"))
     table.add_row("API key", mask_secret(get_env("BPSA_KEY_VALUE")), env_source("BPSA_KEY_VALUE"))
     table.add_row("Provider order", get_env("BPSA_PROVIDER_ORDER") or "(none)", env_source("BPSA_PROVIDER_ORDER"))
-    table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_source("BPSA_HAS_SESSION_ID"))
+    table.add_row("OpenRouter session id", current_session_id() or "(disabled)", env_bool_source("BPSA_HAS_SESSION_ID"))
     table.add_row("Reasoning effort", get_env("BPSA_REASONING_EFFORT") or "(model default)", env_source("BPSA_REASONING_EFFORT"))
-    table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off", env_source("BPSA_REASONING_TAGS"))
+    table.add_row("Reasoning tags", "on" if accepts_reasoning_tags(model_id) else "off", env_bool_source("BPSA_REASONING_TAGS"))
     prompt_position = "first" if get_env_bool("BPSA_SYSTEM_PROMPT_FIRST", True) else "after memory steps"
-    table.add_row("System prompt position", prompt_position, env_source("BPSA_SYSTEM_PROMPT_FIRST"))
+    table.add_row("System prompt position", prompt_position, env_bool_source("BPSA_SYSTEM_PROMPT_FIRST"))
     table.add_row("Max tokens", get_env("BPSA_MAX_TOKENS", "64000"), env_source("BPSA_MAX_TOKENS"))
     context_length = getattr(agent, "context_length", None)
     table.add_row("Context length", f"{context_length:,} tokens" if context_length else "unknown",
@@ -1665,7 +1667,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     else:
         defaults = DEFAULT_THINKER_COMPRESSION
         table.add_row("Compression enabled", str(config.enabled),
-                      _setting_source("BPSA_COMPRESSION_ENABLED", config.enabled, defaults.enabled, "/compression"))
+                      "/compression" if config.enabled != defaults.enabled else env_bool_source("BPSA_COMPRESSION_ENABLED"))
         for attr, env_name, command in (
             ("keep_recent_steps", "BPSA_COMPRESSION_KEEP_RECENT_STEPS", "/compression-keep-recent-steps"),
             ("max_uncompressed_steps", "BPSA_COMPRESSION_MAX_UNCOMPRESSED_STEPS",
@@ -1690,7 +1692,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
         ("Image tools", image_enabled, "BPSA_IMAGE", "--image"),
         ("Tmux tools", tmux_enabled, "BPSA_TMUX", "--tmux"),
     ):
-        source = env_source(env_name) if env_name in os.environ else (flag if enabled else "default")
+        source = env_bool_source(env_name) if enabled == get_env_bool(env_name) else flag
         table.add_row(label, "on" if enabled else "off", source)
     mcp_count = len(mcp_servers) if mcp_servers else 0
     table.add_row("MCP servers", str(mcp_count), (env_source("BPSA_MCP") if "BPSA_MCP" in os.environ else "--mcp")

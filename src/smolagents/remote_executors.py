@@ -45,9 +45,9 @@ __all__ = ["BlaxelExecutor", "E2BExecutor", "ModalExecutor", "DockerExecutor", "
 
 
 try:
-    from dotenv import load_dotenv
+    from .bp_utils import load_dotenv_recording_names
 
-    load_dotenv()
+    load_dotenv_recording_names()
 except ModuleNotFoundError:
     pass
 
