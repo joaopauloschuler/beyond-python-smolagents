@@ -434,7 +434,7 @@ is caused by the entries above.
       the retry for provider errors only. Verify live: one Ctrl+C during a
       slow call prints "Interrupted." immediately. Seen by the steering
       agent (commit c1fcbc1), documented in the docs/CLI.md keys table.
-- [ ] **`bpsa run` without a TTY crashes in the approval prompt.** When
+- [x] **`bpsa run` without a TTY crashes in the approval prompt.** When
       stdin is not a terminal and `--auto-approve` is off, a model that
       emits a code block makes `interactive_approval_callback` call
       `_getch` in `src/smolagents/bp_cli.py`, which raises
@@ -444,6 +444,21 @@ is caused by the entries above.
       `BPSA_DEFAULT_AUTO_APPROVE=on`, which already skip the prompt)
       instead of reading a keypress. Seen by the connectivity-check
       agent (commit c95042d).
+      LANDED (commit d8558cb): a different fix than the one proposed above,
+      because rejecting at the prompt still spends a model call, prints
+      "Execution rejected by user." and exits with status 0. When stdin is
+      not a terminal but stdout is, the prompt now reads the key from
+      `/dev/tty`, so `echo "task" | bpsa` can be approved at the keyboard.
+      When no terminal can answer (cron, CI, captured output), `bpsa run`
+      and piped mode stop at startup, before any model call, with exit
+      status 1 and a message naming those two settings. A key read that
+      still fails answers no with the same message. Windows (`msvcrt`) is
+      unchanged. Verified: 12 of the 14 new tests in
+      `tests/test_bp_approval.py` failed before the fix and all pass now;
+      end to end with the model stubbed, a pty with stdin from `/dev/null`
+      read "y" from the terminal, and with the output captured or under
+      `setsid` (no terminal) `bpsa run` exited 1 with the message and no
+      traceback.
 - [ ] **Stale tests from the upstream fork (34).** The "Failures not
       explained by the environment" list in the Baseline section holds 34
       failures that check upstream smolagents behaviour this fork changed
@@ -474,6 +489,28 @@ is caused by the entries above.
       only in `./.env`, `bpsa run` (stopped before the model is built) used
       all of them and printed "Loaded .env from" once, and `bpsa --help`
       loaded nothing.
+- [x] **Invalid escape sequence in `parse_tags()`.** Line 1127 of
+      `src/smolagents/agents.py` built the tag regex in a normal string, so
+      Python read `\s` as an unknown string escape: Python 3.12 reports a
+      `SyntaxWarning` each time the file is compiled, and a future version
+      will make it a `SyntaxError`. Found while working on
+      `BPSA_DEFAULT_AUTO_APPROVE`.
+      LANDED (commit 062a04f): the regex is now a raw string that builds the
+      same regex. Verified: the new `tests/test_bp_syntax_warnings.py`, which
+      compiles every file under `src/` and fails on a `SyntaxWarning`,
+      failed before and passes now; the new `tests/test_bp_file_tags.py`
+      checks what `parse_tags()` finds and passes before and after.
+- [x] **`update_knowledge` lost updates that contain a backslash.**
+      `merge_context()` in `src/smolagents/bp_compression.py` passed the new
+      section text to `re.sub()` as the replacement template. When an
+      existing section was updated, `\s`, `\1` or a Windows path raised
+      `re.error` and the update was lost, while `\n` became a line break and
+      `\\` a single backslash. Context compression updates sections the same
+      way. Found when an `update_knowledge` call failed with `bad escape \s`.
+      LANDED (commit 5c51bfe): the replacement is now a function, whose
+      result `re.sub()` inserts unchanged. Verified: the 5 cases of the new
+      `test_update_keeps_backslashes` in `tests/test_compression.py` failed
+      before and pass now.
 
 ## Interaction while the agent is working
 
