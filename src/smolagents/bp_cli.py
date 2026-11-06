@@ -251,6 +251,12 @@ def _compact_step_callback(step):
     console.print(" | ".join(parts))
 
 
+def _print_user_message(message: str):
+    """Prints a send_to_user message; the stream callback restarts the spinner on the next chunk."""
+    _spinner.stop()
+    console.print(Markdown(message))
+
+
 def fail(msg: str):
     console.print(f"[bold red]Error:[/] {msg}", highlight=False)
     sys.exit(1)
@@ -663,6 +669,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         stream_outputs=can_stream,
     )
     agent.add_planning_tool()
+    agent.python_executor.user_message_handler = _print_user_message
 
     # Set stream callback: updates spinner with chunk count
     if can_stream:

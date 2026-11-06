@@ -90,6 +90,21 @@ class FinalAnswerTool(Tool):
         return answer
 
 
+class SendToUserTool(Tool):
+    name = "send_to_user"
+    description = (
+        "Shows a message to the user (whoever gave you this task, a person or another agent) and the run continues. "
+        "Use it for progress or for anything else that the user should see before you finish. "
+        "Call it in a code block that also does other work instead of spending a step on it. "
+        "final_answer must still contain the complete result, because the user may read nothing else."
+    )
+    inputs = {"message": {"type": "string", "description": "The message to show to the user"}}
+    output_type = "null"
+
+    def forward(self, message: str) -> None:
+        print(message)
+
+
 class UserInputTool(Tool):
     name = "user_input"
     description = "Asks for user's input on a specific question"

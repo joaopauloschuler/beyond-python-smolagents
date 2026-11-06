@@ -12,6 +12,7 @@ from .monitoring import LogLevel
 import io
 import contextlib
 import base64
+import sys
 from io import BytesIO
 import PIL.Image
 from .utils import AgentError
@@ -49,6 +50,17 @@ class LocalExecExecutor(RemotePythonExecutor):
         self.capture_graphics = capture_graphics
         self.restricted_modules = restricted_modules or []
         self.tools = {}
+        self.user_message_handler = None
+
+    def _make_send_to_user(self, receiver_stream):
+        """Returns send_to_user, writing to receiver_stream: the terminal, or the parent agent's stdout_buffer."""
+        def send_to_user(message):
+            with contextlib.redirect_stdout(receiver_stream):
+                if self.user_message_handler is not None:
+                    self.user_message_handler(str(message))
+                else:
+                    print(f"Agent message: {message}")
+        return send_to_user
 
     def __call__(self, code_action: str) -> CodeOutput:
         """Check if code is a final answer and run it accordingly"""
@@ -177,6 +189,7 @@ except ImportError:
         self.globals_dict['_last_value'] = None
         self.globals_dict['_final_answer'] = None
         self.globals_dict.update(self.tools)
+        self.globals_dict['send_to_user'] = self._make_send_to_user(sys.stdout)
         is_final_answer = False
         
         # Set up matplotlib if needed
@@ -212,6 +225,9 @@ if '_' in locals():
                 import traceback
                 tb = traceback.format_exc()
                 error_msg = f"Error executing code: {str(e)}\n{tb}"
+                captured_stdout = stdout_buffer.getvalue()
+                if captured_stdout:
+                    error_msg += f"\nStdout before the error:\n{captured_stdout}"
                 stderr_buffer.write(error_msg)
                 raise AgentError(error_msg, self.logger)
         

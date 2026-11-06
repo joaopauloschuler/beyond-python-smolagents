@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     import PIL.Image
 
 from .agent_types import AgentAudio, AgentImage, handle_agent_output_types
-from .default_tools import TOOL_MAPPING, FinalAnswerTool
+from .default_tools import TOOL_MAPPING, FinalAnswerTool, SendToUserTool
 from .local_python_executor import BASE_BUILTIN_MODULES, LocalPythonExecutor, PythonExecutor, fix_final_answer_code
 from .memory import (
     ActionStep,
@@ -1923,6 +1923,10 @@ class CodeAgent(MultiStepAgent):
         self.executor_type = executor_type
         self.executor_kwargs: dict[str, Any] = executor_kwargs or {}
         self.python_executor = executor or self.create_python_executor()
+
+    def _setup_tools(self, tools, add_base_tools):
+        super()._setup_tools(tools, add_base_tools)
+        self.tools.setdefault("send_to_user", SendToUserTool())
 
     def _request_approval(self, tag_type: str, content: str) -> bool:
         """Request user approval before executing a tag. Returns True if approved."""
