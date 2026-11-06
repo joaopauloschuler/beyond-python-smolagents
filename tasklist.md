@@ -440,9 +440,10 @@ is caused by the entries above.
       `_getch` in `src/smolagents/bp_cli.py`, which raises
       `termios.error: Inappropriate ioctl for device`. Fix: in
       `interactive_approval_callback`, when `sys.stdin.isatty()` is false,
-      reject with a clear message (or honour an explicit
-      `BPSA_AUTO_APPROVE` env var if one is added) instead of reading a
-      keypress. Seen by the connectivity-check agent (commit c95042d).
+      reject with a clear message (naming `--auto-approve on` and
+      `BPSA_DEFAULT_AUTO_APPROVE=on`, which already skip the prompt)
+      instead of reading a keypress. Seen by the connectivity-check
+      agent (commit c95042d).
 - [ ] **Stale tests from the upstream fork (34).** The "Failures not
       explained by the environment" list in the Baseline section holds 34
       failures that check upstream smolagents behaviour this fork changed
@@ -523,4 +524,22 @@ is caused by the entries above.
 
 ## CLI ergonomics (continued)
 
-- [ ] **`BPSA_DEFAULT_AUTO_APPROVE` environment variable.** The `--auto-approve on|off` flag exists but the default lives only on the command line, so a user who always wants `on` (or always wants `off`) cannot set it once in `.env` for every `bpsa` invocation. Add an env var `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, unset = keep the current default) read once in `main()` in `src/smolagents/bp_cli.py` before `run_repl` / `run_one_shot`, so it seeds the same `_auto_approve` global the CLI flag and `/auto-approve` already toggle. Precedence: an explicit `--auto-approve on|off` on the command line wins over the env var; the env var wins over the built-in default. `/show-config` must show the row with source `env`, `.env` or `default`. Document the variable in `docs/CLI.md` (Environment Variables table) and in the `--help` text. Intended mainly for `ad-infinitum` and other unattended runs where no terminal is present, and for the `--auto-approve off` operator who wants to stop flipping it on every launch.
+- [x] **`BPSA_DEFAULT_AUTO_APPROVE` environment variable.** The `--auto-approve on|off` flag exists but the default lives only on the command line, so a user who always wants `on` (or always wants `off`) cannot set it once in `.env` for every `bpsa` invocation. Add an env var `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, unset = keep the current default) read once in `main()` in `src/smolagents/bp_cli.py` before `run_repl` / `run_one_shot`, so it seeds the same `_auto_approve` global the CLI flag and `/auto-approve` already toggle. Precedence: an explicit `--auto-approve on|off` on the command line wins over the env var; the env var wins over the built-in default. `/show-config` must show the row with source `env`, `.env` or `default`. Document the variable in `docs/CLI.md` (Environment Variables table) and in the `--help` text. Intended mainly for `ad-infinitum` and other unattended runs where no terminal is present, and for the `--auto-approve off` operator who wants to stop flipping it on every launch.
+      LANDED (commit 32f8090): `resolve_auto_approve` in `bp_cli.py` returns
+      the auto-approve state and its source: the `--auto-approve` flag when
+      given (its argparse default is now `None`), else
+      `BPSA_DEFAULT_AUTO_APPROVE` (`on`/`off`, case-insensitive; any other
+      value prints a warning and is ignored), else off. Unlike the plan above,
+      it is resolved in `run_one_shot` and `run_repl` right after
+      `try_load_dotenv()`, not in `main()`: `./.env` is only loaded there, so
+      `main()` cannot see values set in `.env`. `/show-config` shows the
+      source (`--auto-approve`, env, `.env`, default, or `/auto-approve` after
+      the slash command). Documented in the module docstring, the
+      missing-config help, `--help`, the `docs/CLI.md` env table and
+      `README.md`. Verified: 6 new test cases in
+      `tests/test_bp_show_config.py` (precedence, invalid value, `.env` read
+      by both entry points, `main()` passing the flag through, `/show-config`
+      source); `tests/test_bp_*.py` 476 passed; in a fresh process, `main()`
+      for `bpsa run` (stopped before the model is built) with
+      `BPSA_DEFAULT_AUTO_APPROVE=on` only in `./.env` ended with auto-approve
+      on, source `.env`.
