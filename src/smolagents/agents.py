@@ -34,13 +34,12 @@ from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Unio
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
 from .bp_utils import (
-    CODE_BLOCK_CLOSE,
-    CODE_BLOCK_OPEN,
     INCLUDEFILE_TAG,
     bp_parse_code_blobs,
     end_output_at_real_stop,
     hide_tag_brackets,
     hide_tags_in_block_literals,
+    new_parsing_markers,
     restore_tag_brackets,
     escape_for_triple_quoted_string,
     final_answer_string_body,
@@ -1133,10 +1132,11 @@ You have been provided with these additional arguments, that you can access dire
             answer += "\n</summary_of_work>"
         return answer
     
-    def parse_tags(self, tag, txt):
+    def parse_tags(self, tag, txt, hidden_tag_bracket="<"):
         """
         Args:
             txt (str): Text containing <tag> tags
+            hidden_tag_bracket (str): What stands for "<" in txt; the default means nothing is hidden
             
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
@@ -1146,8 +1146,8 @@ You have been provided with these additional arguments, that you can access dire
         results = []
         for quote, filename, content in matches:
             results.append({
-                'filename': restore_tag_brackets(filename),
-                'content': restore_tag_brackets(content)  # Trim whitespace
+                'filename': restore_tag_brackets(filename, hidden_tag_bracket),
+                'content': restore_tag_brackets(content, hidden_tag_bracket)  # Trim whitespace
             })
 
         return results
@@ -1182,8 +1182,8 @@ You have been provided with these additional arguments, that you can access dire
                 self.logger,
             ) from error
 
-    def save_files_from_text(self, txt):
-        files = self.parse_tags('savetofile', txt)
+    def save_files_from_text(self, txt, hidden_tag_bracket="<"):
+        files = self.parse_tags('savetofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
               approval_content = f"filename={file['filename']}\n{file['content']}"
               if not self._request_approval("savetofile", approval_content):
@@ -1193,8 +1193,8 @@ You have been provided with these additional arguments, that you can access dire
               self.logger.log(msg_str, LogLevel.INFO)
         return files
 
-    def append_files_from_text(self, txt):
-        files = self.parse_tags('appendtofile', txt)
+    def append_files_from_text(self, txt, hidden_tag_bracket="<"):
+        files = self.parse_tags('appendtofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
               approval_content = f"filename={file['filename']}\n{file['content']}"
               if not self._request_approval("appendtofile", approval_content):
@@ -2125,6 +2125,7 @@ class CodeAgent(MultiStepAgent):
         str_len_str = '0'
         saved_files = []
         include_tag_token = secrets.token_hex(16)
+        code_block_open, code_block_close, hidden_tag_bracket = new_parsing_markers()
 
         if model_output is None and output_truncated:
             model_output = ''  # reasoning used the whole output budget; still tell the model below
@@ -2140,11 +2141,11 @@ class CodeAgent(MultiStepAgent):
                 level=LogLevel.INFO,
             )
             # len1 = len(model_output)
-            model_output = hide_tags_in_block_literals(model_output)
-            saved_files = self.save_files_from_text(model_output)
+            model_output = hide_tags_in_block_literals(model_output, hidden_tag_bracket)
+            saved_files = self.save_files_from_text(model_output, hidden_tag_bracket)
             model_output = self.remove_tags('savetofile', model_output)
             # len2 = len(model_output)
-            appended_files = self.append_files_from_text(model_output)
+            appended_files = self.append_files_from_text(model_output, hidden_tag_bracket)
             model_output = self.remove_tags('appendtofile', model_output)
             if is_valid_python_code(model_output) and not ((output_truncated or saved_files or appended_files) and not model_output.strip()):
                 model_output = """```py
@@ -2156,18 +2157,18 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
-            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1)), include_tag_token))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
+            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1), hidden_tag_bracket), include_tag_token), hidden_tag_bracket)+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
             # <code> is the v1.19 form. The first opening tag left is the real one; the others are text in the code.
             real_opening_tag = re.search(r'<(?:runcode|code)>', model_output_for_parsing)
             if real_opening_tag:
-                model_output_for_parsing = model_output_for_parsing[:real_opening_tag.start()] + CODE_BLOCK_OPEN + model_output_for_parsing[real_opening_tag.end():]
+                model_output_for_parsing = model_output_for_parsing[:real_opening_tag.start()] + code_block_open + model_output_for_parsing[real_opening_tag.end():]
             # end_output_at_real_stop leaves the only real closing tag at the very end; an earlier one is text.
-            model_output_for_parsing = re.sub(r'</(?:runcode|code)>\Z', CODE_BLOCK_CLOSE, model_output_for_parsing)
-            model_output_for_parsing = restore_tag_brackets(model_output_for_parsing)
+            model_output_for_parsing = re.sub(r'</(?:runcode|code)>\Z', code_block_close, model_output_for_parsing)
+            model_output_for_parsing = restore_tag_brackets(model_output_for_parsing, hidden_tag_bracket)
             # this is for backward compatibility
             skip_next_approval = False
-            code_block_markers = (CODE_BLOCK_OPEN, CODE_BLOCK_CLOSE, '```py', '```<end_code>')
+            code_block_markers = (code_block_open, code_block_close, '```py', '```<end_code>')
             if not any(marker in model_output_for_parsing for marker in code_block_markers):
                 skip_next_approval = True  # system-generated reminders, no approval needed
                 if output_truncated:
@@ -2212,9 +2213,9 @@ will run in his device.
                 code_action = json.loads(model_output_for_parsing)["code"]
                 code_action = extract_code_from_text(code_action, self.code_block_tags) or code_action
             else:
-                code_action = bp_parse_code_blobs(model_output_for_parsing)
+                code_action = bp_parse_code_blobs(model_output_for_parsing, code_block_open, code_block_close)
             if real_opening_tag:  # a markdown fence may hold the tag, and then the fence's code holds its marker
-                code_action = code_action.replace(CODE_BLOCK_OPEN, real_opening_tag.group())
+                code_action = code_action.replace(code_block_open, real_opening_tag.group())
             code_action = fix_final_answer_code(code_action)
             code_action = strip_trailing_tags(code_action)  # drop stray tags left just before </runcode>
             code_to_expand = code_action

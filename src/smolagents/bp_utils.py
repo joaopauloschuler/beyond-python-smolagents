@@ -9,17 +9,13 @@ import ast
 import glob
 import os
 import re
+import secrets
 import shutil
 import sys
 import time
 from textwrap import dedent
 
 
-# Private-use characters stand for <runcode> and </runcode> while parsing, so the model's markdown cannot match them.
-CODE_BLOCK_OPEN = "\ue000"
-CODE_BLOCK_CLOSE = "\ue001"
-# Stands for "<" in text whose tags are not tags, so that whole-text tag matching cannot see them.
-HIDDEN_TAG_BRACKET = "\ue002"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDEFILE_TAG = re.compile(r"<includefile>(.*?)</includefile>", re.DOTALL)
@@ -241,15 +237,21 @@ def end_output_at_real_stop(text):
         return text[:end_of_block(text, opening.end(), block)] + f"</{block}>"
     return text if stray_stop is None else text[:stray_stop]
 
-def hide_tag_brackets(text):
-    """Returns text with every "<" replaced by HIDDEN_TAG_BRACKET."""
-    return text.replace("<", HIDDEN_TAG_BRACKET)
+def new_parsing_markers():
+    """Returns the stand-ins for <runcode>, </runcode> and a hidden "<" while one reply is parsed. Call it after the reply
+    arrives: its random token keeps them out of the reply, and the private-use first character is not valid Python code."""
+    token = secrets.token_hex(16)
+    return f"\ue000{token}", f"\ue001{token}", f"\ue002{token}"
 
-def restore_tag_brackets(text):
-    """Returns text with every HIDDEN_TAG_BRACKET back to "<"."""
-    return text.replace(HIDDEN_TAG_BRACKET, "<")
+def hide_tag_brackets(text, hidden_tag_bracket):
+    """Returns text with every "<" replaced by hidden_tag_bracket, so that whole-text tag matching cannot see its tags."""
+    return text.replace("<", hidden_tag_bracket)
 
-def hide_python_string_tags(code):
+def restore_tag_brackets(text, hidden_tag_bracket):
+    """Returns text with every hidden_tag_bracket back to "<"."""
+    return text.replace(hidden_tag_bracket, "<")
+
+def hide_python_string_tags(code, hidden_tag_bracket):
     """Returns code with the tags hidden in its Python strings. Closed sections are skipped so that an apostrophe in
     their text does not start a string that swallows their closing tag."""
     parts = []
@@ -261,19 +263,20 @@ def hide_python_string_tags(code):
         if token.group("section"):
             position = end_of_closed_section(code, token, unclosed_sections) or position
         elif token.group().startswith(('"', "'")):
-            parts += [code[copied_up_to:token.start()], hide_tag_brackets(token.group())]
+            parts += [code[copied_up_to:token.start()], hide_tag_brackets(token.group(), hidden_tag_bracket)]
             copied_up_to = token.end()
     return "".join(parts) + code[copied_up_to:]
 
-def hide_tags_in_block_literals(text):
-    """Returns the cut text with the tags hidden in its block's literal text: all of a final answer, or a code block's Python strings."""
+def hide_tags_in_block_literals(text, hidden_tag_bracket="<"):
+    """Returns the cut text with the tags hidden in its block's literal text: all of a final answer, or a code block's Python strings.
+    The default hides nothing."""
     opening, _ = first_real_block_opening(text)
     if opening is None:
         return text
     block = opening.group("code_block")
     body_end = end_of_block(text, opening.end(), block)
     body = text[opening.end():body_end]
-    hidden_body = hide_tag_brackets(body) if block == "final_answer" else hide_python_string_tags(body)
+    hidden_body = hide_tag_brackets(body, hidden_tag_bracket) if block == "final_answer" else hide_python_string_tags(body, hidden_tag_bracket)
     return text[:opening.end()] + hidden_body + text[body_end:]
 
 def escape_for_triple_quoted_string(text):
@@ -325,13 +328,15 @@ def strip_trailing_tags(code):
         result = result[:match.start()].rstrip()
     return result
 
-def bp_parse_code_blobs(text: str) -> str:
+def bp_parse_code_blobs(text: str, code_block_open: str = "<runcode>", code_block_close: str = "</runcode>") -> str:
     """Extract code blocs from the LLM's output.
 
     If a valid code block is passed, it returns it directly.
 
     Args:
         text (`str`): LLM's output text to parse.
+        code_block_open (`str`): What marks the start of a tagged code block in text.
+        code_block_close (`str`): What marks the end of a tagged code block in text.
 
     Returns:
         `str`: Extracted code block.
@@ -339,7 +344,7 @@ def bp_parse_code_blobs(text: str) -> str:
     Raises:
         ValueError: If no valid code block is found in the text.
     """
-    pattern = CODE_BLOCK_OPEN + "(.*?)" + CODE_BLOCK_CLOSE + r"|```(?:python|py)\b\s*(.*?)```<end_code>"
+    pattern = code_block_open + "(.*?)" + code_block_close + r"|```(?:python|py)\b\s*(.*?)```<end_code>"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         blocks = (tagged or fenced for tagged, fenced in matches)
