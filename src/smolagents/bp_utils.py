@@ -23,7 +23,9 @@ HIDDEN_TAG_BRACKET = "\ue002"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDE_AS_TEXT_TAG = re.compile(r"<(includefile|include|append)_as_text>(.*?)</\1_as_text>", re.DOTALL)
-SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:\s+filename=(?P<quote>['"])[^'"]*(?P=quote))?>)"""
+# A filename quoted with one quote character may contain the other one.
+FILENAME_ATTRIBUTE = r"""\s+filename\s*=\s*(?P<quote>['"])(?P<filename>(?:(?!(?P=quote))[\s\S])*)(?P=quote)\s*"""
+SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:""" + FILENAME_ATTRIBUTE + r""")?>)"""
 # What the top level of a model output can hold: skipped sections (matching parse_tags), code blocks and bare stop markers.
 OUTSIDE_BLOCK_TAG = re.compile(
     SECTION_OPENING +
@@ -187,6 +189,10 @@ def fix_nested_tags(tagname, text):
         result = result[:start_pos] + '"'+tagname+'"' + result[end_of_first_tag:]
 
     return result
+
+def tag_with_filename_pattern(tag):
+    """Returns the compiled pattern of a whole <tag filename="...">content</tag>, whose groups are quote, filename and content."""
+    return re.compile("<" + tag + FILENAME_ATTRIBUTE + r">(?P<content>.*?)</" + tag + ">", re.IGNORECASE | re.DOTALL)
 
 def end_of_block(text, start, block):
     """Returns where the block opened before start ends: for code, the first stop marker outside strings and comments."""

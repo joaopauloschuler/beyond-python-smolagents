@@ -45,6 +45,7 @@ from .bp_utils import (
     final_answer_string_body,
     fix_nested_tags,
     strip_trailing_tags,
+    tag_with_filename_pattern,
 )
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -1137,8 +1138,7 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
         """
-        pattern = '<'+tag+r"""\s+filename=(['"])([^'"]*)\1>(.*?)</"""+tag+'>'
-        matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
+        matches = tag_with_filename_pattern(tag).findall(str(txt))
 
         results = []
         for quote, filename, content in matches:
@@ -1157,8 +1157,7 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             Text without the tag.
         """
-        pattern = r'<'+tag+r"""\s+filename=(['"])[^'"]*\1>(.*?)</"""+tag+r'>'
-        output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
+        output = tag_with_filename_pattern(tag).sub("", txt)
         pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
         output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
         return output
