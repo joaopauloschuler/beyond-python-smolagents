@@ -1180,9 +1180,11 @@ You have been provided with these additional arguments, that you can access dire
         A file error is raised as a step error for the model."""
         file = files[position]
         try:
+            # Opening with 'w' empties the file, so the text must be complete and encodable first.
+            written_text = self.replace_include_files(file['content'])
+            written_text.encode('utf-8')
             force_directories(file['filename'])
             with open(file['filename'], mode, encoding='utf-8') as f:
-                written_text = self.replace_include_files(file['content'])
                 f.write(written_text)
             file['written_text'] = written_text
         except (OSError, ValueError) as error:
