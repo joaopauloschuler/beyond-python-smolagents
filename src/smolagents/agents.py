@@ -1246,10 +1246,10 @@ You have been provided with these additional arguments, that you can access dire
 
     def expand_include_tags(self, code_action, saved_files, appended_files, include_tag_token):
         """Expands every include tag in one scan, so inserted content is never scanned; a generated tag inserts escaped text."""
-        content_of_plain_tag = {}
-        for tag_name, files in (("include", saved_files), ("append", appended_files)):
-            for file in files:
-                content_of_plain_tag.setdefault(f"<{tag_name}>{file['filename']}</{tag_name}>", file["written_text"])
+        content_of_plain_tag = {f"<include>{file['filename']}</include>": file["written_text"] for file in saved_files}
+        for file in appended_files:
+            append_tag = f"<append>{file['filename']}</append>"
+            content_of_plain_tag[append_tag] = content_of_plain_tag.get(append_tag, "") + file["written_text"]
         def expansion_of_plain_tag(plain_tag):
             includefile_tag = INCLUDEFILE_TAG.fullmatch(plain_tag)
             return self.read_included_file(includefile_tag.group(1)) if includefile_tag else content_of_plain_tag.get(plain_tag, plain_tag)
