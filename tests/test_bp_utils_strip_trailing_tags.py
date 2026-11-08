@@ -1,3 +1,5 @@
+import pytest
+
 from smolagents.bp_utils import strip_trailing_tags
 
 
@@ -46,3 +48,30 @@ def test_user_example():
     )
     expected = code[: -len("</parameter>")]
     assert strip_trailing_tags(code) == expected
+
+
+@pytest.mark.parametrize("tag_name", ["includefile", "include", "append"])
+def test_keeps_trailing_include_tags(tag_name):
+    one_tag = f"<{tag_name}>a.py</{tag_name}>"
+    two_tags = f"{one_tag}\n<{tag_name}>b.py</{tag_name}>"
+    assert strip_trailing_tags(one_tag) == one_tag
+    assert strip_trailing_tags(two_tags) == two_tags
+    assert strip_trailing_tags(f"{one_tag}  \n\t\n") == one_tag
+
+
+@pytest.mark.parametrize("tag_name", ["includefile", "include", "append"])
+def test_removes_stray_tags_after_trailing_include_tag(tag_name):
+    one_tag = f"<{tag_name}>a.py</{tag_name}>"
+    assert strip_trailing_tags(f"{one_tag}</parameter>") == one_tag
+    assert strip_trailing_tags(f"{one_tag}\n</parameter>\n</invoke>\n") == one_tag
+    assert strip_trailing_tags(f"{one_tag}</{tag_name}>") == one_tag
+
+
+def test_removes_include_tag_halves():
+    assert strip_trailing_tags("print(1)</includefile>") == "print(1)"
+    assert strip_trailing_tags("print(1)\n<includefile>") == "print(1)"
+
+
+def test_keeps_final_answer_with_as_text_tags():
+    code = 'final_answer("""<includefile_as_text>a.py</includefile_as_text>""")'
+    assert strip_trailing_tags(code) == code

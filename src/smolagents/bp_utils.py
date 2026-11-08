@@ -293,12 +293,17 @@ def final_answer_string_body(answer_text):
     body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:]))
     return "".join(body_parts)
 
+def ends_with_include_tag(text):
+    """True when text ends with a complete <includefile>, <include> or <append> tag."""
+    return any(include_tag.end() == len(text) for include_tag in FINAL_ANSWER_INCLUDE_TAG.finditer(text))
+
 def strip_trailing_tags(code):
     """
     Removes any XML/HTML-like tags (e.g. </parameter>, </invoke>, <br>) that
     appear at the very end of a code block. Some models add stray tags just
     before closing </runcode>; this cleans the extracted code before execution.
     Only the tail of the text is touched, so tags inside strings stay intact.
+    A complete include tag at the end is code to expand, so stripping stops there.
     """
     if not code or not isinstance(code, str):
         return code
@@ -306,7 +311,7 @@ def strip_trailing_tags(code):
     result = code.rstrip()
     while True:
         match = pattern.search(result)
-        if not match:
+        if not match or ends_with_include_tag(result):
             break
         result = result[:match.start()].rstrip()
     return result
