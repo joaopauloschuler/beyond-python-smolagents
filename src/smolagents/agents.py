@@ -38,6 +38,9 @@ from .bp_utils import (
     INCLUDE_AS_TEXT_TAG,
     bp_parse_code_blobs,
     end_output_at_real_stop,
+    hide_tag_brackets,
+    hide_tags_in_block_literals,
+    restore_tag_brackets,
     escape_for_triple_quoted_string,
     final_answer_string_body,
     fix_nested_tags,
@@ -1140,8 +1143,8 @@ You have been provided with these additional arguments, that you can access dire
         results = []
         for quote, filename, content in matches:
             results.append({
-                'filename': filename,
-                'content': content  # Trim whitespace
+                'filename': restore_tag_brackets(filename),
+                'content': restore_tag_brackets(content)  # Trim whitespace
             })
 
         return results
@@ -2121,6 +2124,7 @@ class CodeAgent(MultiStepAgent):
                 level=LogLevel.INFO,
             )
             # len1 = len(model_output)
+            model_output = hide_tags_in_block_literals(model_output)
             saved_files = self.save_files_from_text(model_output)
             model_output = self.remove_tags('savetofile', model_output)
             # len2 = len(model_output)
@@ -2136,13 +2140,15 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
-            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+final_answer_string_body(answer.group(1))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
+            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1))))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
-            model_output_for_parsing = model_output_for_parsing.replace('<runcode>',CODE_BLOCK_OPEN)
-            #v1.19 compatibility
-            model_output_for_parsing = model_output_for_parsing.replace('<code>',CODE_BLOCK_OPEN)
+            # <code> is the v1.19 form. The first opening tag left is the real one; the others are text in the code.
+            real_opening_tag = re.search(r'<(?:runcode|code)>', model_output_for_parsing)
+            if real_opening_tag:
+                model_output_for_parsing = model_output_for_parsing[:real_opening_tag.start()] + CODE_BLOCK_OPEN + model_output_for_parsing[real_opening_tag.end():]
             # end_output_at_real_stop leaves the only real closing tag at the very end; an earlier one is text.
             model_output_for_parsing = re.sub(r'</(?:runcode|code)>\Z', CODE_BLOCK_CLOSE, model_output_for_parsing)
+            model_output_for_parsing = restore_tag_brackets(model_output_for_parsing)
             # this is for backward compatibility
             skip_next_approval = False
             code_block_markers = (CODE_BLOCK_OPEN, CODE_BLOCK_CLOSE, '```py', '```<end_code>')
@@ -2191,6 +2197,8 @@ will run in his device.
                 code_action = extract_code_from_text(code_action, self.code_block_tags) or code_action
             else:
                 code_action = bp_parse_code_blobs(model_output_for_parsing)
+            if real_opening_tag:  # a markdown fence may hold the tag, and then the fence's code holds its marker
+                code_action = code_action.replace(CODE_BLOCK_OPEN, real_opening_tag.group())
             code_action = fix_final_answer_code(code_action)
             code_action = strip_trailing_tags(code_action)  # drop stray tags left just before </runcode>
             # if (len(saved_files)==0):

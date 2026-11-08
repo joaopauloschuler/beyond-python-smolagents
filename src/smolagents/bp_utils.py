@@ -18,12 +18,15 @@ from textwrap import dedent
 # Private-use characters stand for <runcode> and </runcode> while parsing, so the model's markdown cannot match them.
 CODE_BLOCK_OPEN = "\ue000"
 CODE_BLOCK_CLOSE = "\ue001"
+# Stands for "<" in text whose tags are not tags, so that whole-text tag matching cannot see them.
+HIDDEN_TAG_BRACKET = "\ue002"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDE_AS_TEXT_TAG = re.compile(r"<(includefile|include|append)_as_text>(.*?)</\1_as_text>", re.DOTALL)
+SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:\s+filename=(?P<quote>['"])[^'"]*(?P=quote))?>)"""
 # What the top level of a model output can hold: skipped sections (matching parse_tags), code blocks and bare stop markers.
 OUTSIDE_BLOCK_TAG = re.compile(
-    r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:\s+filename=(?P<quote>['"])[^'"]*(?P=quote))?>)"""
+    SECTION_OPENING +
     r"|<(?P<code_block>runcode|code|final_answer)>"
     r"|(?P<stray_stop></runcode>|</code>|</final_answer>|Calling tools:)"
 )
@@ -36,6 +39,7 @@ PYTHON_STRING_OR_STOP = re.compile(
     r"""|(?P<stop></runcode>|</code>|</final_answer>|Calling tools:)""",
     re.DOTALL,
 )
+SECTION_OPENING_OR_PYTHON_STRING = re.compile(SECTION_OPENING + "|" + PYTHON_STRING_OR_STOP.pattern, re.DOTALL)
 TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
 
 dotenv_loaded_names: set[str] = set()
@@ -194,9 +198,21 @@ def end_of_block(text, start, block):
             return token.start()
     return len(text)
 
-def end_output_at_real_stop(text):
-    """Returns text cut at its first real stop and with that block closed, ignoring markers in files, reasoning sections
-    and Python strings. A bare marker cuts too, unless a code block opens after it."""
+def end_of_closed_section(text, section_opening, unclosed_sections):
+    """Returns where the section opened by the section_opening match ends, or None, recording it in unclosed_sections
+    so that later openings of an unclosed section cost no search."""
+    section = section_opening.group("section").lower()
+    if section in unclosed_sections:
+        return None
+    section_end = re.compile(f"</{section}>", re.IGNORECASE).search(text, section_opening.end())
+    if section_end:
+        return section_end.end()
+    unclosed_sections.add(section)
+    return None
+
+def first_real_block_opening(text):
+    """Returns the match of the first code block's opening tag outside files and reasoning sections, or None,
+    and where the first bare stop marker before it is, or None."""
     position = 0
     stray_stop = None
     unclosed_sections = set()
@@ -205,16 +221,54 @@ def end_output_at_real_stop(text):
         if tag.group("stray_stop"):
             stray_stop = tag.start() if stray_stop is None else stray_stop
         elif tag.group("section"):
-            section = tag.group("section").lower()
-            section_end = None if section in unclosed_sections else re.compile(f"</{section}>", re.IGNORECASE).search(text, position)
-            if section_end:
-                position = section_end.end()
-            else:
-                unclosed_sections.add(section)
+            position = end_of_closed_section(text, tag, unclosed_sections) or position
         else:
-            block = tag.group("code_block")
-            return text[:end_of_block(text, position, block)] + f"</{block}>"
+            return tag, stray_stop
+    return None, stray_stop
+
+def end_output_at_real_stop(text):
+    """Returns text cut at its first real stop and with that block closed, ignoring markers in files, reasoning sections
+    and Python strings. A bare marker cuts too, unless a code block opens after it."""
+    opening, stray_stop = first_real_block_opening(text)
+    if opening:
+        block = opening.group("code_block")
+        return text[:end_of_block(text, opening.end(), block)] + f"</{block}>"
     return text if stray_stop is None else text[:stray_stop]
+
+def hide_tag_brackets(text):
+    """Returns text with every "<" replaced by HIDDEN_TAG_BRACKET."""
+    return text.replace("<", HIDDEN_TAG_BRACKET)
+
+def restore_tag_brackets(text):
+    """Returns text with every HIDDEN_TAG_BRACKET back to "<"."""
+    return text.replace(HIDDEN_TAG_BRACKET, "<")
+
+def hide_python_string_tags(code):
+    """Returns code with the tags hidden in its Python strings. Closed sections are skipped so that an apostrophe in
+    their text does not start a string that swallows their closing tag."""
+    parts = []
+    copied_up_to = 0
+    position = 0
+    unclosed_sections = set()
+    while token := SECTION_OPENING_OR_PYTHON_STRING.search(code, position):
+        position = token.end()
+        if token.group("section"):
+            position = end_of_closed_section(code, token, unclosed_sections) or position
+        elif token.group().startswith(('"', "'")):
+            parts += [code[copied_up_to:token.start()], hide_tag_brackets(token.group())]
+            copied_up_to = token.end()
+    return "".join(parts) + code[copied_up_to:]
+
+def hide_tags_in_block_literals(text):
+    """Returns the cut text with the tags hidden in its block's literal text: all of a final answer, or a code block's Python strings."""
+    opening, _ = first_real_block_opening(text)
+    if opening is None:
+        return text
+    block = opening.group("code_block")
+    body_end = end_of_block(text, opening.end(), block)
+    body = text[opening.end():body_end]
+    hidden_body = hide_tag_brackets(body) if block == "final_answer" else hide_python_string_tags(body)
+    return text[:opening.end()] + hidden_body + text[body_end:]
 
 def escape_for_triple_quoted_string(text):
     """Returns text that reads back unchanged inside a triple-double-quoted Python string, keeping its real newlines.
