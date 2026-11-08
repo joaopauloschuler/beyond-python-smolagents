@@ -31,12 +31,13 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
+from .bp_tools import get_file_size, force_directories, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
 from .bp_utils import (
     CODE_BLOCK_CLOSE,
     CODE_BLOCK_OPEN,
     INCLUDE_AS_TEXT_TAG,
     bp_parse_code_blobs,
+    end_output_at_real_stop,
     escape_for_triple_quoted_string,
     final_answer_string_body,
     fix_nested_tags,
@@ -55,7 +56,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:", "</final_answer>"]
+STOP_SEQUENCES = ["</runcode>", "</final_answer>"]
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -1153,7 +1154,7 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             Text without the tag.
         """
-        pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
+        pattern = r'<'+tag+r"""\s+filename=(['"])[^'"]*\1>(.*?)</"""+tag+r'>'
         output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
         pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
         output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
@@ -2023,9 +2024,9 @@ class CodeAgent(MultiStepAgent):
         self._debug_save_context(input_messages)
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
-        stop_sequences = STOP_SEQUENCES
-        if self.code_block_tags[1] not in self.code_block_tags[0]:
-            # If the closing tag is contained in the opening tag, adding it as a stop sequence would cut short any code generation
+        stop_sequences = list(STOP_SEQUENCES)
+        if self.code_block_tags[1] != "</code>" and self.code_block_tags[1] not in self.code_block_tags[0]:
+            # </code> stays out: providers stop at any occurrence, including inside saved HTML. A closing tag contained in its opening tag would cut every block short.
             stop_sequences.append(self.code_block_tags[1])
         try:
             additional_args: dict[str, Any] = {}
@@ -2040,7 +2041,7 @@ class CodeAgent(MultiStepAgent):
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
                             self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
+                            stop_sequences = stop_sequences,
                             **additional_args,
                         )
                         output_text = ""
@@ -2073,7 +2074,7 @@ class CodeAgent(MultiStepAgent):
                     else:
                         chat_message: ChatMessage = self.model(
                             self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
+                            stop_sequences = stop_sequences,
                             **additional_args,
                         )
                         memory_step.model_output_message = chat_message
@@ -2110,13 +2111,7 @@ class CodeAgent(MultiStepAgent):
             model_output = ''  # reasoning used the whole output budget; still tell the model below
         if model_output is not None:
             model_output = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', str(model_output)) # remove escaped tags
-            model_output = remove_after_markers(model_output, STOP_SEQUENCES, True)
-            if ('<runcode>' in model_output) and not('</runcode>' in model_output):
-                model_output = model_output + '</runcode>'
-            if ('<code>' in model_output) and not('</code>' in model_output):
-                model_output = model_output + '</code>'
-            if ('<final_answer>' in model_output) and not('</final_answer>' in model_output):
-                model_output = model_output + '</final_answer>'
+            model_output = end_output_at_real_stop(model_output)
             memory_step.model_output_message = model_output
             str_len = len(model_output)
             str_len_str = str(str_len)
@@ -2131,7 +2126,7 @@ class CodeAgent(MultiStepAgent):
             # len2 = len(model_output)
             appended_files = self.append_files_from_text(model_output)
             model_output = self.remove_tags('appendtofile', model_output)
-            if is_valid_python_code(model_output) and not (output_truncated and not model_output.strip()):
+            if is_valid_python_code(model_output) and not ((output_truncated or saved_files or appended_files) and not model_output.strip()):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
@@ -2143,9 +2138,11 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
             model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+final_answer_string_body(answer.group(1))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
-            model_output_for_parsing = model_output_for_parsing.replace('<runcode>',CODE_BLOCK_OPEN).replace('</runcode>',CODE_BLOCK_CLOSE)
+            model_output_for_parsing = model_output_for_parsing.replace('<runcode>',CODE_BLOCK_OPEN)
             #v1.19 compatibility
-            model_output_for_parsing = model_output_for_parsing.replace('<code>',CODE_BLOCK_OPEN).replace('</code>',CODE_BLOCK_CLOSE)
+            model_output_for_parsing = model_output_for_parsing.replace('<code>',CODE_BLOCK_OPEN)
+            # end_output_at_real_stop leaves the only real closing tag at the very end; an earlier one is text.
+            model_output_for_parsing = re.sub(r'</(?:runcode|code)>\Z', CODE_BLOCK_CLOSE, model_output_for_parsing)
             # this is for backward compatibility
             skip_next_approval = False
             code_block_markers = (CODE_BLOCK_OPEN, CODE_BLOCK_CLOSE, '```py', '```<end_code>')

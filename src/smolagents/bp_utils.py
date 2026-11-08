@@ -21,6 +21,21 @@ CODE_BLOCK_CLOSE = "\ue001"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDE_AS_TEXT_TAG = re.compile(r"<(includefile|include|append)_as_text>(.*?)</\1_as_text>", re.DOTALL)
+# What the top level of a model output can hold: skipped sections (matching parse_tags), code blocks and bare stop markers.
+OUTSIDE_BLOCK_TAG = re.compile(
+    r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:\s+filename=(?P<quote>['"])[^'"]*(?P=quote))?>)"""
+    r"|<(?P<code_block>runcode|code|final_answer)>"
+    r"|(?P<stray_stop></runcode>|</code>|</final_answer>|Calling tools:)"
+)
+PYTHON_STRING_OR_STOP = re.compile(
+    r"""\#(?:(?!</runcode>|</code>|</final_answer>)[^\n])*"""
+    r"""|(?<!\\)\"\"\"[^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*\"\"\""""
+    r"""|(?<!\\)\'\'\'[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*\'\'\'"""
+    r"""|"[^"\\\n]*(?:\\.[^"\\\n]*)*\""""
+    r"""|'[^'\\\n]*(?:\\.[^'\\\n]*)*'"""
+    r"""|(?P<stop></runcode>|</code>|</final_answer>|Calling tools:)""",
+    re.DOTALL,
+)
 TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
 
 dotenv_loaded_names: set[str] = set()
@@ -168,6 +183,38 @@ def fix_nested_tags(tagname, text):
         result = result[:start_pos] + '"'+tagname+'"' + result[end_of_first_tag:]
 
     return result
+
+def end_of_block(text, start, block):
+    """Returns where the block opened before start ends: for code, the first stop marker outside strings and comments."""
+    if block == "final_answer":
+        answer_end = text.find("</final_answer>", start)
+        return len(text) if answer_end == -1 else answer_end
+    for token in PYTHON_STRING_OR_STOP.finditer(text, start):
+        if token.group("stop"):
+            return token.start()
+    return len(text)
+
+def end_output_at_real_stop(text):
+    """Returns text cut at its first real stop and with that block closed, ignoring markers in files, reasoning sections
+    and Python strings. A bare marker cuts too, unless a code block opens after it."""
+    position = 0
+    stray_stop = None
+    unclosed_sections = set()
+    while tag := OUTSIDE_BLOCK_TAG.search(text, position):
+        position = tag.end()
+        if tag.group("stray_stop"):
+            stray_stop = tag.start() if stray_stop is None else stray_stop
+        elif tag.group("section"):
+            section = tag.group("section").lower()
+            section_end = None if section in unclosed_sections else re.compile(f"</{section}>", re.IGNORECASE).search(text, position)
+            if section_end:
+                position = section_end.end()
+            else:
+                unclosed_sections.add(section)
+        else:
+            block = tag.group("code_block")
+            return text[:end_of_block(text, position, block)] + f"</{block}>"
+    return text if stray_stop is None else text[:stray_stop]
 
 def escape_for_triple_quoted_string(text):
     """Returns text that reads back unchanged inside a triple-double-quoted Python string, keeping its real newlines.
