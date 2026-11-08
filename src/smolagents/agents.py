@@ -22,6 +22,7 @@ import textwrap
 import time
 import warnings
 import re
+import secrets
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,7 +36,7 @@ from .bp_tools import get_file_size, force_directories, PlanningTool, MoveAction
 from .bp_utils import (
     CODE_BLOCK_CLOSE,
     CODE_BLOCK_OPEN,
-    INCLUDE_AS_TEXT_TAG,
+    INCLUDEFILE_TAG,
     bp_parse_code_blobs,
     end_output_at_real_stop,
     hide_tag_brackets,
@@ -44,6 +45,8 @@ from .bp_utils import (
     escape_for_triple_quoted_string,
     final_answer_string_body,
     fix_nested_tags,
+    generated_include_tag_pattern,
+    readable_generated_include_tags,
     strip_trailing_tags,
     tag_with_filename_pattern,
 )
@@ -1201,16 +1204,21 @@ You have been provided with these additional arguments, that you can access dire
               self.logger.log(msg_str, LogLevel.INFO)
         return files
                 
-    def replace_include_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<include>{file["filename"]}</include>', file["content"])
-        return txt
+    def read_included_file(self, filename):
+        """Returns the content of the file named by an <includefile> tag, or an [ERROR: ...] text."""
+        filename = filename.strip()
+        try:
+            with open(filename, 'r', encoding='utf-8') as file:
+                txt = file.read()
+                self.logger.log("Included file "+filename+".", LogLevel.INFO)
+                return txt
+        except FileNotFoundError:
+            return f"[ERROR: File not found: {filename}]"
+        except PermissionError:
+            return f"[ERROR: Permission denied: {filename}]"
+        except Exception as e:
+            return f"[ERROR: Could not read file {filename}: {str(e)}]"
 
-    def replace_append_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<append>{file["filename"]}</append>', file["content"])
-        return txt
-    
     def replace_include_files(self, txt):
         """
         Args:
@@ -1219,31 +1227,25 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             str: Text with tags replaced by file contents
         """
-        def replace_with_file_content(match):
-            filename = match.group(1).strip()
-            try:
-                with open(filename, 'r', encoding='utf-8') as file:
-                    txt = file.read()
-                    self.logger.log("Included file "+filename+".", LogLevel.INFO)
-                    return txt
-            except FileNotFoundError:
-                return f"[ERROR: File not found: {filename}]"
-            except PermissionError:
-                return f"[ERROR: Permission denied: {filename}]"
-            except Exception as e:
-                return f"[ERROR: Could not read file {filename}: {str(e)}]"
-        pattern = r'<includefile>(.*?)</includefile>'
-        result = re.sub(pattern, replace_with_file_content, txt, flags=re.DOTALL)
-        return result
-    
-    def replace_include_as_text_tags(self, code_action, saved_files, appended_files):
-        """Expands the _as_text include tags, which sit inside a triple-quoted string, escaping what they insert."""
-        def escaped_included_text(include_tag):
-            tag_name, tag_content = include_tag.groups()
-            plain_tag = f"<{tag_name}>{tag_content}</{tag_name}>"
-            expanded = self.replace_append_tags(self.replace_include_tags(plain_tag, saved_files), appended_files)
-            return escape_for_triple_quoted_string(self.replace_include_files(expanded))
-        return INCLUDE_AS_TEXT_TAG.sub(escaped_included_text, code_action)
+        return INCLUDEFILE_TAG.sub(lambda match: self.read_included_file(match.group(1)), txt)
+
+    def expand_include_tags(self, code_action, saved_files, appended_files, include_tag_token):
+        """Expands every include tag in one scan, so inserted content is never scanned; a generated tag inserts escaped text."""
+        content_of_plain_tag = {}
+        for tag_name, files in (("include", saved_files), ("append", appended_files)):
+            for file in files:
+                content_of_plain_tag.setdefault(f"<{tag_name}>{file['filename']}</{tag_name}>", file["content"])
+        def expansion_of_plain_tag(plain_tag):
+            includefile_tag = INCLUDEFILE_TAG.fullmatch(plain_tag)
+            return self.read_included_file(includefile_tag.group(1)) if includefile_tag else content_of_plain_tag.get(plain_tag, plain_tag)
+        def inserted_text(tag):
+            if not tag.group("tag_name"):
+                return expansion_of_plain_tag(tag.group())
+            tag_name, target = tag.group("tag_name", "target")
+            return escape_for_triple_quoted_string(expansion_of_plain_tag(f"<{tag_name}>{target}</{tag_name}>"))
+        plain_tag_patterns = [INCLUDEFILE_TAG.pattern, *map(re.escape, content_of_plain_tag)]
+        any_include_tag = "|".join([generated_include_tag_pattern(include_tag_token), *plain_tag_patterns])
+        return re.sub(any_include_tag, inserted_text, code_action, flags=re.DOTALL)
 
     def set_system_prompt(self, new_system_prompt):
         self.prompt_templates['system_prompt'] = new_system_prompt
@@ -2122,6 +2124,7 @@ class CodeAgent(MultiStepAgent):
         str_len = 0
         str_len_str = '0'
         saved_files = []
+        include_tag_token = secrets.token_hex(16)
 
         if model_output is None and output_truncated:
             model_output = ''  # reasoning used the whole output budget; still tell the model below
@@ -2153,7 +2156,7 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
-            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1))))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
+            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1)), include_tag_token))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
             # <code> is the v1.19 form. The first opening tag left is the real one; the others are text in the code.
             real_opening_tag = re.search(r'<(?:runcode|code)>', model_output_for_parsing)
@@ -2214,6 +2217,8 @@ will run in his device.
                 code_action = code_action.replace(CODE_BLOCK_OPEN, real_opening_tag.group())
             code_action = fix_final_answer_code(code_action)
             code_action = strip_trailing_tags(code_action)  # drop stray tags left just before </runcode>
+            code_to_expand = code_action
+            code_action = readable_generated_include_tags(code_action, include_tag_token)
             # if (len(saved_files)==0):
             #     code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
             # """+code_action
@@ -2294,10 +2299,7 @@ You can combine the above to be able to run very large portions of python code i
         elif not self._request_approval("runcode", code_action):
             raise AgentExecutionRejected("User rejected runcode execution.", self.logger)
         self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
-        code_action = self.replace_include_tags(code_action, saved_files)
-        code_action = self.replace_append_tags(code_action, appended_files)
-        code_action = self.replace_include_files(code_action)
-        code_action = self.replace_include_as_text_tags(code_action, saved_files, appended_files)
+        code_action = self.expand_include_tags(code_to_expand, saved_files, appended_files, include_tag_token)
         
         # with open('tmp.py', "w") as text_file:
         #     text_file.write(code_action)

@@ -22,7 +22,7 @@ CODE_BLOCK_CLOSE = "\ue001"
 HIDDEN_TAG_BRACKET = "\ue002"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
-INCLUDE_AS_TEXT_TAG = re.compile(r"<(includefile|include|append)_as_text>(.*?)</\1_as_text>", re.DOTALL)
+INCLUDEFILE_TAG = re.compile(r"<includefile>(.*?)</includefile>", re.DOTALL)
 # A filename quoted with one quote character may contain the other one.
 FILENAME_ATTRIBUTE = r"""\s+filename\s*=\s*(?P<quote>['"])(?P<filename>(?:(?!(?P=quote))[\s\S])*)(?P=quote)\s*"""
 SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:""" + FILENAME_ATTRIBUTE + r""")?>)"""
@@ -281,14 +281,23 @@ def escape_for_triple_quoted_string(text):
     The word final_answer is hex-escaped because fix_final_answer_code renames it even inside strings."""
     return text.translate(TRIPLE_QUOTED_STRING_ESCAPES).replace("final_answer", r"\x66inal_answer")
 
-def final_answer_string_body(answer_text):
-    """Returns answer_text for pasting between triple quotes, with its include tags renamed to the _as_text form."""
+def generated_include_tag_pattern(include_tag_token):
+    """Returns the pattern of the tags final_answer_string_body generates with include_tag_token, grouping tag_name and target."""
+    return rf"<(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>(?P<target>.*?)</(?P=tag_name)_as_text {include_tag_token}>"
+
+def readable_generated_include_tags(code, include_tag_token):
+    """Returns code with its generated include tags written back as the plain tags they stand for."""
+    return re.sub(generated_include_tag_pattern(include_tag_token), r"<\g<tag_name>>\g<target></\g<tag_name>>", code, flags=re.DOTALL)
+
+def final_answer_string_body(answer_text, include_tag_token):
+    """Returns answer_text for pasting between triple quotes, with its include tags in the generated form.
+    include_tag_token is unknown to the model, so model text cannot produce that form."""
     body_parts = []
     copied_up_to = 0
     for include_tag in FINAL_ANSWER_INCLUDE_TAG.finditer(answer_text):
         tag_name, tag_content = include_tag.groups()
         body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:include_tag.start()]))
-        body_parts.append(f"<{tag_name}_as_text>{tag_content}</{tag_name}_as_text>")
+        body_parts.append(f"<{tag_name}_as_text {include_tag_token}>{tag_content}</{tag_name}_as_text {include_tag_token}>")
         copied_up_to = include_tag.end()
     body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:]))
     return "".join(body_parts)
