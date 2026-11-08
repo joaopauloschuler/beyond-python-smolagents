@@ -15,6 +15,11 @@ import time
 from textwrap import dedent
 
 
+# Private-use characters stand for <runcode> and </runcode> while parsing, so the model's markdown cannot match them.
+CODE_BLOCK_OPEN = "\ue000"
+CODE_BLOCK_CLOSE = "\ue001"
+MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
+
 dotenv_loaded_names: set[str] = set()
 
 
@@ -193,10 +198,11 @@ def bp_parse_code_blobs(text: str) -> str:
     Raises:
         ValueError: If no valid code block is found in the text.
     """
-    pattern = r"```(?:py|python)\s*(.*?)```<end_code>"
+    pattern = CODE_BLOCK_OPEN + "(.*?)" + CODE_BLOCK_CLOSE + r"|```(?:python|py)\b\s*(.*?)```<end_code>"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
-        return "\n\n".join(match.strip() for match in matches)
+        blocks = (tagged or fenced for tagged, fenced in matches)
+        return "\n\n".join(MARKDOWN_FENCE_AROUND_CODE.sub(r"\1", block.strip()) for block in blocks)
     # Maybe the LLM outputted a code blob directly
     try:
         ast.parse(text)

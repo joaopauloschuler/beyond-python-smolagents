@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
-from .bp_utils import bp_parse_code_blobs, fix_nested_tags, strip_trailing_tags
+from .bp_utils import CODE_BLOCK_CLOSE, CODE_BLOCK_OPEN, bp_parse_code_blobs, fix_nested_tags, strip_trailing_tags
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
@@ -2124,12 +2124,13 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
-            model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
+            model_output_for_parsing = model_output_for_parsing.replace('<runcode>',CODE_BLOCK_OPEN).replace('</runcode>',CODE_BLOCK_CLOSE)
             #v1.19 compatibility
-            model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
+            model_output_for_parsing = model_output_for_parsing.replace('<code>',CODE_BLOCK_OPEN).replace('</code>',CODE_BLOCK_CLOSE)
             # this is for backward compatibility
             skip_next_approval = False
-            if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
+            code_block_markers = (CODE_BLOCK_OPEN, CODE_BLOCK_CLOSE, '```py', '```<end_code>')
+            if not any(marker in model_output_for_parsing for marker in code_block_markers):
                 skip_next_approval = True  # system-generated reminders, no approval needed
                 if output_truncated:
                     model_output_for_parsing = model_output_for_parsing + """
