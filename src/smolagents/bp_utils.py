@@ -292,12 +292,14 @@ def escape_for_triple_quoted_string(text):
     return text.translate(TRIPLE_QUOTED_STRING_ESCAPES).replace("final_answer", r"\x66inal_answer")
 
 def generated_include_tag_pattern(include_tag_token):
-    """Returns the pattern of the tags final_answer_string_body generates with include_tag_token, grouping tag_name and target."""
-    return rf"<(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>(?P<target>.*?)</(?P=tag_name)_as_text {include_tag_token}>"
+    """Returns the pattern of a complete tag pair final_answer_string_body generates with include_tag_token, grouping tag_name and target.
+    A target holds no generated opening tag, so an opening tag cut from its closing tag cannot pair with a later one."""
+    any_generated_opening_tag = rf"<(?:includefile|include|append)_as_text {include_tag_token}>"
+    return rf"<(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>(?P<target>(?:(?!{any_generated_opening_tag}).)*?)</(?P=tag_name)_as_text {include_tag_token}>"
 
 def readable_generated_include_tags(code, include_tag_token):
-    """Returns code with its generated include tags written back as the plain tags they stand for."""
-    return re.sub(generated_include_tag_pattern(include_tag_token), r"<\g<tag_name>>\g<target></\g<tag_name>>", code, flags=re.DOTALL)
+    """Returns code with each generated include tag, paired or cut from its pair, written back as the plain tag it stands for."""
+    return re.sub(rf"<(?P<slash>/?)(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>", r"<\g<slash>\g<tag_name>>", code)
 
 def final_answer_string_body(answer_text, include_tag_token):
     """Returns answer_text for pasting between triple quotes, with its include tags in the generated form.
