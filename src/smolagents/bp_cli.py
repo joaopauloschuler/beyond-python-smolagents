@@ -86,6 +86,7 @@ _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
 
 TRUNCATE_PREVIEW_LINES = 5
+TERMINAL_CONTROL_CHARACTER = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -1490,6 +1491,16 @@ def stop_steering_listener(listener) -> list[str]:
     return listener.drain()
 
 
+def visible_control_characters(text: str) -> str:
+    """Returns text with terminal control characters written as \\xNN, so they cannot hide or rewrite what is displayed."""
+    return TERMINAL_CONTROL_CHARACTER.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
+
+
+def print_literally(text: str) -> None:
+    """Prints text with no Rich markup or emoji code interpretation."""
+    console.print(text, markup=False, emoji=False)
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -1509,9 +1520,10 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     console.print(f"[bold yellow]{'═' * 50}[/]")
 
     # Show truncated preview
-    lines = content.split('\n')
+    displayed_content = visible_control_characters(content)
+    lines = displayed_content.split('\n')
     preview = '\n'.join(lines[:TRUNCATE_PREVIEW_LINES])
-    console.print(preview)
+    print_literally(preview)
     truncated = len(lines) > TRUNCATE_PREVIEW_LINES
     if truncated:
         console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, press 'f' to see full content)[/]")
@@ -1532,7 +1544,7 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(f"[yellow]Not approved: no key could be read from a terminal. {_NO_TERMINAL_ADVICE}[/]")
             return False
         if response == 'f' and truncated:
-            console.print(content)
+            print_literally(displayed_content)
             continue
         if response in ('y',):
             if _steering_listener is not None:

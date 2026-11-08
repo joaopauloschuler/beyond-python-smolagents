@@ -2301,14 +2301,14 @@ You can combine the above to be able to run very large portions of python code i
         # memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
+        # Cut tags stay in generated form through the scan, so plain text cannot complete them into an include.
+        code_action = readable_generated_include_tags(self.expand_include_tags(code_to_expand, saved_files, appended_files, include_tag_token), include_tag_token)
         if skip_next_approval:
             # there is no need to request for approval
             pass
         elif not self._request_approval("runcode", code_action):
             raise AgentExecutionRejected("User rejected runcode execution.", self.logger)
         self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
-        # Cut tags stay in generated form through the scan, so plain text cannot complete them into an include.
-        code_action = readable_generated_include_tags(self.expand_include_tags(code_to_expand, saved_files, appended_files, include_tag_token), include_tag_token)
         
         # with open('tmp.py', "w") as text_file:
         #     text_file.write(code_action)
