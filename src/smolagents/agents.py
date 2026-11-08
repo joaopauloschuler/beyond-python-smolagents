@@ -323,6 +323,8 @@ class MultiStepAgent(ABC):
         return_full_result (`bool`, default `False`): Whether to return the full [`RunResult`] object or just the final answer output from the agent run.
         compression_config ([`~bp_compression.CompressionConfig`], *optional*): Configuration for context compression.
             When provided, older memory steps will be compressed via LLM summarization to manage context window size.
+        approval_callback (`Callable[[str, str], bool]`, *optional*): Called with the tag type and content before a tag acts.
+            Returns whether the tag may act. Without it, every tag acts with no approval requested.
     """
 
     def __init__(
@@ -344,7 +346,9 @@ class MultiStepAgent(ABC):
         return_full_result: bool = False,
         logger: AgentLogger | None = None,
         compression_config: CompressionConfig | None = None,
+        approval_callback: Callable[[str, str], bool] | None = None,
     ):
+        self.approval_callback = approval_callback
         self.agent_name = self.__class__.__name__
         self.model = model
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
@@ -1165,6 +1169,12 @@ You have been provided with these additional arguments, that you can access dire
         output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
         return output
         
+    def _request_approval(self, tag_type: str, content: str) -> bool:
+        """Request user approval before executing a tag. Returns True if approved."""
+        if self.approval_callback is None:
+            return True
+        return self.approval_callback(tag_type, content)
+
     def write_tag_file(self, tag, files, position, mode, rest_of_output_status):
         """Writes files[position] as UTF-8, creating its directory, and sets its written_text to the text written.
         A file error is raised as a step error for the model."""
@@ -1914,10 +1924,8 @@ class CodeAgent(MultiStepAgent):
         stream_outputs: bool = False,
         use_structured_outputs_internally: bool = False,
         code_block_tags: str | tuple[str, str] | None = None,
-        approval_callback: Callable[[str, str], bool] | None = None,
         **kwargs,
     ):
-        self.approval_callback = approval_callback
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
@@ -1967,12 +1975,6 @@ class CodeAgent(MultiStepAgent):
     def _setup_tools(self, tools, add_base_tools):
         super()._setup_tools(tools, add_base_tools)
         self.tools.setdefault("send_to_user", SendToUserTool())
-
-    def _request_approval(self, tag_type: str, content: str) -> bool:
-        """Request user approval before executing a tag. Returns True if approved."""
-        if self.approval_callback is None:
-            return True
-        return self.approval_callback(tag_type, content)
 
     def __enter__(self):
         return self
