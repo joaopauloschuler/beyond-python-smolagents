@@ -2128,7 +2128,7 @@ class CodeAgent(MultiStepAgent):
         str_len_str = '0'
         saved_files = []
         include_tag_token = secrets.token_hex(16)
-        code_block_open, code_block_close, hidden_tag_bracket = new_parsing_markers()
+        code_block_open, code_block_close, hidden_tag_bracket = new_parsing_markers(str(model_output))
 
         if model_output is None and output_truncated:
             model_output = ''  # reasoning used the whole output budget; still tell the model below

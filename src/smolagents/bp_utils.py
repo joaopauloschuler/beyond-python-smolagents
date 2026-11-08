@@ -13,6 +13,7 @@ import secrets
 import shutil
 import sys
 import time
+from itertools import chain, islice
 from textwrap import dedent
 
 
@@ -39,6 +40,7 @@ PYTHON_STRING_OR_STOP = re.compile(
 )
 SECTION_OPENING_OR_PYTHON_STRING = re.compile(SECTION_OPENING + "|" + PYTHON_STRING_OR_STOP.pattern, re.DOTALL)
 TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
+PRIVATE_USE_RANGES = (range(0xE000, 0xF900), range(0xF0000, 0xFFFFE), range(0x100000, 0x10FFFE))
 
 dotenv_loaded_names: set[str] = set()
 
@@ -237,11 +239,16 @@ def end_output_at_real_stop(text):
         return text[:end_of_block(text, opening.end(), block)] + f"</{block}>"
     return text if stray_stop is None else text[:stray_stop]
 
-def new_parsing_markers():
-    """Returns the stand-ins for <runcode>, </runcode> and a hidden "<" while one reply is parsed. Call it after the reply
-    arrives: its random token keeps them out of the reply, and the private-use first character is not valid Python code."""
-    token = secrets.token_hex(16)
-    return f"\ue000{token}", f"\ue001{token}", f"\ue002{token}"
+def new_parsing_markers(reply):
+    """Returns the stand-ins for <runcode>, </runcode> and a hidden "<" while reply is parsed: private-use characters, not valid
+    Python code, that reply does not contain. A reply holding nearly all of them gets longer random stand-ins absent from it."""
+    characters_in_reply = set(reply)
+    free_characters = (chr(code_point) for code_point in chain.from_iterable(PRIVATE_USE_RANGES) if chr(code_point) not in characters_in_reply)
+    markers = tuple(islice(free_characters, 3))
+    while len(markers) < 3 or any(marker in reply for marker in markers):
+        token = secrets.token_hex(16)
+        markers = (f"\ue000{token}", f"\ue001{token}", f"\ue002{token}")
+    return markers
 
 def hide_tag_brackets(text, hidden_tag_bracket):
     """Returns text with every "<" replaced by hidden_tag_bracket, so that whole-text tag matching cannot see its tags."""
