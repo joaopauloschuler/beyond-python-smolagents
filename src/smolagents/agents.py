@@ -32,7 +32,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
-from .bp_utils import CODE_BLOCK_CLOSE, CODE_BLOCK_OPEN, bp_parse_code_blobs, fix_nested_tags, strip_trailing_tags
+from .bp_utils import (
+    CODE_BLOCK_CLOSE,
+    CODE_BLOCK_OPEN,
+    INCLUDE_AS_TEXT_TAG,
+    bp_parse_code_blobs,
+    escape_for_triple_quoted_string,
+    final_answer_string_body,
+    fix_nested_tags,
+    strip_trailing_tags,
+)
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
@@ -1210,6 +1219,15 @@ You have been provided with these additional arguments, that you can access dire
         result = re.sub(pattern, replace_with_file_content, txt, flags=re.DOTALL)
         return result
     
+    def replace_include_as_text_tags(self, code_action, saved_files, appended_files):
+        """Expands the _as_text include tags, which sit inside a triple-quoted string, escaping what they insert."""
+        def escaped_included_text(include_tag):
+            tag_name, tag_content = include_tag.groups()
+            plain_tag = f"<{tag_name}>{tag_content}</{tag_name}>"
+            expanded = self.replace_append_tags(self.replace_include_tags(plain_tag, saved_files), appended_files)
+            return escape_for_triple_quoted_string(self.replace_include_files(expanded))
+        return INCLUDE_AS_TEXT_TAG.sub(escaped_included_text, code_action)
+
     def set_system_prompt(self, new_system_prompt):
         self.prompt_templates['system_prompt'] = new_system_prompt
         # removed in v1.18: self.system_prompt = self.initialize_system_prompt()
@@ -2123,6 +2141,7 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
+            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+final_answer_string_body(answer.group(1))+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
             model_output_for_parsing = model_output_for_parsing.replace('<runcode>',CODE_BLOCK_OPEN).replace('</runcode>',CODE_BLOCK_CLOSE)
             #v1.19 compatibility
@@ -2260,6 +2279,7 @@ You can combine the above to be able to run very large portions of python code i
         code_action = self.replace_include_tags(code_action, saved_files)
         code_action = self.replace_append_tags(code_action, appended_files)
         code_action = self.replace_include_files(code_action)
+        code_action = self.replace_include_as_text_tags(code_action, saved_files, appended_files)
         
         # with open('tmp.py', "w") as text_file:
         #     text_file.write(code_action)

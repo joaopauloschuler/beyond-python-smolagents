@@ -19,6 +19,9 @@ from textwrap import dedent
 CODE_BLOCK_OPEN = "\ue000"
 CODE_BLOCK_CLOSE = "\ue001"
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
+FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
+INCLUDE_AS_TEXT_TAG = re.compile(r"<(includefile|include|append)_as_text>(.*?)</\1_as_text>", re.DOTALL)
+TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
 
 dotenv_loaded_names: set[str] = set()
 
@@ -165,6 +168,23 @@ def fix_nested_tags(tagname, text):
         result = result[:start_pos] + '"'+tagname+'"' + result[end_of_first_tag:]
 
     return result
+
+def escape_for_triple_quoted_string(text):
+    """Returns text that reads back unchanged inside a triple-double-quoted Python string, keeping its real newlines.
+    The word final_answer is hex-escaped because fix_final_answer_code renames it even inside strings."""
+    return text.translate(TRIPLE_QUOTED_STRING_ESCAPES).replace("final_answer", r"\x66inal_answer")
+
+def final_answer_string_body(answer_text):
+    """Returns answer_text for pasting between triple quotes, with its include tags renamed to the _as_text form."""
+    body_parts = []
+    copied_up_to = 0
+    for include_tag in FINAL_ANSWER_INCLUDE_TAG.finditer(answer_text):
+        tag_name, tag_content = include_tag.groups()
+        body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:include_tag.start()]))
+        body_parts.append(f"<{tag_name}_as_text>{tag_content}</{tag_name}_as_text>")
+        copied_up_to = include_tag.end()
+    body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:]))
+    return "".join(body_parts)
 
 def strip_trailing_tags(code):
     """
