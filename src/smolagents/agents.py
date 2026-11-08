@@ -1166,12 +1166,15 @@ You have been provided with these additional arguments, that you can access dire
         return output
         
     def write_tag_file(self, tag, files, position, mode, rest_of_output_status):
-        """Writes files[position] as UTF-8, creating its directory. A file error is raised as a step error for the model."""
+        """Writes files[position] as UTF-8, creating its directory, and sets its written_text to the text written.
+        A file error is raised as a step error for the model."""
         file = files[position]
         try:
             force_directories(file['filename'])
             with open(file['filename'], mode, encoding='utf-8') as f:
-                f.write(self.replace_include_files(file['content']))
+                written_text = self.replace_include_files(file['content'])
+                f.write(written_text)
+            file['written_text'] = written_text
         except (OSError, ValueError) as error:
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
@@ -1234,7 +1237,7 @@ You have been provided with these additional arguments, that you can access dire
         content_of_plain_tag = {}
         for tag_name, files in (("include", saved_files), ("append", appended_files)):
             for file in files:
-                content_of_plain_tag.setdefault(f"<{tag_name}>{file['filename']}</{tag_name}>", file["content"])
+                content_of_plain_tag.setdefault(f"<{tag_name}>{file['filename']}</{tag_name}>", file["written_text"])
         def expansion_of_plain_tag(plain_tag):
             includefile_tag = INCLUDEFILE_TAG.fullmatch(plain_tag)
             return self.read_included_file(includefile_tag.group(1)) if includefile_tag else content_of_plain_tag.get(plain_tag, plain_tag)
