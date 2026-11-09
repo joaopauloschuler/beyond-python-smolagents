@@ -1183,35 +1183,38 @@ You have been provided with these additional arguments, that you can access dire
             return True
         return self.approval_callback(tag_type, content)
 
-    def write_tag_file(self, tag, files, position, mode, rest_of_output_status):
-        """Writes files[position] as UTF-8, creating its directory, and sets its written_text to the text written.
-        A file error is raised as a step error for the model."""
+    def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
+        """Expands files[position], asks approval for that text and writes it as UTF-8, creating its directory; sets written_text.
+        A failed include or unencodable text is raised as a step error before approval; a file error, as a step error after it."""
         file = files[position]
-        try:
-            # Opening with 'w' empties the file, so the text must be complete and encodable first.
-            written_text = self.replace_include_files(file['content'])
-            written_text.encode('utf-8')
-            force_directories(file['filename'])
-            with open(file['filename'], mode, encoding='utf-8') as f:
-                f.write(written_text)
-            file['written_text'] = written_text
-        except (OSError, ValueError, IncludedFileError) as error:
+        def step_error(error):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
-            raise AgentExecutionError(
+            return AgentExecutionError(
                 f"Could not write file '{file['filename']}' from <{tag}>: {error}\n"
                 f"Already written from <{tag}> in this output: {written_filenames}. Not attempted: {skipped_filenames}.\n"
                 f"{rest_of_output_status} The code in this output did not run.",
                 self.logger,
-            ) from error
+            )
+        try:
+            written_text = self.replace_include_files(file['content'])
+            written_text.encode('utf-8')
+        except (ValueError, IncludedFileError) as error:
+            raise step_error(error) from error
+        if not self._request_approval(tag, f"filename={file['filename']}\n{written_text}"):
+            raise AgentExecutionRejected(f"User rejected {tag}: {file['filename']}", self.logger)
+        try:
+            force_directories(file['filename'])
+            with open(file['filename'], mode, encoding='utf-8') as f:
+                f.write(written_text)
+        except (OSError, ValueError) as error:
+            raise step_error(error) from error
+        file['written_text'] = written_text
 
     def save_files_from_text(self, txt, hidden_tag_bracket="<"):
         files = self.parse_tags('savetofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
-              approval_content = f"filename={file['filename']}\n{file['content']}"
-              if not self._request_approval("savetofile", approval_content):
-                  raise AgentExecutionRejected("User rejected savetofile: " + file['filename'], self.logger)
-              self.write_tag_file('savetofile', files, position, 'w', "No <appendtofile> tag in this output was processed.")
+              self.approve_and_write_tag_file('savetofile', files, position, 'w', "No <appendtofile> tag in this output was processed.")
               msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['filename']))+" bytes."
               self.logger.log(msg_str, LogLevel.INFO)
         return files
@@ -1219,10 +1222,7 @@ You have been provided with these additional arguments, that you can access dire
     def append_files_from_text(self, txt, hidden_tag_bracket="<"):
         files = self.parse_tags('appendtofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
-              approval_content = f"filename={file['filename']}\n{file['content']}"
-              if not self._request_approval("appendtofile", approval_content):
-                  raise AgentExecutionRejected("User rejected appendtofile: " + file['filename'], self.logger)
-              self.write_tag_file('appendtofile', files, position, 'a', "Every <savetofile> tag in this output was written; do not repeat an <appendtofile> that was already written.")
+              self.approve_and_write_tag_file('appendtofile', files, position, 'a', "Every <savetofile> tag in this output was written; do not repeat an <appendtofile> that was already written.")
               msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['filename']))+" bytes."
               self.logger.log(msg_str, LogLevel.INFO)
         return files
