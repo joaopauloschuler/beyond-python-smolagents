@@ -40,6 +40,7 @@ PYTHON_STRING_OR_STOP = re.compile(
 )
 SECTION_OPENING_OR_PYTHON_STRING = re.compile(SECTION_OPENING + "|" + PYTHON_STRING_OR_STOP.pattern, re.DOTALL)
 TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
+TERMINAL_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in chain(range(0x00, 0x09), range(0x0b, 0x20), range(0x7f, 0xa0))}
 PRIVATE_USE_RANGES = (range(0xE000, 0xF900), range(0xF0000, 0xFFFFE), range(0x100000, 0x10FFFE))
 
 dotenv_loaded_names: set[str] = set()
@@ -146,6 +147,11 @@ def remove_files(file_filter):
   txt_files = glob.glob(file_filter)
   for file_path in txt_files:
     os.remove(file_path)
+
+def visible_control_characters(text: str) -> str:
+    """Returns text with terminal control characters written as \\xNN, so they cannot hide or rewrite what is displayed."""
+    return text.translate(TERMINAL_CONTROL_ESCAPES)
+
 
 def is_valid_python_code(code_string):
     """Returns true if the string is a valid python code."""

@@ -73,7 +73,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
-from smolagents.bp_utils import dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool
+from smolagents.bp_utils import dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters
 
 
 VERSION = "1.24-bp"
@@ -87,7 +87,6 @@ _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env,
 
 TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
-TERMINAL_CONTROL_CHARACTER = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -1490,11 +1489,6 @@ def stop_steering_listener(listener) -> list[str]:
     listener.agent.steering_source = None
     _steering_listener = None
     return listener.drain()
-
-
-def visible_control_characters(text: str) -> str:
-    """Returns text with terminal control characters written as \\xNN, so they cannot hide or rewrite what is displayed."""
-    return TERMINAL_CONTROL_CHARACTER.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
 
 
 def print_literally(text: str) -> None:

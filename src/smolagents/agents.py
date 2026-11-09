@@ -49,6 +49,7 @@ from .bp_utils import (
     readable_generated_include_tags,
     strip_trailing_tags,
     tag_with_filename_pattern,
+    visible_control_characters,
 )
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -1232,7 +1233,7 @@ You have been provided with these additional arguments, that you can access dire
                 return f"[ERROR: Could not read file {filename}: its size of {file_status.st_size} bytes is over the limit of {MAX_INCLUDED_FILE_BYTES} bytes]"
             with open(filename, 'r', encoding='utf-8') as file:
                 txt = file.read()
-                self.logger.log("Included file "+filename+".", LogLevel.INFO)
+                self.logger.log("Included file "+visible_control_characters(filename)+".", LogLevel.INFO, markup=False, emoji=False)
                 return txt
         except FileNotFoundError:
             return f"[ERROR: File not found: {filename}]"
@@ -2317,7 +2318,7 @@ You can combine the above to be able to run very large portions of python code i
             pass
         elif not self._request_approval("runcode", code_action):
             raise AgentExecutionRejected("User rejected runcode execution.", self.logger)
-        self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
+        self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=visible_control_characters(code_action), level=LogLevel.INFO)
         
         # with open('tmp.py', "w") as text_file:
         #     text_file.write(code_action)
