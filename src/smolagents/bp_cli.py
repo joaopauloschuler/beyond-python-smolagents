@@ -90,6 +90,8 @@ TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
 PYTHON_LINE_BREAK = re.compile(r"\r\n?|\n")
 FULL_VIEW_PIECE_CHARACTERS = 65536
+FILE_WRITE_APPROVAL_TAG_TYPES = ("savetofile", "appendtofile", FAILED_INCLUDE_TAG_TYPE)
+WHITESPACE_PADDING = re.compile(r"\s{3,}")
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -1589,6 +1591,12 @@ def control_character_notice(content: str) -> str:
     return notice
 
 
+def print_write_target(write_target: str) -> None:
+    """Prints the whole resolved path a file tag writes to, escaped; a run of 3 or more whitespace characters prints as its count, so padding cannot spread the path over rows."""
+    padding_counted = WHITESPACE_PADDING.sub(lambda padding: f"[{plural(len(padding.group()), 'whitespace character')}]", visible_control_characters(write_target))
+    console.print(Text.assemble(("Write target: ", "bold cyan"), console_literal(padding_counted, "bold")))
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -1609,6 +1617,11 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
         console.print("[bold red]  The include failed, so nothing will be written. (y) tells the model why; (n) tells it only that you rejected this.[/]")
     console.print(f"[bold yellow]{'═' * 50}[/]")
 
+    write_target = None
+    if tag_type in FILE_WRITE_APPROVAL_TAG_TYPES:
+        filename_line, _, content = content.partition("\n")
+        write_target = filename_line.removeprefix("filename=")
+
     # Show truncated preview
     preview, hidden_notice = approval_preview(content)
     console.print(preview)
@@ -1619,6 +1632,8 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     if control_notice:
         print_literally(control_notice)
     console.print(f"[bold yellow]{'─' * 50}[/]")
+    if write_target is not None:
+        print_write_target(write_target)
 
     # Prompt loop with single-key input
     while True:
@@ -1638,6 +1653,8 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             print_marked_control_characters(content)
             if control_notice:
                 print_literally(control_notice)
+            if write_target is not None:
+                print_write_target(write_target)
             continue
         if response in ('y',):
             if _steering_listener is not None:

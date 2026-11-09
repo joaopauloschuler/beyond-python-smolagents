@@ -335,7 +335,8 @@ class MultiStepAgent(ABC):
             When provided, older memory steps will be compressed via LLM summarization to manage context window size.
         approval_callback (`Callable[[str, str], bool]`, *optional*): Called with the tag type and content before a tag acts.
             Returns whether the tag may act. Without it, every tag acts with no approval requested.
-            The tag type is `FAILED_INCLUDE_TAG_TYPE` when an `<includefile>` failed; the content then holds the filename and the reason, and approving writes nothing.
+            For a file tag, the first line of the content is `filename=` and the resolved path the write opens, with any newline in it as `\x0a`.
+            The tag type is `FAILED_INCLUDE_TAG_TYPE` when an `<includefile>` failed; the content then holds that line and the reason, and approving writes nothing.
     """
 
     runs_model_written_code = False
@@ -1189,7 +1190,7 @@ You have been provided with these additional arguments, that you can access dire
         return self.approval_callback(tag_type, content)
 
     def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
-        """Expands files[position], asks approval for that text and writes it as UTF-8, creating its directory; sets written_text.
+        """Expands files[position], asks approval for that text and its symlink-resolved path, and writes it there as UTF-8, creating its directory; sets written_text and write_target.
         A filename with a line break or unencodable text is raised as a step error before approval; a failed include is shown for approval as FAILED_INCLUDE_TAG_TYPE, then raised; a file error, after approval."""
         file = files[position]
         def step_error(error, displayed_filename=file['filename']):
@@ -1212,30 +1213,34 @@ You have been provided with these additional arguments, that you can access dire
             )
         failed_include_error = None
         try:
+            names_a_directory = os.path.basename(file['filename']) in ("", ".")
+            write_target = os.path.realpath(file['filename']) + (os.sep if names_a_directory else "")
             written_text = self.replace_include_files(file['content'])
             written_text.encode('utf-8')
-        except ValueError as error:
+        except (OSError, ValueError) as error:
             raise step_error(error) from error
         except IncludedFileError as error:
             failed_include_error = error
         approval_tag_type, approval_text = (FAILED_INCLUDE_TAG_TYPE, str(failed_include_error)) if failed_include_error else (tag, written_text)
-        if not self._request_approval(approval_tag_type, f"filename={file['filename']}\n{approval_text}"):
+        one_line_write_target = write_target.replace("\n", "\\x0a")
+        if not self._request_approval(approval_tag_type, f"filename={one_line_write_target}\n{approval_text}"):
             raise AgentExecutionRejected(f"User rejected {tag}: {file['filename']}", self.logger)
         if failed_include_error:
             raise step_error(failed_include_error) from failed_include_error
         try:
-            force_directories(file['filename'])
-            with open(file['filename'], mode, encoding='utf-8') as f:
+            force_directories(write_target)
+            with open(write_target, mode, encoding='utf-8') as f:
                 f.write(written_text)
         except (OSError, ValueError) as error:
             raise step_error(error) from error
         file['written_text'] = written_text
+        file['write_target'] = write_target
 
     def save_files_from_text(self, txt, hidden_tag_bracket="<"):
         files = self.parse_tags('savetofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
               self.approve_and_write_tag_file('savetofile', files, position, 'w', "No <appendtofile> tag in this output was processed.")
-              msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['filename']))+" bytes."
+              msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['write_target']))+" bytes."
               self.logger.log(msg_str, LogLevel.INFO)
         return files
 
@@ -1243,7 +1248,7 @@ You have been provided with these additional arguments, that you can access dire
         files = self.parse_tags('appendtofile', txt, hidden_tag_bracket)
         for position, file in enumerate(files):
               self.approve_and_write_tag_file('appendtofile', files, position, 'a', "Every <savetofile> tag in this output was written; do not repeat an <appendtofile> that was already written.")
-              msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['filename']))+" bytes."
+              msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['write_target']))+" bytes."
               self.logger.log(msg_str, LogLevel.INFO)
         return files
                 
