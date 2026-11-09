@@ -1190,10 +1190,14 @@ You have been provided with these additional arguments, that you can access dire
         def step_error(error):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
+            literal_tag_advice = ""
+            if isinstance(error, IncludedFileError):
+                file_action = "write the file" if mode == 'w' else "append to the file"
+                literal_tag_advice = f"\nIf the <includefile> was meant as literal text in the file, {file_action} from <runcode> Python code, building the tag text in a string from parts such as '<include' + 'file>' so that it is not expanded."
             return AgentExecutionError(
                 f"Could not write file '{file['filename']}' from <{tag}>: {error}\n"
                 f"Already written from <{tag}> in this output: {written_filenames}. Not attempted: {skipped_filenames}.\n"
-                f"{rest_of_output_status} The code in this output did not run.",
+                f"{rest_of_output_status} The code in this output did not run.{literal_tag_advice}",
                 self.logger,
             )
         try:
