@@ -1610,12 +1610,12 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     # Show truncated preview
     preview, hidden_notice = approval_preview(content)
     console.print(preview)
-    control_notice = control_character_notice(content)
-    if control_notice:
-        print_literally(control_notice)
     truncated = bool(hidden_notice)
     if truncated:
         console.print(f"[dim]{hidden_notice}[/]")
+    control_notice = control_character_notice(content)
+    if control_notice:
+        print_literally(control_notice)
     console.print(f"[bold yellow]{'─' * 50}[/]")
 
     # Prompt loop with single-key input
