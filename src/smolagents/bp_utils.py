@@ -167,6 +167,11 @@ def visible_control_characters(text: str) -> str:
     return text.translate(terminal_display_escapes())
 
 
+def holds_line_break(text: str) -> bool:
+    """Returns whether text holds a character str.splitlines treats as a line break: LF, CR, VT, FF, FS, GS, RS, NEL, LS or PS."""
+    return "".join(text.splitlines()) != text
+
+
 def visible_encodable_text(text: str, encoding: str) -> str:
     """Returns visible_control_characters(text) with what encoding cannot represent as backslash escapes."""
     return visible_control_characters(text).encode(encoding, "backslashreplace").decode(encoding)

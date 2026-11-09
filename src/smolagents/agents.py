@@ -46,6 +46,7 @@ from .bp_utils import (
     final_answer_string_body,
     fix_nested_tags,
     generated_include_tag_pattern,
+    holds_line_break,
     readable_generated_include_tags,
     strip_trailing_tags,
     tag_with_filename_pattern,
@@ -1185,9 +1186,9 @@ You have been provided with these additional arguments, that you can access dire
 
     def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
         """Expands files[position], asks approval for that text and writes it as UTF-8, creating its directory; sets written_text.
-        A failed include or unencodable text is raised as a step error before approval; a file error, as a step error after it."""
+        A filename with a line break, a failed include or unencodable text is raised as a step error before approval; a file error, after it."""
         file = files[position]
-        def step_error(error):
+        def step_error(error, displayed_filename=file['filename']):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
             literal_tag_advice = ""
@@ -1195,10 +1196,15 @@ You have been provided with these additional arguments, that you can access dire
                 file_action = "write the file" if mode == 'w' else "append to the file"
                 literal_tag_advice = f"\nIf the <includefile> was meant as literal text in the file, {file_action} from <runcode> Python code, building the tag text in a string from parts such as '<include' + 'file>' so that it is not expanded."
             return AgentExecutionError(
-                f"Could not write file '{file['filename']}' from <{tag}>: {error}\n"
+                f"Could not write file '{displayed_filename}' from <{tag}>: {error}\n"
                 f"Already written from <{tag}> in this output: {written_filenames}. Not attempted: {skipped_filenames}.\n"
                 f"{rest_of_output_status} The code in this output did not run.{literal_tag_advice}",
                 self.logger,
+            )
+        if holds_line_break(file['filename']):
+            raise step_error(
+                "the filename cannot contain line breaks. Each line break in it is shown here as an escape.",
+                displayed_filename=visible_control_characters(file['filename']).replace("\n", "\\x0a"),
             )
         try:
             written_text = self.replace_include_files(file['content'])
