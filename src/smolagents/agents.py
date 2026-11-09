@@ -1188,7 +1188,7 @@ You have been provided with these additional arguments, that you can access dire
 
     def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
         """Expands files[position], asks approval for that text and writes it as UTF-8, creating its directory; sets written_text.
-        A filename with a line break, a failed include or unencodable text is raised as a step error before approval; a file error, after it."""
+        A filename with a line break or unencodable text is raised as a step error before approval; a failed include is shown for approval, then raised; a file error, after approval."""
         file = files[position]
         def step_error(error, displayed_filename=file['filename']):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
@@ -1208,13 +1208,19 @@ You have been provided with these additional arguments, that you can access dire
                 "the filename cannot contain line breaks. Each line break in it is shown here as an escape.",
                 displayed_filename=visible_control_characters(file['filename']).replace("\n", "\\x0a"),
             )
+        failed_include_error = None
         try:
             written_text = self.replace_include_files(file['content'])
             written_text.encode('utf-8')
-        except (ValueError, IncludedFileError) as error:
+        except ValueError as error:
             raise step_error(error) from error
-        if not self._request_approval(tag, f"filename={file['filename']}\n{written_text}"):
+        except IncludedFileError as error:
+            failed_include_error = error
+        approval_text = f"Include failed, nothing will be written: {failed_include_error}" if failed_include_error else written_text
+        if not self._request_approval(tag, f"filename={file['filename']}\n{approval_text}"):
             raise AgentExecutionRejected(f"User rejected {tag}: {file['filename']}", self.logger)
+        if failed_include_error:
+            raise step_error(failed_include_error) from failed_include_error
         try:
             force_directories(file['filename'])
             with open(file['filename'], mode, encoding='utf-8') as f:
