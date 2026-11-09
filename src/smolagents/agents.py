@@ -23,6 +23,7 @@ import time
 import warnings
 import re
 import secrets
+import stat
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -63,6 +64,7 @@ from rich.rule import Rule
 from rich.text import Text
 
 STOP_SEQUENCES = ["</runcode>", "</final_answer>"]
+MAX_INCLUDED_FILE_BYTES = 10 * 1024 * 1024
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -1223,6 +1225,11 @@ You have been provided with these additional arguments, that you can access dire
         """Returns the content of the file named by an <includefile> tag, or an [ERROR: ...] text."""
         filename = filename.strip()
         try:
+            file_status = os.stat(filename)
+            if not stat.S_ISREG(file_status.st_mode):
+                return f"[ERROR: Could not read file {filename}: it is not a regular file]"
+            if file_status.st_size > MAX_INCLUDED_FILE_BYTES:
+                return f"[ERROR: Could not read file {filename}: its size of {file_status.st_size} bytes is over the limit of {MAX_INCLUDED_FILE_BYTES} bytes]"
             with open(filename, 'r', encoding='utf-8') as file:
                 txt = file.read()
                 self.logger.log("Included file "+filename+".", LogLevel.INFO)
@@ -1231,6 +1238,8 @@ You have been provided with these additional arguments, that you can access dire
             return f"[ERROR: File not found: {filename}]"
         except PermissionError:
             return f"[ERROR: Permission denied: {filename}]"
+        except MemoryError:
+            return f"[ERROR: Could not read file {filename}: not enough memory to load it]"
         except Exception as e:
             return f"[ERROR: Could not read file {filename}: {str(e)}]"
 
