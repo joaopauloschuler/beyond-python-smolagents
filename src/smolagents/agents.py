@@ -1191,7 +1191,7 @@ You have been provided with these additional arguments, that you can access dire
 
     def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
         """Expands files[position], asks approval for that text and its symlink-resolved path, and writes it there as UTF-8, creating its directory; sets written_text and write_target.
-        A filename with a line break or unencodable text is raised as a step error before approval; a failed include is shown for approval as FAILED_INCLUDE_TAG_TYPE, then raised; a file error, after approval."""
+        A filename with a line break, or tag text as the model wrote it that UTF-8 cannot encode, is raised as a step error before approval and before any include is read; a failed include is shown for approval as FAILED_INCLUDE_TAG_TYPE, then raised; a file error, after approval."""
         file = files[position]
         def step_error(error, displayed_filename=file['filename']):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
@@ -1215,8 +1215,8 @@ You have been provided with these additional arguments, that you can access dire
         try:
             names_a_directory = os.path.basename(file['filename']) in ("", ".")
             write_target = os.path.realpath(file['filename']) + (os.sep if names_a_directory else "")
+            file['content'].encode('utf-8')
             written_text = self.replace_include_files(file['content'])
-            written_text.encode('utf-8')
         except (OSError, ValueError) as error:
             raise step_error(error) from error
         except IncludedFileError as error:
