@@ -73,7 +73,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
-from smolagents.bp_utils import dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters
+from rich.text import Span, Text
+from smolagents.bp_utils import count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters
 
 
 VERSION = "1.24-bp"
@@ -87,6 +88,8 @@ _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env,
 
 TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
+PYTHON_LINE_BREAK = re.compile(r"\r\n?|\n")
+FULL_VIEW_PIECE_CHARACTERS = 65536
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -1496,14 +1499,45 @@ def print_literally(text: str) -> None:
     console.print(text, markup=False, emoji=False)
 
 
+def is_lone_carriage_return(text: str, position: int) -> bool:
+    """Returns whether text[position] is a CR with a character after it other than LF: a line break to Python, displayed as one."""
+    return text[position] == "\r" and text[position + 1:position + 2] not in ("", "\n")
+
+
 def count_leading_characters_within_displayed_limit(text: str, max_displayed_characters: int) -> int:
     """Returns how many leading characters of text fit in max_displayed_characters once escaped; an escape is never split."""
     displayed_characters = 0
     for position, character in enumerate(text[:max_displayed_characters]):
-        displayed_characters += len(visible_control_characters(character))
+        displayed_characters += len(visible_control_characters(character)) + is_lone_carriage_return(text, position)
         if displayed_characters > max_displayed_characters:
             return position
     return min(len(text), max_displayed_characters)
+
+
+def marked_control_characters(text: str, start: int = 0, end: int | None = None) -> Text:
+    """Returns text[start:end] with visible_control_characters escapes in reverse video and a line break after each lone CR.
+    It is built from spans, so content can never be read as markup."""
+    end = len(text) if end is None else min(end, len(text))
+    parts, spans, position, displayed_length = [], [], start, 0
+    for run in display_escaped_run_pattern().finditer(text, start, end):
+        before_run = text[position:run.start()]
+        escapes = visible_control_characters(run.group()).replace("\\x0d", "\\x0d\n")
+        if text[run.end():run.end() + 1] in ("", "\n") and escapes.endswith("\n"):
+            escapes = escapes[:-1]
+        parts += before_run, escapes
+        run_start = displayed_length + len(before_run)
+        displayed_length = run_start + len(escapes)
+        spans.append(Span(run_start, displayed_length, "reverse"))
+        position = run.end()
+    parts.append(text[position:end])
+    return Text("".join(parts), spans=spans)
+
+
+def print_marked_control_characters(text: str) -> None:
+    """Prints text marked, in pieces, because Rich's memory grows with the number of styled runs in one print."""
+    for start in range(0, len(text), FULL_VIEW_PIECE_CHARACTERS):
+        console.print(marked_control_characters(text, start, start + FULL_VIEW_PIECE_CHARACTERS), end="")
+    console.print()
 
 
 def plural(count: int, singular_noun: str) -> str:
@@ -1511,26 +1545,36 @@ def plural(count: int, singular_noun: str) -> str:
     return f"{count:,} {singular_noun}{'' if count == 1 else 's'}"
 
 
-def approval_preview(content: str) -> tuple[str, str]:
-    """Returns the escaped preview of content and a notice of what it hides, empty when nothing is hidden."""
+def approval_preview(content: str) -> tuple[Text, str]:
+    """Returns the marked preview of content and a notice of what it hides, empty when nothing is hidden."""
     shown_length = count_leading_characters_within_displayed_limit(content, TRUNCATE_PREVIEW_CHARACTERS)
-    line_end = -1
-    for _ in range(TRUNCATE_PREVIEW_LINES):
-        line_end = content.find('\n', line_end + 1, shown_length)
-        if line_end < 0:
+    for line_number, line_break in enumerate(PYTHON_LINE_BREAK.finditer(content, 0, shown_length), start=1):
+        if line_number == TRUNCATE_PREVIEW_LINES:
+            shown_length = line_break.end() - line_break.group().endswith("\n")
             break
-    if line_end >= 0:
-        shown_length = line_end
-    cut_at_line_end = content[shown_length:shown_length + 1] == '\n'
-    hidden_start = shown_length + 1 if cut_at_line_end else shown_length
-    preview = visible_control_characters(content[:shown_length])
+    followed_by_newline = content[shown_length:shown_length + 1] == '\n'
+    cut_at_line_end = followed_by_newline or content[shown_length - 1:shown_length] == '\r'
+    hidden_start = shown_length + 1 if followed_by_newline else shown_length
+    preview = marked_control_characters(content[:shown_length])
     hidden_characters = len(content) - hidden_start
     if hidden_characters == 0:
         return preview, ""
-    hidden_lines = content.count('\n', hidden_start) + (0 if content.endswith('\n') else 1) - (0 if cut_at_line_end else 1)
+    hidden_line_breaks = content.count('\n', hidden_start) + content.count('\r', hidden_start) - content.count('\r\n', hidden_start)
+    hidden_lines = hidden_line_breaks + (0 if content.endswith(('\n', '\r')) else 1) - (0 if cut_at_line_end else 1)
     cut_description = "" if cut_at_line_end else "the line above is cut here; "
     hidden_size = f"{plural(hidden_characters, 'character')}, {plural(hidden_lines, 'more line')}"
     return preview, f"... ({cut_description}hidden: {hidden_size}, press 'f' to see full content)"
+
+
+def control_character_notice(content: str) -> str:
+    """Returns the notice that content holds real control or format characters, empty when it holds none."""
+    real_characters = count_display_escaped_characters(content)
+    if real_characters == 0:
+        return ""
+    notice = f"Note: the whole content holds {plural(real_characters, 'real control or format character')}, including any not shown. Those shown marked (in reverse video) are real characters, not typed text."
+    if console.color_system is None:
+        notice += " This output cannot show the marking, so here they look the same as typed text."
+    return notice
 
 
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
@@ -1553,7 +1597,10 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
 
     # Show truncated preview
     preview, hidden_notice = approval_preview(content)
-    print_literally(preview)
+    console.print(preview)
+    control_notice = control_character_notice(content)
+    if control_notice:
+        print_literally(control_notice)
     truncated = bool(hidden_notice)
     if truncated:
         console.print(f"[dim]{hidden_notice}[/]")
@@ -1574,7 +1621,9 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(f"[yellow]Not approved: no key could be read from a terminal. {_NO_TERMINAL_ADVICE}[/]")
             return False
         if response == 'f' and truncated:
-            print_literally(visible_control_characters(content))
+            print_marked_control_characters(content)
+            if control_notice:
+                print_literally(control_notice)
             continue
         if response in ('y',):
             if _steering_listener is not None:

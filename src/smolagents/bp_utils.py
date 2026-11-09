@@ -167,6 +167,17 @@ def visible_control_characters(text: str) -> str:
     return text.translate(terminal_display_escapes())
 
 
+@cache
+def display_escaped_run_pattern() -> re.Pattern:
+    """Matches a maximal run of the characters that visible_control_characters escapes."""
+    return re.compile("[" + "".join(re.escape(chr(code)) for code in terminal_display_escapes()) + "]+")
+
+
+def count_display_escaped_characters(text: str) -> int:
+    """Returns how many characters of text visible_control_characters escapes."""
+    return len(text) - len(text.translate(dict.fromkeys(terminal_display_escapes())))
+
+
 def is_valid_python_code(code_string):
     """Returns true if the string is a valid python code."""
     result = False
