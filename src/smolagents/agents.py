@@ -1717,10 +1717,13 @@ class ToolCallingAgent(MultiStepAgent):
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
         model_output = str(memory_step.model_output)
-        self.save_files_from_text(model_output)
-        model_output = self.remove_tags('savetofile', model_output)
-        self.append_files_from_text(model_output)
-        model_output = self.remove_tags('appendtofile', model_output)
+        if self.approval_callback is None:
+            self.refuse_file_tags(model_output, memory_step)
+        else:
+            self.save_files_from_text(model_output)
+            model_output = self.remove_tags('savetofile', model_output)
+            self.append_files_from_text(model_output)
+            model_output = self.remove_tags('appendtofile', model_output)
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
             try:
@@ -1755,6 +1758,16 @@ class ToolCallingAgent(MultiStepAgent):
             output=final_answer,
             is_final_answer=got_final_answer,
         )
+
+    def refuse_file_tags(self, model_output: str, memory_step: ActionStep) -> None:
+        """Logs a warning for each file tag in model_output and adds it to the step's observations; opens no file.
+        It raises nothing, because a tag quoted in prose must not stop the tool calls of that reply."""
+        for tag in ('savetofile', 'appendtofile'):
+            for file in self.parse_tags(tag, model_output):
+                warning = f"Warning: Refused <{tag}> for file '{visible_control_characters(file['filename'])}': file tags are not available on this agent without an approval callback. No file was written or read."
+                self.logger.log(warning, style="bold yellow", level=LogLevel.INFO, markup=False, emoji=False)
+                memory_step.observations = (memory_step.observations or "") + warning + "\n"
+            model_output = self.remove_tags(tag, model_output)
 
     def process_tool_calls(
         self, chat_message: ChatMessage, memory_step: ActionStep
