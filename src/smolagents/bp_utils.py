@@ -13,6 +13,8 @@ import secrets
 import shutil
 import sys
 import time
+import unicodedata
+from functools import cache
 from itertools import chain, islice
 from textwrap import dedent
 
@@ -148,9 +150,21 @@ def remove_files(file_filter):
   for file_path in txt_files:
     os.remove(file_path)
 
+@cache
+def terminal_display_escapes() -> dict[int, str]:
+    """The str.translate table of visible_control_characters. Scanning every code point takes about 0.1 s, so it runs once, on first use."""
+    format_character_escapes = {
+        code: f"\\u{code:04x}" if code <= 0xffff else f"\\U{code:08x}"
+        for code in range(sys.maxunicode + 1)
+        if unicodedata.category(chr(code)) in ("Cf", "Zl", "Zp")
+    }
+    return TERMINAL_CONTROL_ESCAPES | format_character_escapes
+
+
 def visible_control_characters(text: str) -> str:
-    """Returns text with terminal control characters written as \\xNN, so they cannot hide or rewrite what is displayed."""
-    return text.translate(TERMINAL_CONTROL_ESCAPES)
+    """Returns text with C0, DEL and C1 controls (except newline and tab) as \\xNN and Unicode Cf, Zl and Zp characters as \\uXXXX or \\UXXXXXXXX, for display only.
+    It stops those characters hiding or reordering what is shown; it does not make text trustworthy: homoglyphs and other look-alikes pass through."""
+    return text.translate(terminal_display_escapes())
 
 
 def is_valid_python_code(code_string):
