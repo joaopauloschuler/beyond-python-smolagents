@@ -27,6 +27,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
+from smolagents.bp_utils import visible_control_characters
 from smolagents.utils import escape_code_brackets
 
 
@@ -177,7 +178,10 @@ class AgentLogger:
             self.console.print(*args, **kwargs)
 
     def log_error(self, error_message: str) -> None:
-        self.log(escape_code_brackets(error_message), style="bold red", level=LogLevel.ERROR)
+        """Prints the message literally: no Rich markup or emoji, control characters visible, and what the console cannot encode as backslash escapes."""
+        encoding = self.console.encoding
+        printable_message = visible_control_characters(error_message).encode(encoding, "backslashreplace").decode(encoding)
+        self.log(printable_message, style="bold red", level=LogLevel.ERROR, markup=False, emoji=False)
 
     def log_markdown(self, content: str, title: str | None = None, level=LogLevel.INFO, style=YELLOW_HEX) -> None:
         markdown_content = Syntax(
