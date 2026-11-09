@@ -74,7 +74,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_utils import count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters
+from smolagents.bp_utils import count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
 
 
 VERSION = "1.24-bp"
@@ -200,6 +200,18 @@ def _extract_thoughts(model_output: str) -> str:
     return ""
 
 
+def console_literal(text: str, style: str) -> Text:
+    """Returns text as one span of style: no markup or emoji, controls visible, and what the console cannot encode as backslash escapes."""
+    return Text.assemble((visible_encodable_text(text, console.encoding), style))
+
+
+def print_with_console_highlighting(line: Text) -> None:
+    """Prints line as console.print prints a string: the console highlighter's styles first, then line's spans over them."""
+    highlighted_line = console.render_str(line.plain, markup=False, emoji=False)
+    highlighted_line.copy_styles(line)
+    console.print(highlighted_line)
+
+
 def _compact_step_callback(step):
     """Step callback that prints a compact one-liner when verbose is off."""
     if _verbose:
@@ -232,27 +244,27 @@ def _compact_step_callback(step):
 
     # Build the status icon
     if has_error:
-        icon = "[red]✗[/]"
+        icon = console_literal("✗", "red")
     elif is_final:
-        icon = "[green]★[/]"
+        icon = console_literal("★", "green")
     else:
-        icon = "[green]✓[/]"
+        icon = console_literal("✓", "green")
 
     # Build the line
-    parts = [f"{icon} [bold]Step {step_num}[/]"]
+    parts = [Text.assemble(icon, " ", console_literal(f"Step {step_num}", "bold"))]
     if duration:
-        parts.append(f"[dim]{duration}[/]")
+        parts.append(console_literal(duration, "dim"))
     if tokens:
-        parts.append(f"[dim]{tokens}[/]")
+        parts.append(console_literal(tokens, "dim"))
     if is_final:
-        parts.append("[bold green]Final answer[/]")
+        parts.append(console_literal("Final answer", "bold green"))
     elif has_error:
         error_msg = str(step.error)[:60]
-        parts.append(f"[red]{error_msg}[/]")
+        parts.append(console_literal(error_msg, "red"))
     elif thoughts:
-        parts.append(f"[dim italic]{thoughts}[/]")
+        parts.append(console_literal(thoughts, "dim italic"))
 
-    console.print(" | ".join(parts))
+    print_with_console_highlighting(Text(" | ").join(parts))
 
 
 def _print_user_message(message: str):
@@ -3323,7 +3335,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             elif is_clean_stop(agent, e):
                 console.print(f"\n[yellow]Stopped after step {agent.step_number - 1}; memory kept.[/]\n")
             else:
-                console.print(f"\n[bold red]Error:[/] {e}\n")
+                print_with_console_highlighting(Text.assemble("\n", console_literal("Error:", "bold red"), " ", console_literal(str(e), ""), "\n"))
 
 
 def is_clean_stop(agent, error: Exception) -> bool:
@@ -3335,7 +3347,7 @@ def is_clean_stop(agent, error: Exception) -> bool:
 def print_undelivered_steering(messages: list[str]) -> None:
     """Show steering lines the agent never reached (typed after its last step boundary)."""
     for text in messages:
-        console.print(f"[yellow]Not delivered (the agent finished first): {text}[/]")
+        print_with_console_highlighting(console_literal(f"Not delivered (the agent finished first): {text}", "yellow"))
 
 
 def main():

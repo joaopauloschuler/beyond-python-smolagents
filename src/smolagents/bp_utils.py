@@ -167,6 +167,11 @@ def visible_control_characters(text: str) -> str:
     return text.translate(terminal_display_escapes())
 
 
+def visible_encodable_text(text: str, encoding: str) -> str:
+    """Returns visible_control_characters(text) with what encoding cannot represent as backslash escapes."""
+    return visible_control_characters(text).encode(encoding, "backslashreplace").decode(encoding)
+
+
 @cache
 def display_escaped_run_pattern() -> re.Pattern:
     """Matches a maximal run of the characters that visible_control_characters escapes."""
