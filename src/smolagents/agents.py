@@ -336,6 +336,8 @@ class MultiStepAgent(ABC):
             Returns whether the tag may act. Without it, every tag acts with no approval requested.
     """
 
+    runs_model_written_code = False
+
     def __init__(
         self,
         tools: list[Tool],
@@ -1192,7 +1194,7 @@ You have been provided with these additional arguments, that you can access dire
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
             literal_tag_advice = ""
-            if isinstance(error, IncludedFileError):
+            if isinstance(error, IncludedFileError) and self.runs_model_written_code:
                 file_action = "write the file" if mode == 'w' else "append to the file"
                 literal_tag_advice = f"\nIf the <includefile> was meant as literal text in the file, {file_action} from <runcode> Python code, building the tag text in a string from parts such as '<include' + 'file>' so that it is not expanded."
             return AgentExecutionError(
@@ -1952,6 +1954,8 @@ class CodeAgent(MultiStepAgent):
         code_block_tags (`tuple[str, str]` | `Literal["markdown"]`, *optional*): Opening and closing tags for code blocks (regex strings). Pass a custom tuple, or pass 'markdown' to use ("```(?:python|py)", "\\n```"), leave empty to use ("<code>", "</code>").
         **kwargs: Additional keyword arguments.
     """
+
+    runs_model_written_code = True
 
     def __init__(
         self,
