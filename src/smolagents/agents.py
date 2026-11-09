@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Unio
 from .bp_executors import LocalExecExecutor
 from .bp_tools import get_file_size, force_directories, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
 from .bp_utils import (
+    FAILED_INCLUDE_TAG_TYPE,
     INCLUDEFILE_TAG,
     bp_parse_code_blobs,
     end_output_at_real_stop,
@@ -334,6 +335,7 @@ class MultiStepAgent(ABC):
             When provided, older memory steps will be compressed via LLM summarization to manage context window size.
         approval_callback (`Callable[[str, str], bool]`, *optional*): Called with the tag type and content before a tag acts.
             Returns whether the tag may act. Without it, every tag acts with no approval requested.
+            The tag type is `FAILED_INCLUDE_TAG_TYPE` when an `<includefile>` failed; the content then holds the filename and the reason, and approving writes nothing.
     """
 
     runs_model_written_code = False
@@ -1188,7 +1190,7 @@ You have been provided with these additional arguments, that you can access dire
 
     def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
         """Expands files[position], asks approval for that text and writes it as UTF-8, creating its directory; sets written_text.
-        A filename with a line break or unencodable text is raised as a step error before approval; a failed include is shown for approval, then raised; a file error, after approval."""
+        A filename with a line break or unencodable text is raised as a step error before approval; a failed include is shown for approval as FAILED_INCLUDE_TAG_TYPE, then raised; a file error, after approval."""
         file = files[position]
         def step_error(error, displayed_filename=file['filename']):
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
@@ -1216,8 +1218,8 @@ You have been provided with these additional arguments, that you can access dire
             raise step_error(error) from error
         except IncludedFileError as error:
             failed_include_error = error
-        approval_text = f"Include failed, nothing will be written: {failed_include_error}" if failed_include_error else written_text
-        if not self._request_approval(tag, f"filename={file['filename']}\n{approval_text}"):
+        approval_tag_type, approval_text = (FAILED_INCLUDE_TAG_TYPE, str(failed_include_error)) if failed_include_error else (tag, written_text)
+        if not self._request_approval(approval_tag_type, f"filename={file['filename']}\n{approval_text}"):
             raise AgentExecutionRejected(f"User rejected {tag}: {file['filename']}", self.logger)
         if failed_include_error:
             raise step_error(failed_include_error) from failed_include_error

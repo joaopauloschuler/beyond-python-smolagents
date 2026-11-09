@@ -22,6 +22,7 @@ from textwrap import dedent
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDEFILE_TAG = re.compile(r"<includefile>(.*?)</includefile>", re.DOTALL)
+FAILED_INCLUDE_TAG_TYPE = "failed_include"
 # A filename quoted with one quote character may contain the other one.
 FILENAME_ATTRIBUTE = r"""\s+filename\s*=\s*(?P<quote>['"])(?P<filename>(?:(?!(?P=quote))[\s\S])*)(?P=quote)\s*"""
 SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:""" + FILENAME_ATTRIBUTE + r""")?>)"""

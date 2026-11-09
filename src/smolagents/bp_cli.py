@@ -74,7 +74,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_utils import count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
+from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
 
 
 VERSION = "1.24-bp"
@@ -1605,6 +1605,8 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     tag_label = tag_type.upper()
     console.print(f"\n[bold yellow]{'═' * 50}[/]")
     console.print(f"[bold yellow]  Approval required: {tag_label}[/]")
+    if tag_type == FAILED_INCLUDE_TAG_TYPE:
+        console.print("[bold red]  The include failed, so nothing will be written. (y) tells the model why; (n) tells it only that you rejected this.[/]")
     console.print(f"[bold yellow]{'═' * 50}[/]")
 
     # Show truncated preview
