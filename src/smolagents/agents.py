@@ -67,6 +67,11 @@ from rich.text import Text
 STOP_SEQUENCES = ["</runcode>", "</final_answer>"]
 MAX_INCLUDED_FILE_BYTES = 10 * 1024 * 1024
 
+
+class IncludedFileError(Exception):
+    """The file named by an <includefile> tag could not be read; the message says why."""
+
+
 if TYPE_CHECKING:
     import PIL.Image
 
@@ -1190,7 +1195,7 @@ You have been provided with these additional arguments, that you can access dire
             with open(file['filename'], mode, encoding='utf-8') as f:
                 f.write(written_text)
             file['written_text'] = written_text
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, IncludedFileError) as error:
             written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
             skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
             raise AgentExecutionError(
@@ -1222,37 +1227,40 @@ You have been provided with these additional arguments, that you can access dire
               self.logger.log(msg_str, LogLevel.INFO)
         return files
                 
-    def read_included_file(self, filename):
-        """Returns the content of the file named by an <includefile> tag, or an [ERROR: ...] text."""
+    def included_file_content(self, filename):
+        """Returns the content of the file named by an <includefile> tag, or raises IncludedFileError."""
         filename = filename.strip()
         try:
             file_status = os.stat(filename)
             if not stat.S_ISREG(file_status.st_mode):
-                return f"[ERROR: Could not read file {filename}: it is not a regular file]"
+                raise IncludedFileError(f"Could not read file {filename}: it is not a regular file")
             if file_status.st_size > MAX_INCLUDED_FILE_BYTES:
-                return f"[ERROR: Could not read file {filename}: its size of {file_status.st_size} bytes is over the limit of {MAX_INCLUDED_FILE_BYTES} bytes]"
+                raise IncludedFileError(f"Could not read file {filename}: its size of {file_status.st_size} bytes is over the limit of {MAX_INCLUDED_FILE_BYTES} bytes")
             with open(filename, 'r', encoding='utf-8') as file:
                 txt = file.read()
                 self.logger.log("Included file "+visible_control_characters(filename)+".", LogLevel.INFO, markup=False, emoji=False)
                 return txt
-        except FileNotFoundError:
-            return f"[ERROR: File not found: {filename}]"
-        except PermissionError:
-            return f"[ERROR: Permission denied: {filename}]"
-        except MemoryError:
-            return f"[ERROR: Could not read file {filename}: not enough memory to load it]"
-        except Exception as e:
-            return f"[ERROR: Could not read file {filename}: {str(e)}]"
+        except IncludedFileError:
+            raise
+        except FileNotFoundError as error:
+            raise IncludedFileError(f"File not found: {filename}") from error
+        except PermissionError as error:
+            raise IncludedFileError(f"Permission denied: {filename}") from error
+        except MemoryError as error:
+            raise IncludedFileError(f"Could not read file {filename}: not enough memory to load it") from error
+        except Exception as error:
+            raise IncludedFileError(f"Could not read file {filename}: {str(error)}") from error
+
+    def read_included_file(self, filename):
+        """Returns the content of the file named by an <includefile> tag, or an [ERROR: ...] text."""
+        try:
+            return self.included_file_content(filename)
+        except IncludedFileError as error:
+            return f"[ERROR: {error}]"
 
     def replace_include_files(self, txt):
-        """
-        Args:
-            text (str): Text containing <includefile> tags
-            
-        Returns:
-            str: Text with tags replaced by file contents
-        """
-        return INCLUDEFILE_TAG.sub(lambda match: self.read_included_file(match.group(1)), txt)
+        """Returns txt with each <includefile> tag replaced by that file's content; raises IncludedFileError if one cannot be read."""
+        return INCLUDEFILE_TAG.sub(lambda match: self.included_file_content(match.group(1)), txt)
 
     def expand_include_tags(self, code_action, saved_files, appended_files, include_tag_token):
         """Expands every include tag in one scan, so inserted content is never scanned; a generated tag inserts escaped text."""
