@@ -86,6 +86,7 @@ _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
 
 TRUNCATE_PREVIEW_LINES = 5
+TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
 TERMINAL_CONTROL_CHARACTER = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 MODEL_CLASS_MAP = {
@@ -1501,6 +1502,43 @@ def print_literally(text: str) -> None:
     console.print(text, markup=False, emoji=False)
 
 
+def count_leading_characters_within_displayed_limit(text: str, max_displayed_characters: int) -> int:
+    """Returns how many leading characters of text fit in max_displayed_characters once escaped; an escape is never split."""
+    displayed_characters = 0
+    for position, character in enumerate(text[:max_displayed_characters]):
+        displayed_characters += len(visible_control_characters(character))
+        if displayed_characters > max_displayed_characters:
+            return position
+    return min(len(text), max_displayed_characters)
+
+
+def plural(count: int, singular_noun: str) -> str:
+    """Returns count with thousands separators and the noun in singular or plural form."""
+    return f"{count:,} {singular_noun}{'' if count == 1 else 's'}"
+
+
+def approval_preview(content: str) -> tuple[str, str]:
+    """Returns the escaped preview of content and a notice of what it hides, empty when nothing is hidden."""
+    shown_length = count_leading_characters_within_displayed_limit(content, TRUNCATE_PREVIEW_CHARACTERS)
+    line_end = -1
+    for _ in range(TRUNCATE_PREVIEW_LINES):
+        line_end = content.find('\n', line_end + 1, shown_length)
+        if line_end < 0:
+            break
+    if line_end >= 0:
+        shown_length = line_end
+    cut_at_line_end = content[shown_length:shown_length + 1] == '\n'
+    hidden_start = shown_length + 1 if cut_at_line_end else shown_length
+    preview = visible_control_characters(content[:shown_length])
+    hidden_characters = len(content) - hidden_start
+    if hidden_characters == 0:
+        return preview, ""
+    hidden_lines = content.count('\n', hidden_start) + (0 if content.endswith('\n') else 1) - (0 if cut_at_line_end else 1)
+    cut_description = "" if cut_at_line_end else "the line above is cut here; "
+    hidden_size = f"{plural(hidden_characters, 'character')}, {plural(hidden_lines, 'more line')}"
+    return preview, f"... ({cut_description}hidden: {hidden_size}, press 'f' to see full content)"
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -1520,13 +1558,11 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     console.print(f"[bold yellow]{'═' * 50}[/]")
 
     # Show truncated preview
-    displayed_content = visible_control_characters(content)
-    lines = displayed_content.split('\n')
-    preview = '\n'.join(lines[:TRUNCATE_PREVIEW_LINES])
+    preview, hidden_notice = approval_preview(content)
     print_literally(preview)
-    truncated = len(lines) > TRUNCATE_PREVIEW_LINES
+    truncated = bool(hidden_notice)
     if truncated:
-        console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, press 'f' to see full content)[/]")
+        console.print(f"[dim]{hidden_notice}[/]")
     console.print(f"[bold yellow]{'─' * 50}[/]")
 
     # Prompt loop with single-key input
@@ -1544,7 +1580,7 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(f"[yellow]Not approved: no key could be read from a terminal. {_NO_TERMINAL_ADVICE}[/]")
             return False
         if response == 'f' and truncated:
-            print_literally(displayed_content)
+            print_literally(visible_control_characters(content))
             continue
         if response in ('y',):
             if _steering_listener is not None:
