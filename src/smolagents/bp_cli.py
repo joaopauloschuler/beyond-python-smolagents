@@ -3367,9 +3367,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                 try:
                     from smolagents.bp_session import save_session
                     save_session(autosave_file, agent, session_stats)
-                    console.print(f"[dim]Auto-saved session to {autosave_file}[/]")
-                except Exception:
-                    pass
+                    print_with_console_highlighting(console_literal(f"Auto-saved session to {autosave_file}", "dim"))
+                except Exception as e:
+                    print_with_console_highlighting(console_literal(f"Auto-save failed: {autosave_file}: {str(e) or type(e).__name__}", "yellow"))
 
         except KeyboardInterrupt:
             _spinner.stop()
