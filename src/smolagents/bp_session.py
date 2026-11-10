@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from logging import getLogger
 
 from smolagents.bp_compression import CompressedHistoryStep
+from smolagents.bp_utils import replace_file_with_text, unencodable_as_backslash_escapes
 from smolagents.memory import ActionStep, MemoryStep, PlanningStep, SystemPromptStep, TaskStep, ToolCall
 from smolagents.models import ChatMessage, MessageRole, get_dict_from_nested_dataclasses
 from smolagents.monitoring import Timing, TokenUsage
@@ -405,8 +406,9 @@ def save_session(filepath: str, agent, session_stats: dict) -> int:
         "steps": steps,
     }
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
+    # A lone surrogate becomes the JSON escape \udXXX, which json.load turns back into the same character.
+    session_text = unencodable_as_backslash_escapes(json.dumps(payload, indent=2, ensure_ascii=False), "utf-8")
+    replace_file_with_text(filepath, session_text)
 
     return len(steps)
 

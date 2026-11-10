@@ -6,14 +6,17 @@
 # Licensed under the Apache License, Version 2.0
 
 import ast
+import errno
 import glob
 import os
 import re
 import secrets
 import shutil
+import stat
 import sys
 import time
 import unicodedata
+from contextlib import suppress
 from functools import cache
 from itertools import chain, islice
 from textwrap import dedent
@@ -176,6 +179,24 @@ def holds_line_break(text: str) -> bool:
 def unencodable_as_backslash_escapes(text: str, encoding: str) -> str:
     """Returns text with each character encoding cannot represent, such as a lone surrogate in UTF-8, as a backslash escape."""
     return text.encode(encoding, "backslashreplace").decode(encoding)
+
+
+def replace_file_with_text(filepath: str, text: str, encoding: str = "utf-8"):
+    """Writes text to a temporary file beside filepath and renames it over filepath, so a write that fails leaves filepath as it was.
+    Writes through a symlink at filepath and keeps the mode of an existing file."""
+    target_path = os.path.realpath(filepath)
+    temporary_path = f"{target_path}.{secrets.token_hex(4)}.tmp"
+    if os.path.exists(target_path) and not os.access(target_path, os.W_OK):
+        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), filepath)
+    try:
+        with open(temporary_path, "x", encoding=encoding) as temporary_file:
+            temporary_file.write(text)
+        if os.path.exists(target_path):
+            os.chmod(temporary_path, stat.S_IMODE(os.stat(target_path).st_mode))
+        os.replace(temporary_path, target_path)
+    finally:
+        with suppress(FileNotFoundError):
+            os.remove(temporary_path)
 
 
 def visible_encodable_text(text: str, encoding: str) -> str:
