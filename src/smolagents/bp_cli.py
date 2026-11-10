@@ -68,6 +68,7 @@ import subprocess
 import sys
 import threading
 import time
+import tokenize
 
 from smolagents.utils import truncate_content
 from rich.console import Console
@@ -214,6 +215,17 @@ def print_with_console_highlighting(line: Text) -> None:
     highlighted_line = console.render_str(line.plain, markup=False, emoji=False)
     highlighted_line.copy_styles(line)
     console.print(highlighted_line)
+
+
+def read_text_or_print_error(filepath: str, open_text=open) -> str | None:
+    """Returns the text of filepath, decoded as open_text decodes it (open: the locale encoding).
+    When filepath cannot be read or decoded, prints one line naming it and the reason and returns None."""
+    try:
+        with open_text(filepath) as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError, SyntaxError, MemoryError) as e:
+        print_with_console_highlighting(console_literal(f"Not read: {filepath}: {str(e) or type(e).__name__}", "red"))
+        return None
 
 
 def _compact_step_callback(step):
@@ -724,14 +736,10 @@ def load_agent_instructions() -> str | None:
     for filename in AGENT_INSTRUCTION_FILES:
         filepath = os.path.join(os.getcwd(), filename)
         if os.path.isfile(filepath):
-            try:
-                with open(filepath, "r") as f:
-                    content = f.read().strip()
-                if content:
-                    instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
-                    console.print(f"  [green]Loaded:[/] {filename}")
-            except OSError:
-                pass
+            content = (read_text_or_print_error(filepath) or "").strip()
+            if content:
+                instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
+                console.print(f"  [green]Loaded:[/] {filename}")
     if instructions:
         return """The folder contains some files with notes.
 You are not required to follow these notes. The notes in <filenotes> are there for your information.
@@ -780,11 +788,7 @@ def _load_readme_fallback() -> str | None:
     for ext in _README_EXTENSIONS_PRIORITY:
         if ext in candidates:
             filename, filepath = candidates[ext]
-            try:
-                with open(filepath, "r") as f:
-                    content = f.read().strip()
-            except OSError:
-                continue
+            content = (read_text_or_print_error(filepath) or "").strip()
             if not content:
                 continue
             truncated = ""
@@ -1888,16 +1892,12 @@ def load_file_as_prompt(args: str) -> str | None:
     if not os.path.isabs(filepath):
         filepath = os.path.join(os.getcwd(), filepath)
     if not os.path.isfile(filepath):
-        console.print(f"[red]File not found: {filepath}[/]")
+        print_with_console_highlighting(console_literal(f"File not found: {filepath}", "red"))
         return None
-    try:
-        with open(filepath, "r") as f:
-            content = f.read()
-        console.print(f"[green]Loaded {len(content):,} chars from {filepath}[/]")
-        return content
-    except OSError as e:
-        console.print(f"[red]Error reading file: {e}[/]")
-        return None
+    content = read_text_or_print_error(filepath)
+    if content is not None:
+        print_with_console_highlighting(console_literal(f"Loaded {len(content):,} chars from {filepath}", "green"))
+    return content
 
 
 def change_steps(agent, args: str):
@@ -1928,20 +1928,21 @@ def run_script(agent, args: str):
     if not os.path.isabs(filepath):
         filepath = os.path.join(os.getcwd(), filepath)
     if not os.path.isfile(filepath):
-        console.print(f"[red]File not found: {filepath}[/]")
+        print_with_console_highlighting(console_literal(f"File not found: {filepath}", "red"))
+        return
+    # tokenize.open decodes as the interpreter will (PEP 263), so this refuses only a script the interpreter cannot decode.
+    if read_text_or_print_error(filepath, tokenize.open) is None:
         return
     try:
-        with open(filepath, "r") as f:
-            code = f.read()
-        console.print(f"[dim]Running {filepath}...[/]")
+        print_with_console_highlighting(console_literal(f"Running {filepath}...", "dim"))
         result = subprocess.run(
             [sys.executable, filepath],
-            capture_output=True, text=True, timeout=3600,
+            capture_output=True, text=True, errors="backslashreplace", timeout=3600,
         )
         if result.stdout:
-            console.print(result.stdout)
+            print_with_console_highlighting(console_literal(result.stdout, ""))
         if result.stderr:
-            console.print(f"[red]{result.stderr}[/]")
+            print_with_console_highlighting(console_literal(result.stderr, "red"))
         if result.returncode == 0:
             console.print(f"[green]Script finished (exit code 0)[/]")
         else:
@@ -1949,7 +1950,7 @@ def run_script(agent, args: str):
     except subprocess.TimeoutExpired:
         console.print("[red]Script timed out (3600s limit).[/]")
     except OSError as e:
-        console.print(f"[red]Error running script: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Error running script: {e}", "red"))
 
 
 def change_directory(args: str):
