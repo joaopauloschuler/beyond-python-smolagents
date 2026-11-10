@@ -3369,9 +3369,17 @@ def print_undelivered_steering(messages: list[str]) -> None:
         print_with_console_highlighting(console_literal(f"Not delivered (the agent finished first): {text}", "yellow"))
 
 
+def escape_unencodable_stdout_characters() -> None:
+    """Makes sys.stdout write characters its encoding cannot represent, such as a lone surrogate, as backslash escapes."""
+    reconfigure_stdout = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure_stdout is not None:
+        reconfigure_stdout(errors="backslashreplace")
+
+
 def main():
     import argparse
 
+    escape_unencodable_stdout_characters()
     parser = argparse.ArgumentParser(
         prog="bpsa",
         description="Beyond Python SmolAgents - Interactive AI agent CLI",
