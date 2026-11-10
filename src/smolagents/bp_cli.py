@@ -58,6 +58,7 @@ Environment variables:
     ELEVENLABS_API_KEY        - API key for ElevenLabs transcriber (required when using elevenlabs)
 """
 
+import locale
 import os
 import queue
 import re
@@ -74,7 +75,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
+from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, unencodable_as_backslash_escapes, visible_control_characters, visible_encodable_text
 
 
 VERSION = "1.24-bp"
@@ -1674,12 +1675,12 @@ def save_answer(last_answer, args: str):
     if last_answer is None:
         console.print("[yellow]No answer to save yet.[/]")
         return
+    file_encoding = locale.getpreferredencoding(False)
     try:
-        with open(filename, "w") as f:
-            f.write(str(last_answer))
-        console.print(f"[green]Saved to {filename}[/]")
+        replace_file_with_text(filename, unencodable_as_backslash_escapes(str(last_answer), file_encoding), file_encoding)
+        print_with_console_highlighting(console_literal(f"Saved to {filename}", "green"))
     except OSError as e:
-        console.print(f"[red]Error saving: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Error saving: {e}", "red"))
 
 
 def print_stats(session_stats: dict, agent=None):
@@ -2429,11 +2430,10 @@ def cmd_save_step(agent, args: str):
         lines.append(str(step))
 
     try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        console.print(f"[green]Step {step_num} saved to {filename}[/]")
+        replace_file_with_text(filename, unencodable_as_backslash_escapes("\n".join(lines) + "\n", "utf-8"))
+        print_with_console_highlighting(console_literal(f"Step {step_num} saved to {filename}", "green"))
     except OSError as e:
-        console.print(f"[red]Failed to write {filename}: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to write {filename}: {e}", "red"))
 
 
 def _print_step_detail(step):
