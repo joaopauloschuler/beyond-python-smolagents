@@ -62,6 +62,7 @@ import locale
 import os
 import queue
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -1063,13 +1064,15 @@ def _run_shell_streaming(shell_cmd: str) -> str:
 
 
 ALIASES_FILE = os.path.expanduser("~/.bpsa_aliases")
+UNREADABLE_ALIASES_COPY = ALIASES_FILE + ".unreadable"
 
 
-def _load_aliases() -> dict:
-    """Load aliases from ~/.bpsa_aliases."""
+def _read_aliases_file() -> dict:
+    """Returns the aliases in ~/.bpsa_aliases, {} when there is no such file.
+    Raises OSError or UnicodeDecodeError when the file cannot be read in the locale encoding."""
     aliases = {}
     if os.path.isfile(ALIASES_FILE):
-        with open(ALIASES_FILE) as f:
+        with open(ALIASES_FILE, encoding=locale.getpreferredencoding(False)) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -1079,11 +1082,33 @@ def _load_aliases() -> dict:
     return aliases
 
 
-def _save_aliases(aliases: dict):
-    """Save aliases to ~/.bpsa_aliases."""
-    with open(ALIASES_FILE, "w") as f:
-        for name, value in sorted(aliases.items()):
-            f.write(f"{name} {value}\n")
+def _load_aliases() -> dict:
+    """Returns the aliases in ~/.bpsa_aliases; when the file cannot be read, prints one line, leaves the file alone and returns {}."""
+    try:
+        return _read_aliases_file()
+    except (OSError, UnicodeDecodeError) as e:
+        kept_copy_note = f". The next /alias change keeps this file as {UNREADABLE_ALIASES_COPY}." if isinstance(e, UnicodeDecodeError) else ""
+        print_with_console_highlighting(console_literal(f"Aliases not loaded from {ALIASES_FILE}: {e}{kept_copy_note}", "red"))
+        return {}
+
+
+def _save_aliases(aliases: dict) -> bool:
+    """Replaces ~/.bpsa_aliases with aliases, first copying a file that cannot be read to UNREADABLE_ALIASES_COPY.
+    On failure prints one line, leaves ~/.bpsa_aliases as it was and returns False."""
+    try:
+        try:
+            _read_aliases_file()
+        except (OSError, UnicodeDecodeError):
+            shutil.copyfile(ALIASES_FILE, UNREADABLE_ALIASES_COPY)
+        aliases_text = "".join(f"{name} {value}\n" for name, value in sorted(aliases.items()))
+        replace_file_with_text(ALIASES_FILE, aliases_text, locale.getpreferredencoding(False))
+    except UnicodeEncodeError as e:
+        print_with_console_highlighting(console_literal(f"Aliases not saved: {ALIASES_FILE} ({e.encoding}) cannot hold the character {e.object[e.start:e.end]}", "red"))
+        return False
+    except OSError as e:
+        print_with_console_highlighting(console_literal(f"Aliases not saved to {ALIASES_FILE}: {e}", "red"))
+        return False
+    return True
 
 
 SLASH_COMMANDS = [
@@ -2996,9 +3021,10 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                 elif args.startswith("-d "):
                     alias_name = args[3:].strip()
                     if alias_name in aliases:
-                        del aliases[alias_name]
-                        _save_aliases(aliases)
-                        console.print(f"[cyan]Alias '{alias_name}' deleted.[/]")
+                        remaining_aliases = {name: value for name, value in aliases.items() if name != alias_name}
+                        if _save_aliases(remaining_aliases):
+                            aliases = remaining_aliases
+                            print_with_console_highlighting(console_literal(f"Alias '{alias_name}' deleted.", "cyan"))
                     else:
                         console.print(f"[yellow]Alias '{alias_name}' not found.[/]")
                 else:
@@ -3006,9 +3032,10 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                     if len(parts) < 2:
                         console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
                     else:
-                        aliases[parts[0]] = parts[1]
-                        _save_aliases(aliases)
-                        console.print(f"[cyan]{parts[0]}[/] = {parts[1]}")
+                        changed_aliases = {**aliases, parts[0]: parts[1]}
+                        if _save_aliases(changed_aliases):
+                            aliases = changed_aliases
+                            print_with_console_highlighting(Text.assemble(console_literal(parts[0], "cyan"), " = ", console_literal(parts[1], "")))
                 continue
             elif cmd == "/redo":
                 if last_prompt is None:
