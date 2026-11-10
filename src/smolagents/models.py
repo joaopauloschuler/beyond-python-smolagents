@@ -24,7 +24,7 @@ from enum import Enum
 from threading import Thread
 from typing import TYPE_CHECKING, Any
 
-from .bp_utils import parse_env_bool
+from .bp_utils import parse_env_bool, unencodable_as_backslash_escapes
 from .monitoring import TokenUsage
 from .tools import Tool
 from .utils import RateLimiter, Retrying, _is_package_available, encode_image_base64, make_image_url, parse_json_blob, MAX_LENGTH_TRUNCATE_CONTENT
@@ -508,10 +508,15 @@ def get_clean_message_list(
         if role in role_conversions:
             message.role = role_conversions[role]  # type: ignore
         if flatten_messages_as_text: message.role = message.role.value
+        # A lone surrogate cannot be sent as UTF-8: providers reject the request body.
+        if isinstance(message.content, str):
+            message.content = unencodable_as_backslash_escapes(message.content, "utf-8")
         # encode images if needed
         if isinstance(message.content, list):
             for element in message.content:
                 assert isinstance(element, dict), "Error: this element should be a dict:" + str(element)
+                if element["type"] == "text":
+                    element["text"] = unencodable_as_backslash_escapes(element["text"], "utf-8")
                 if element["type"] == "image":
                     assert not flatten_messages_as_text, f"Cannot use images with {flatten_messages_as_text=}"
                     if convert_images_to_image_urls:

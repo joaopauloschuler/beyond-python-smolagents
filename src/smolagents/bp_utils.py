@@ -173,9 +173,14 @@ def holds_line_break(text: str) -> bool:
     return "".join(text.splitlines()) != text
 
 
+def unencodable_as_backslash_escapes(text: str, encoding: str) -> str:
+    """Returns text with each character encoding cannot represent, such as a lone surrogate in UTF-8, as a backslash escape."""
+    return text.encode(encoding, "backslashreplace").decode(encoding)
+
+
 def visible_encodable_text(text: str, encoding: str) -> str:
     """Returns visible_control_characters(text) with what encoding cannot represent as backslash escapes."""
-    return visible_control_characters(text).encode(encoding, "backslashreplace").decode(encoding)
+    return unencodable_as_backslash_escapes(visible_control_characters(text), encoding)
 
 
 @cache
