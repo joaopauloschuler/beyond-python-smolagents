@@ -52,6 +52,7 @@ from .bp_utils import (
     strip_trailing_tags,
     tag_with_filename_pattern,
     visible_control_characters,
+    visible_encodable_text,
 )
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
@@ -1241,7 +1242,7 @@ You have been provided with these additional arguments, that you can access dire
         for position, file in enumerate(files):
               self.approve_and_write_tag_file('savetofile', files, position, 'w', "No <appendtofile> tag in this output was processed.")
               msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['write_target']))+" bytes."
-              self.logger.log(msg_str, LogLevel.INFO)
+              self.logger.log(visible_encodable_text(msg_str, self.logger.console.encoding), LogLevel.INFO, markup=False, emoji=False)
         return files
 
     def append_files_from_text(self, txt, hidden_tag_bracket="<"):
@@ -1249,7 +1250,7 @@ You have been provided with these additional arguments, that you can access dire
         for position, file in enumerate(files):
               self.approve_and_write_tag_file('appendtofile', files, position, 'a', "Every <savetofile> tag in this output was written; do not repeat an <appendtofile> that was already written.")
               msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['write_target']))+" bytes."
-              self.logger.log(msg_str, LogLevel.INFO)
+              self.logger.log(visible_encodable_text(msg_str, self.logger.console.encoding), LogLevel.INFO, markup=False, emoji=False)
         return files
                 
     def included_file_content(self, filename):

@@ -2119,7 +2119,7 @@ def cmd_compress(agent, args: str):
             agent.memory.steps[target_idx] = compressed
             console.print(f"[green]Step {step_num} compressed successfully.[/]")
         except Exception as e:
-            console.print(f"[red]Compression failed: {e}[/]")
+            print_with_console_highlighting(console_literal(f"Compression failed: {e}", "red"))
     else:
         # Force compression of all eligible steps
         old_threshold = compressor.config.max_uncompressed_steps
@@ -2450,39 +2450,39 @@ def _print_step_detail(step):
         if step.token_usage:
             console.print(f"[bold]Tokens:[/] in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
         if step.error:
-            console.print(f"[bold red]Error:[/] {step.error}")
+            print_with_console_highlighting(Text.assemble(console_literal("Error:", "bold red"), " ", console_literal(str(step.error), "")))
         # if step.is_final_answer:
         #    console.print("[bold green]Final answer[/]")
         if step.model_output:
             console.print(f"[bold]Model output:[/]")
-            console.print(str(step.model_output)[:2000])
+            print_with_console_highlighting(console_literal(str(step.model_output)[:2000], ""))
         # if step.code_action:
         #    console.print(f"[bold]Code action:[/]")
         #    console.print(step.code_action[:2000])
         if step.observations:
             console.print(f"[bold]Run output:[/]")
-            console.print(str(step.observations)[:2000])
+            print_with_console_highlighting(console_literal(str(step.observations)[:2000], ""))
         if step.user_message:
             console.print(f"[bold]User message:[/]")
-            console.print(step.user_message[:2000])
+            print_with_console_highlighting(console_literal(step.user_message[:2000], ""))
     elif isinstance(step, CompressedHistoryStep):
         console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
         console.print(f"[bold]Step numbers:[/] {step.compressed_step_numbers}")
         if step.timing and step.timing.duration is not None:
             console.print(f"[bold]Compression duration:[/] {step.timing.duration:.1f}s")
         console.print(f"[bold]Summary:[/]")
-        console.print(step.summary[:3000])
+        print_with_console_highlighting(console_literal(step.summary[:3000], ""))
     elif isinstance(step, PlanningStep):
         console.print(f"[bold]Plan:[/]")
-        console.print(step.plan[:2000])
+        print_with_console_highlighting(console_literal(step.plan[:2000], ""))
     elif isinstance(step, TaskStep):
         console.print(f"[bold]Task:[/]")
-        console.print(step.task[:2000])
+        print_with_console_highlighting(console_literal(step.task[:2000], ""))
     elif isinstance(step, SystemPromptStep):
         console.print(f"[bold]System prompt:[/]")
-        console.print(step.system_prompt[:2000])
+        print_with_console_highlighting(console_literal(step.system_prompt[:2000], ""))
     else:
-        console.print(str(step)[:2000])
+        print_with_console_highlighting(console_literal(str(step)[:2000], ""))
     console.print()
 
 
@@ -2510,7 +2510,7 @@ def cmd_show_steps(agent):
         preview = content.replace("\n", " ").strip()
         if len(preview) > 80:
             preview = preview[:77] + "..."
-        table.add_row("0", "SystemPrompt", "[dim]no[/]", f"{chars:,} chars", preview)
+        table.add_row("0", "SystemPrompt", "[dim]no[/]", f"{chars:,} chars", console_literal(preview, ""))
 
     for i, step in enumerate(steps, 1):
         type_name = type(step).__name__
@@ -2545,7 +2545,7 @@ def cmd_show_steps(agent):
             preview = preview[:77] + "..."
 
         compressed = "[green]yes[/]" if isinstance(step, CompressedHistoryStep) else "[dim]no[/]"
-        table.add_row(label, type_name, compressed, f"{chars:,} chars", preview)
+        table.add_row(label, type_name, compressed, f"{chars:,} chars", console_literal(preview, ""))
 
     console.print(table)
     console.print()
@@ -2564,7 +2564,7 @@ def cmd_show_knowledge(agent):
     knowledge_tags = list_xml_tag_names(knowledge)
     sections_info = f"{len(knowledge_tags)} section(s): {', '.join(knowledge_tags)}" if knowledge_tags else "no sections"
     console.print(Rule(f"[bold]Knowledge[/] [dim]({len(knowledge):,} chars, {sections_info})[/]", style="blue"))
-    console.print(knowledge)
+    print_with_console_highlighting(console_literal(knowledge, ""))
     console.print()
 
 
@@ -2615,7 +2615,7 @@ def cmd_undo(agent, args: str):
         elif hasattr(step, "plan"):
             preview = step.plan.replace("\n", " ")[:60]
         if preview:
-            console.print(f"  [red]Removed:[/] {type_name} - {preview}...")
+            print_with_console_highlighting(Text.assemble("  ", console_literal("Removed:", "red"), f" {type_name} - ", console_literal(preview, ""), "..."))
         else:
             console.print(f"  [red]Removed:[/] {type_name}")
 
@@ -2692,7 +2692,7 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
         except Exception as e:
             _spinner.stop()
             errors += 1
-            console.print(f"\n[bold red]Cycle {i}/{n} error:[/] {e}")
+            print_with_console_highlighting(Text.assemble("\n", console_literal(f"Cycle {i}/{n} error:", "bold red"), " ", console_literal(str(e), "")))
 
     # Summary
     console.print(Rule(style="cyan"))
