@@ -56,19 +56,33 @@ TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\
 TERMINAL_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in chain(range(0x00, 0x09), range(0x0b, 0x20), range(0x7f, 0xa0))}
 PRIVATE_USE_RANGES = (range(0xE000, 0xF900), range(0xF0000, 0xFFFFE), range(0x100000, 0x10FFFE))
 
+# Every .env load goes through load_dotenv_recording_names: a name loaded earlier looks like a process env var later.
 dotenv_loaded_names: set[str] = set()
+_reported_dotenv_failures: set[tuple[str, str]] = set()
 
 
-def load_dotenv_recording_names(env_path: str | None = None) -> set[str]:
+def load_dotenv_recording_names(env_path: str | None = None) -> set[str] | None:
     """load_dotenv that adds the names it set to dotenv_loaded_names and returns them; without env_path it searches
-    as load_dotenv does. All loads go through here because a name loaded earlier looks like a process env var later."""
+    as load_dotenv does. A failed load prints one stderr line naming the file and the reason and returns None."""
     from dotenv import dotenv_values, find_dotenv, load_dotenv
 
     env_path = env_path or find_dotenv()
     if not env_path:
         return set()
-    added_names = {k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ}
-    load_dotenv(env_path)
+    added_names: set[str] = set()
+    try:
+        added_names = {k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ}
+        load_dotenv(env_path)
+    except (OSError, ValueError, MemoryError) as e:
+        # os.environ rejects a NUL in a value after load_dotenv set the names before it.
+        dotenv_loaded_names.update(name for name in added_names if name in os.environ)
+        # str(e) of a UnicodeDecodeError quotes a byte of the file, which may hold secrets.
+        reason = f"not valid {e.encoding}" if isinstance(e, UnicodeDecodeError) else str(e) or type(e).__name__
+        # bpsa loads ./.env twice when smolagents is imported with it as the current directory.
+        if (env_path, reason) not in _reported_dotenv_failures:
+            _reported_dotenv_failures.add((env_path, reason))
+            print(visible_encodable_text(f"Failed to load {env_path}: {reason}", sys.stderr.encoding), file=sys.stderr)
+        return None
     dotenv_loaded_names.update(added_names)
     return added_names
 

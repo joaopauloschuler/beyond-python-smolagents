@@ -306,8 +306,8 @@ def try_load_dotenv():
         return
     _dotenv_checked_paths.add(env_path)
     if os.path.isfile(env_path):
-        _dotenv_keys.update(load_dotenv_recording_names(env_path))
-        console.print(f"[green]Loaded .env from:[/] {env_path}")
+        if load_dotenv_recording_names(env_path) is not None:
+            console.print(f"[green]Loaded .env from:[/] {env_path}")
     else:
         console.print("[dim]No .env file found in current directory.[/]")
 
