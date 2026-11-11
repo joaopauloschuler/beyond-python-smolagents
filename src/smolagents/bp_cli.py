@@ -688,6 +688,10 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         from smolagents.bp_tools import GitHubCopilotCoder
         tools.append(GitHubCopilotCoder(model_id=copilot_model_id))
 
+    if _message_settings is not None:
+        from smolagents.bp_tools import SendMessageTool
+        tools.append(SendMessageTool(_message_settings))
+
     if mcp_servers:
         from smolagents import MCPClient
         mcp_client = MCPClient(mcp_servers, structured_output=True)

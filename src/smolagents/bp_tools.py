@@ -3257,3 +3257,66 @@ class GetToolDescriptionsTool(Tool):
                 available = ", ".join(sorted(self._tool_docs.keys()))
                 results.append(f"Tool '{name}' not found. Available tools: {available}")
         return "\n\n".join(results)
+
+
+MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # every reader holds a message in its context
+
+
+class SendMessageTool(Tool):
+    """Writes an agent-to-agent message from this process's agent name into one of its message folders (bp_messages.write_message)."""
+
+    name = "send_message"
+    description = (
+        "Sends a text message to another agent by writing it as a file in one of your message folders. "
+        "The message goes out under your own agent name. "
+        "`to` is the name of one agent, or 'all' for every agent that reads that folder; you cannot send to yourself. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        f"`text` holds at most {MAX_MESSAGE_TEXT_CHARACTERS:,} characters and every reader gets all of it in its context, "
+        "so keep it short: write long results to a file and send the file's path. "
+        "Returns one line naming the message file written, or one line starting with 'Error:' when nothing was sent."
+    )
+    inputs = {
+        "to": {"type": "string", "description": "An agent name, or 'all'."},
+        "text": {"type": "string", "description": "The message text."},
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder to write to; required only when you have several folders.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, to: str, text: str, folder: str | None = None) -> str:
+        # Imported here: `python -m smolagents.bp_messages` warns when the package import chain already loaded it.
+        from smolagents.bp_messages import check_message_target, write_message
+
+        labels = ", ".join(message_folder.label for message_folder in self._settings.folders)
+        if not isinstance(text, str):
+            return f"Error: text must be a string, not {type(text).__name__}; nothing was sent."
+        try:
+            check_message_target(to)
+        except ValueError as error:
+            return f"Error: {error} Nothing was sent."
+        if to == self._settings.agent_name:
+            return f"Error: {to} is your own agent name; you cannot send a message to yourself. Nothing was sent."
+        if folder is None:
+            if len(self._settings.folders) != 1:
+                return f"Error: you have several message folders; name one with folder= ({labels}). Nothing was sent."
+            message_folder = self._settings.folders[0]
+        else:
+            matching_folders = [message_folder for message_folder in self._settings.folders if message_folder.label == folder]
+            if not matching_folders:
+                return f"Error: no message folder has the label {ascii(folder)}; your folders are: {labels}. Nothing was sent."
+            message_folder = matching_folders[0]
+        if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
+            return (f"Error: the text has {len(text):,} characters, above the limit of {MAX_MESSAGE_TEXT_CHARACTERS:,}; "
+                    f"write it to a file and send the file's path instead. Nothing was sent.")
+        try:
+            file_name = write_message(message_folder.path, self._settings.agent_name, to, text)
+        except (ValueError, OSError) as error:
+            return f"Error: could not write the message in folder {message_folder.label}: {error}. Nothing was sent."
+        return f"Sent {file_name} in folder {message_folder.label}."

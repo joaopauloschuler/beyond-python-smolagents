@@ -665,12 +665,28 @@ Conventions for T1 to T11:
       feature off equal 81e64dc except the round-trip time; on via env and via
       `./.env`; 23 invalid cases give one `Error:` line, exit 1, no traceback;
       `bp_messages new` still takes its defaults from the variables.
-- [ ] **T3. `send_message` tool.** In `src/smolagents/bp_tools.py`,
+- [x] **T3. `send_message` tool.** In `src/smolagents/bp_tools.py`,
       registered in `build_agent` only when an agent name is set.
       `send_message(to, text)` for an agent with one folder; an agent with
       two folders also names the folder. Check: the file appears with the
       correct name and content; a bad target name gives an error line and no
       file.
+      LANDED: `SendMessageTool(settings)`, `send_message(to, text, folder=None)`;
+      `build_agent` appends it when `_message_settings` is not None. `folder`
+      is a `MessageFolder.label`, optional with one folder. Sender is always
+      the agent name. Failures (invalid target, own name, missing or unknown
+      label, text not a string, text above `MAX_MESSAGE_TEXT_CHARACTERS` =
+      100,000, ValueError/OSError of `write_message`) are returned as one
+      `Error: ... Nothing was sent.` line, as the neighbouring tools do; success
+      returns `Sent <file> in folder <label>.` Static description (the
+      neighbouring tools have static ones). bp_messages is imported inside
+      `forward`, because the package imports bp_tools. Documented in the
+      `BPSA_AGENT_NAME` row of docs/CLI.md. Verified: 23/23 unit checks
+      (names, content, two folders, every failure leaves no file, `[/x]`, ESC
+      and a lone surrogate); real runs with one folder (agent31) and two
+      folders (leader3) wrote the expected files, read back by `bp_messages
+      new`; `/show-tools` with the feature off equals 5f79703; `bp_messages
+      new` prints nothing on stderr.
 - [ ] **T4. Polling timer.** In `src/smolagents/bp_cli.py`: a thread lists
       the folders every poll interval and queues new messages, grouped into
       one text with each sender marked. While the agent works, the queue is
