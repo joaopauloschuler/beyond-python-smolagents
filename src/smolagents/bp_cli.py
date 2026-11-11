@@ -30,6 +30,9 @@ Environment variables:
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
     BPSA_AUTO_APPROVE - on/off: auto-approve tag execution when --auto-approve is not given (default: off)
+    BPSA_AGENT_NAME     - Agent name for agent-to-agent messages: 1-64 of a-z, 0-9, '-'; unset/empty = messages off
+    BPSA_MESSAGE_FOLDERS - Message folders, one path per line; each is named by its last path component (required with BPSA_AGENT_NAME)
+    BPSA_MESSAGE_POLL_SECONDS - Seconds between message folder checks, a number above 0 (default: 60)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -77,6 +80,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
+from smolagents.bp_messages import MessageSettings, MessageSettingsError, load_message_settings
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
 
@@ -88,6 +92,8 @@ _verbose = False
 # Mutable state for auto-approve mode
 _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
+# Agent-to-agent message settings, validated once at startup by load_message_settings_or_fail; None = feature off
+_message_settings: MessageSettings | None = None
 
 TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
@@ -312,6 +318,20 @@ def try_load_dotenv():
         console.print("[dim]No .env file found in current directory.[/]")
 
 
+def load_message_settings_or_fail() -> MessageSettings | None:
+    """Returns load_message_settings(); for invalid settings, fail prints its one-line reason and exits with status 1."""
+    try:
+        return load_message_settings()
+    except MessageSettingsError as error:
+        fail(str(error))
+
+
+def print_message_settings(settings: MessageSettings):
+    folders = ", ".join(f"{folder.label} ({folder.path})" for folder in settings.folders)
+    print_with_console_highlighting(Text.assemble(console_literal("Messages:", "green"), " ", console_literal(
+        f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s", "")))
+
+
 def check_required_env():
     """Check all required env vars and report missing ones."""
     model_id = get_env("BPSA_MODEL_ID")
@@ -356,6 +376,9 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("  [bold]BPSA_AUTO_APPROVE[/] on/off: auto-approve tag execution (default: off)")
+        console.print("  [bold]BPSA_AGENT_NAME[/]       Agent name for agent-to-agent messages (default: unset = messages off)")
+        console.print("  [bold]BPSA_MESSAGE_FOLDERS[/]  Message folders, one path per line (required with BPSA_AGENT_NAME)")
+        console.print("  [bold]BPSA_MESSAGE_POLL_SECONDS[/] Seconds between message folder checks (default: 60)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -1880,6 +1903,17 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     mcp_count = len(mcp_servers) if mcp_servers else 0
     table.add_row("MCP servers", str(mcp_count), (env_source("BPSA_MCP") if "BPSA_MCP" in os.environ else "--mcp")
                   if mcp_count else "default")
+    table.add_row("", "", "")
+    agent_name_source = env_source("BPSA_AGENT_NAME")
+    if _message_settings is None:
+        table.add_row("Agent name", "(not set)", agent_name_source)
+    else:
+        table.add_row("Agent name", console_literal(_message_settings.agent_name, ""), agent_name_source)
+        for folder in _message_settings.folders:
+            table.add_row(console_literal(f"Message folder {folder.label}", ""), console_literal(folder.path, ""),
+                          env_source("BPSA_MESSAGE_FOLDERS"))
+        table.add_row("Message poll seconds", f"{_message_settings.poll_seconds:g}",
+                      env_source("BPSA_MESSAGE_POLL_SECONDS") if (get_env("BPSA_MESSAGE_POLL_SECONDS") or "").strip() else "default")
     console.print(table)
     console.print("[dim]Sources: env = process environment, .env = loaded from ./.env at startup, "
                   "default = built in. The ~/.bpsa.yaml file named in docs/CLI.md is not read.[/]")
@@ -2786,16 +2820,19 @@ The above should be treated as information only. What the user is asking (what y
 
 
 def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _auto_approve_source, _verbose
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
     try_load_dotenv()
     _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+    _message_settings = load_message_settings_or_fail()
     if not _auto_approve and approval_key_source() is None:
         fail(f"Cannot ask for approval: no terminal to read a key from. {_NO_TERMINAL_ADVICE}")
     check_required_env()
     model = build_model()
     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
     check_model_connectivity(model)
+    if _message_settings is not None:
+        print_message_settings(_message_settings)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
@@ -2821,10 +2858,11 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
 
 
 def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _auto_approve_source, _verbose
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
     try_load_dotenv()
     _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+    _message_settings = load_message_settings_or_fail()
     check_required_env()
 
     model = build_model()
@@ -2841,6 +2879,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
     dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
     print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber,
                  round_trip_seconds=round_trip_seconds, context_length=context_length)
+    if _message_settings is not None:
+        print_message_settings(_message_settings)
 
     instructions = None
     if not skip_instructions:

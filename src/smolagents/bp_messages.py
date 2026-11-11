@@ -9,6 +9,7 @@
 
 import argparse
 import json
+import math
 import os
 import re
 import secrets
@@ -33,6 +34,7 @@ MESSAGE_ID_DIGITS = 6
 TEMPORARY_MESSAGE_FILE_SUFFIX = ".tmp"
 WAIT_POLL_SECONDS = 0.5
 DEFAULT_WAIT_TIMEOUT_SECONDS = 300.0
+DEFAULT_MESSAGE_POLL_SECONDS = 60.0
 EXIT_ERROR = 1
 EXIT_WAIT_TIMEOUT = 3
 EXIT_INTERRUPTED = 130
@@ -248,10 +250,76 @@ def print_and_record_new_messages(folder: str, reader: str, is_peek: bool) -> in
     return len(messages)
 
 
+def message_folder_paths() -> list[str]:
+    """Returns the folders of BPSA_MESSAGE_FOLDERS: one per line, stripped, empty lines dropped (as BPSA_MCP)."""
+    return [line.strip() for line in (get_env("BPSA_MESSAGE_FOLDERS") or "").splitlines() if line.strip()]
+
+
 def default_message_folder() -> str | None:
-    """Returns the folder of BPSA_MESSAGE_FOLDERS when it names exactly one (one per line, as BPSA_MCP); otherwise None."""
-    folders = [line.strip() for line in (get_env("BPSA_MESSAGE_FOLDERS") or "").splitlines() if line.strip()]
+    """Returns the folder of BPSA_MESSAGE_FOLDERS when it names exactly one; otherwise None."""
+    folders = message_folder_paths()
     return folders[0] if len(folders) == 1 else None
+
+
+class MessageSettingsError(ValueError):
+    """BPSA_AGENT_NAME, BPSA_MESSAGE_FOLDERS or BPSA_MESSAGE_POLL_SECONDS is invalid; str() is a one-line reason."""
+
+
+class MessageFolder(NamedTuple):
+    label: str  # last component of path; it names the folder when an agent has several
+    path: str  # absolute
+
+
+class MessageSettings(NamedTuple):
+    agent_name: str
+    folders: tuple[MessageFolder, ...]
+    poll_seconds: float
+
+
+def message_folder_label(path: str) -> str:
+    return os.path.basename(os.path.abspath(path))
+
+
+def message_poll_seconds() -> float:
+    """Returns BPSA_MESSAGE_POLL_SECONDS, DEFAULT_MESSAGE_POLL_SECONDS when unset or empty. Raises MessageSettingsError unless it is a finite number above 0."""
+    text = (get_env("BPSA_MESSAGE_POLL_SECONDS") or "").strip()
+    if not text:
+        return DEFAULT_MESSAGE_POLL_SECONDS
+    try:
+        poll_seconds = float(text)
+    except ValueError:
+        poll_seconds = math.nan
+    if not (math.isfinite(poll_seconds) and poll_seconds > 0):
+        raise MessageSettingsError(f"BPSA_MESSAGE_POLL_SECONDS is {ascii(text)}: use a number of seconds above 0, such as 60 or 2.5.")
+    return poll_seconds
+
+
+def load_message_settings() -> MessageSettings | None:
+    """Returns the validated message settings, or None when BPSA_AGENT_NAME is unset or empty (the other two variables are then not read).
+    Raises MessageSettingsError for an invalid name, no folder, a folder that is not a directory, two folders with one label, or bad poll seconds."""
+    agent_name = get_env("BPSA_AGENT_NAME") or ""
+    if not agent_name:
+        return None
+    try:
+        check_agent_name(agent_name)
+    except ValueError as error:
+        raise MessageSettingsError(f"BPSA_AGENT_NAME: {error}") from None
+    paths = message_folder_paths()
+    if not paths:
+        raise MessageSettingsError("BPSA_AGENT_NAME is set but BPSA_MESSAGE_FOLDERS names no folder (one folder path per line).")
+    folders = []
+    for path in paths:
+        if not os.path.isdir(path):
+            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folder {path} does not exist or is not a folder.")
+        folder = MessageFolder(message_folder_label(path), os.path.abspath(path))
+        if not folder.label:
+            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folder {path} has no last path component to use as its label.")
+        same_label_paths = [other.path for other in folders if other.label == folder.label]
+        if same_label_paths:
+            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folders {same_label_paths[0]} and {folder.path} have the same label "
+                                       f"{folder.label!r} (the last path component); rename one.")
+        folders.append(folder)
+    return MessageSettings(agent_name, tuple(folders), message_poll_seconds())
 
 
 def message_command_parser() -> argparse.ArgumentParser:

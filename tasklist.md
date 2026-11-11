@@ -642,10 +642,29 @@ Conventions for T1 to T11:
       0 bad checksums; the same with both writers named `gamma`: 2,000
       distinct ids, 0 lost; invalid names, stray files, an undecodable file,
       ids above 999999 and a sender restart behave as stated.
-- [ ] **T2. Settings.** In `src/smolagents/bp_cli.py`: `BPSA_AGENT_NAME`,
+- [x] **T2. Settings.** In `src/smolagents/bp_cli.py`: `BPSA_AGENT_NAME`,
       `BPSA_MESSAGE_FOLDERS` (one per line, as `BPSA_MCP`),
       `BPSA_MESSAGE_POLL_SECONDS` (default 60). Check: with none set, the
       startup output and the tool list are identical to commit `81e64dc`.
+      LANDED: `load_message_settings()` in bp_messages.py returns
+      `MessageSettings(agent_name, folders, poll_seconds)` (folders: tuple of
+      `MessageFolder(label, path)`, label = last path component, path made
+      absolute) or None when `BPSA_AGENT_NAME` is unset or empty (the other
+      two are then not read); it raises `MessageSettingsError` with a one-line
+      reason. `message_folder_paths` is the one parser of
+      `BPSA_MESSAGE_FOLDERS`, also used by `default_message_folder`. Poll
+      seconds: finite float above 0; empty = 60. bp_cli.py:
+      `run_repl`/`run_one_shot` store it in `_message_settings` after
+      `resolve_auto_approve` (`load_message_settings_or_fail`, error through
+      `fail`, exit 1); `print_message_settings` prints one `Messages:` line
+      after the banner (REPL) or after the connectivity check (`run`).
+      `/show-config`: `Agent name` row always (`(not set)` when off), plus one
+      `Message folder <label>` row per folder and `Message poll seconds` when
+      on. Documented in docs/CLI.md, the module docstring and the
+      missing-config help. Verified: REPL start-up and `/show-tools` with the
+      feature off equal 81e64dc except the round-trip time; on via env and via
+      `./.env`; 23 invalid cases give one `Error:` line, exit 1, no traceback;
+      `bp_messages new` still takes its defaults from the variables.
 - [ ] **T3. `send_message` tool.** In `src/smolagents/bp_tools.py`,
       registered in `build_agent` only when an agent name is set.
       `send_message(to, text)` for an agent with one folder; an agent with
