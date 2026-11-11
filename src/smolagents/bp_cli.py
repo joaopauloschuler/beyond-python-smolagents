@@ -2156,8 +2156,10 @@ def cmd_compress(agent, args: str):
         old_threshold = compressor.config.max_uncompressed_steps
         compressor.config.max_uncompressed_steps = 0  # Force trigger
         original_len = len(agent.memory.steps)
-        agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
-        compressor.config.max_uncompressed_steps = old_threshold
+        try:
+            agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
+        finally:
+            compressor.config.max_uncompressed_steps = old_threshold
         new_len = len(agent.memory.steps)
         if new_len < original_len:
             console.print(f"[green]Compression done: {original_len} steps → {new_len} steps.[/]")
@@ -2997,303 +2999,307 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             continue
 
         # Handle slash commands
-        if text.startswith("/"):
-            cmd_parts = text.split(maxsplit=1)
-            cmd = cmd_parts[0].lower()
-            cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+        try:
+            if text.startswith("/"):
+                cmd_parts = text.split(maxsplit=1)
+                cmd = cmd_parts[0].lower()
+                cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
 
-            if cmd == "/exit":
-                if session_stats["turns"] > 0:
-                    console.print()
-                    print_stats(session_stats, agent)
-                _shutdown_voice()
-                _shutdown_browser(agent)
-                _shutdown_gui(agent)
-                _shutdown_mcp(agent)
-                console.print("[dim]Goodbye![/]")
-                break
-            elif cmd == "/help":
-                print_help()
-                continue
-            elif cmd == "/alias":
-                args = cmd_args.strip()
-                if not args:
-                    if aliases:
-                        for name, value in sorted(aliases.items()):
-                            print_with_console_highlighting(Text.assemble("  ", console_literal(name, "cyan"), " = ", console_literal(value, "")))
-                    else:
-                        console.print("[dim]No aliases defined. Usage: /alias <name> <value>[/]")
-                elif args.startswith("-d "):
-                    alias_name = args[3:].strip()
-                    if alias_name in aliases:
-                        remaining_aliases = {name: value for name, value in aliases.items() if name != alias_name}
-                        if _save_aliases(remaining_aliases):
-                            aliases = remaining_aliases
-                            print_with_console_highlighting(console_literal(f"Alias '{alias_name}' deleted.", "cyan"))
-                    else:
-                        print_with_console_highlighting(console_literal(f"Alias '{alias_name}' not found.", "yellow"))
-                else:
-                    parts = args.split(None, 1)
-                    if len(parts) < 2:
-                        console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
-                    else:
-                        changed_aliases = {**aliases, parts[0]: parts[1]}
-                        if _save_aliases(changed_aliases):
-                            aliases = changed_aliases
-                            print_with_console_highlighting(Text.assemble(console_literal(parts[0], "cyan"), " = ", console_literal(parts[1], "")))
-                continue
-            elif cmd == "/redo":
-                if last_prompt is None:
-                    console.print("[yellow]No previous prompt to redo.[/]")
+                if cmd == "/exit":
+                    if session_stats["turns"] > 0:
+                        console.print()
+                        print_stats(session_stats, agent)
+                    _shutdown_voice()
+                    _shutdown_browser(agent)
+                    _shutdown_gui(agent)
+                    _shutdown_mcp(agent)
+                    console.print("[dim]Goodbye![/]")
+                    break
+                elif cmd == "/help":
+                    print_help()
                     continue
-                # Undo the steps from the last turn, then re-run
-                cmd_undo(agent, "")
-                text = last_prompt
-                # Fall through to agent run below
-            elif cmd == "/clear":
-                _shutdown_browser(agent)
-                _shutdown_gui(agent)
-                _shutdown_mcp(agent)
-                rotate_session_id(model)  # new conversation -> new OpenRouter session id
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
-                apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
-                session_stats = {
-                    "turns": 0,
-                    "total_time": 0.0,
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_cached_input_tokens": 0,
-                    "total_cost_usd": 0.0,
-                }
-                budget_warned = set()
-                last_answer = None
-                first_turn = True
-                console.clear()
-                _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
-                print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
-                             round_trip_seconds=round_trip_seconds, context_length=context_length)
-                continue
-            elif cmd == "/show-tools":
-                print_tools(agent)
-                continue
-            elif cmd == "/verbose":
-                verbose = not verbose
-                _verbose = verbose
-                console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
-                continue
-            elif cmd == "/save":
-                save_answer(last_answer, cmd_args)
-                continue
-            elif cmd == "/show-stats":
-                print_stats(session_stats, agent)
-                continue
-            elif cmd == "/show-config":
-                cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
-                                image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers,
-                                session_stats=session_stats)
-                continue
-            elif cmd == "/run-prompt":
-                file_content = load_file_as_prompt(cmd_args)
-                if file_content:
-                    text = file_content
-                    # Fall through to agent run
-                else:
-                    continue
-            elif cmd == "/set-max-steps":
-                change_steps(agent, cmd_args)
-                continue
-            elif cmd == "/run-py":
-                run_script(agent, cmd_args)
-                continue
-            elif cmd == "/cd":
-                change_directory(cmd_args)
-                continue
-            elif cmd == "/pwd":
-                print_with_console_highlighting(console_literal(os.getcwd(), "cyan"))
-                continue
-            elif cmd == "/instructions-load":
-                console.print("[dim]Loading agent instructions...[/]")
-                instructions = load_agent_instructions()
-                if instructions:
-                    first_turn = True
-                    console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
-                else:
-                    console.print("[yellow]No instruction files found.[/]")
-                continue
-            elif cmd == "/plan":
-                arg = cmd_args.strip().lower()
-                if arg == "":
-                    interval = getattr(agent, "planning_interval", None)
-                    status = f"on (every {interval} steps)" if interval else "off"
-                    console.print(f"[cyan]Planning: {status}[/]")
-                elif arg == "on":
-                    agent.planning_interval = 22
-                    console.print("[cyan]Planning: on (every 22 steps)[/]")
-                elif arg == "off":
-                    agent.planning_interval = None
-                    console.print("[cyan]Planning: off[/]")
-                else:
-                    try:
-                        n = int(arg)
-                        if n < 1:
-                            raise ValueError
-                        agent.planning_interval = n
-                        console.print(f"[cyan]Planning: on (every {n} steps)[/]")
-                    except ValueError:
-                        console.print("[yellow]Usage: /plan [on|off|N][/]")
-                continue
-            elif cmd == "/show-compression-stats":
-                cmd_compression_stats(agent)
-                continue
-            elif cmd == "/show-memory-stats":
-                cmd_memory_stats(agent)
-                continue
-            elif cmd == "/compress":
-                cmd_compress(agent, cmd_args)
-                continue
-            elif cmd == "/compression":
-                cmd_compression_toggle(agent, cmd_args)
-                continue
-            elif cmd == "/compression-keep-recent-steps":
-                cmd_compression_keep_recent(agent, cmd_args)
-                continue
-            elif cmd == "/compression-max-uncompressed-steps":
-                cmd_compression_max_uncompressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-keep-compressed-steps":
-                cmd_compression_keep_compressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-max-compressed-steps":
-                cmd_compression_max_compressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-set-high":
-                cmd_compression_set_high(agent)
-                continue
-            elif cmd == "/compression-set-ultra":
-                cmd_compression_set_ultra(agent)
-                continue
-            elif cmd == "/compression-set-medium":
-                cmd_compression_set_normal(agent)
-                continue
-            elif cmd == "/compression-set-low":
-                cmd_compression_set_low(agent)
-                continue
-            elif cmd == "/compression-model":
-                cmd_compression_model(agent, cmd_args)
-                continue
-            elif cmd == "/model":
-                new_model = cmd_model(agent, cmd_args)
-                if new_model is not None:
-                    model = new_model  # /clear and /repeat build agents from this
-                    model_id = new_model.model_id  # banner
-                    round_trip_seconds = None  # measured for the old model only
-                    context_length = resolve_context_length(new_model)
-                    apply_context_length(agent, context_length)
-                continue
-            elif cmd == "/save-step":
-                cmd_save_step(agent, cmd_args)
-                continue
-            elif cmd == "/show-step":
-                cmd_show_step(agent, cmd_args)
-                continue
-            elif cmd == "/show-steps":
-                cmd_show_steps(agent)
-                continue
-            elif cmd == "/show-knowledge":
-                cmd_show_knowledge(agent)
-                continue
-            elif cmd == "/undo-steps":
-                cmd_undo(agent, cmd_args)
-                continue
-            elif cmd == "/repeat":
-                parts = cmd_args.strip().split(None, 1)
-                if len(parts) < 2:
-                    console.print("[yellow]Usage: /repeat <N> <prompt>[/]")
-                    continue
-                try:
-                    repeat_n = int(parts[0])
-                    if repeat_n < 1:
-                        raise ValueError
-                except ValueError:
-                    console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
-                    continue
-                if session_budget_blocks_turn(session_stats):
-                    continue
-                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
-                continue
-            elif cmd == "/repeat-prompt":
-                parts = cmd_args.strip().split(None, 1)
-                if len(parts) < 2:
-                    console.print("[yellow]Usage: /repeat-prompt <N> <path>[/]")
-                    continue
-                try:
-                    repeat_n = int(parts[0])
-                    if repeat_n < 1:
-                        raise ValueError
-                except ValueError:
-                    console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
-                    continue
-                file_content = load_file_as_prompt(parts[1])
-                if file_content is None or session_budget_blocks_turn(session_stats):
-                    continue
-                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
-                continue
-            elif cmd == "/session-save":
-                cmd_session_save(agent, session_stats, cmd_args)
-                continue
-            elif cmd == "/session-load":
-                result = cmd_session_load(agent, cmd_args)
-                if result is not None:
-                    session_stats = result
-                    first_turn = False
-                    budget_warned = set()  # loaded totals count; warn again from what they are now
-                    warn_session_budget(session_stats, budget_warned)
-                continue
-            elif cmd == "/auto-approve":
-                arg = cmd_args.strip().lower()
-                if arg == "on":
-                    _auto_approve = True
-                elif arg == "off":
-                    _auto_approve = False
-                elif arg == "":
-                    _auto_approve = not _auto_approve
-                else:
-                    console.print("[yellow]Usage: /auto-approve [on|off][/]")
-                    continue
-                _auto_approve_source = "/auto-approve"
-                console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
-                continue
-            elif cmd == "/dictation":
-                arg = cmd_args.strip().lower()
-                if arg == "on":
-                    console.print("[cyan]Loading dictation support.[/]")
-                    if not _has_prompt_toolkit:
-                        console.print("[red]Dictation requires voicelistener. Install with: pip install voicelistener[/]")
-                    else:
-                        err = _voice_start()
-                        if err:
-                            console.print(f"[red]{err}[/]")
+                elif cmd == "/alias":
+                    args = cmd_args.strip()
+                    if not args:
+                        if aliases:
+                            for name, value in sorted(aliases.items()):
+                                print_with_console_highlighting(Text.assemble("  ", console_literal(name, "cyan"), " = ", console_literal(value, "")))
                         else:
-                            console.print("[cyan][mic] Dictation active[/]")
-                elif arg == "off":
-                    err = _voice_stop()
-                    if err:
-                        console.print(f"[yellow]{err}[/]")
+                            console.print("[dim]No aliases defined. Usage: /alias <name> <value>[/]")
+                    elif args.startswith("-d "):
+                        alias_name = args[3:].strip()
+                        if alias_name in aliases:
+                            remaining_aliases = {name: value for name, value in aliases.items() if name != alias_name}
+                            if _save_aliases(remaining_aliases):
+                                aliases = remaining_aliases
+                                print_with_console_highlighting(console_literal(f"Alias '{alias_name}' deleted.", "cyan"))
+                        else:
+                            print_with_console_highlighting(console_literal(f"Alias '{alias_name}' not found.", "yellow"))
                     else:
-                        console.print("[cyan]Dictation deactivated[/]")
-                elif arg == "":
-                    if _voice_listener is not None:
-                        transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default="(unknown)")
-                        model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
-                        console.print(f"[cyan]Dictation: on | transcriber: {transcriber} | model: {model}[/]")
+                        parts = args.split(None, 1)
+                        if len(parts) < 2:
+                            console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
+                        else:
+                            changed_aliases = {**aliases, parts[0]: parts[1]}
+                            if _save_aliases(changed_aliases):
+                                aliases = changed_aliases
+                                print_with_console_highlighting(Text.assemble(console_literal(parts[0], "cyan"), " = ", console_literal(parts[1], "")))
+                    continue
+                elif cmd == "/redo":
+                    if last_prompt is None:
+                        console.print("[yellow]No previous prompt to redo.[/]")
+                        continue
+                    # Undo the steps from the last turn, then re-run
+                    cmd_undo(agent, "")
+                    text = last_prompt
+                    # Fall through to agent run below
+                elif cmd == "/clear":
+                    _shutdown_browser(agent)
+                    _shutdown_gui(agent)
+                    _shutdown_mcp(agent)
+                    rotate_session_id(model)  # new conversation -> new OpenRouter session id
+                    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                    apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
+                    session_stats = {
+                        "turns": 0,
+                        "total_time": 0.0,
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_cached_input_tokens": 0,
+                        "total_cost_usd": 0.0,
+                    }
+                    budget_warned = set()
+                    last_answer = None
+                    first_turn = True
+                    console.clear()
+                    _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
+                    print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
+                                 round_trip_seconds=round_trip_seconds, context_length=context_length)
+                    continue
+                elif cmd == "/show-tools":
+                    print_tools(agent)
+                    continue
+                elif cmd == "/verbose":
+                    verbose = not verbose
+                    _verbose = verbose
+                    console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
+                    continue
+                elif cmd == "/save":
+                    save_answer(last_answer, cmd_args)
+                    continue
+                elif cmd == "/show-stats":
+                    print_stats(session_stats, agent)
+                    continue
+                elif cmd == "/show-config":
+                    cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
+                                    image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers,
+                                    session_stats=session_stats)
+                    continue
+                elif cmd == "/run-prompt":
+                    file_content = load_file_as_prompt(cmd_args)
+                    if file_content:
+                        text = file_content
+                        # Fall through to agent run
                     else:
-                        console.print("[dim]Dictation: off[/]")
+                        continue
+                elif cmd == "/set-max-steps":
+                    change_steps(agent, cmd_args)
+                    continue
+                elif cmd == "/run-py":
+                    run_script(agent, cmd_args)
+                    continue
+                elif cmd == "/cd":
+                    change_directory(cmd_args)
+                    continue
+                elif cmd == "/pwd":
+                    print_with_console_highlighting(console_literal(os.getcwd(), "cyan"))
+                    continue
+                elif cmd == "/instructions-load":
+                    console.print("[dim]Loading agent instructions...[/]")
+                    instructions = load_agent_instructions()
+                    if instructions:
+                        first_turn = True
+                        console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
+                    else:
+                        console.print("[yellow]No instruction files found.[/]")
+                    continue
+                elif cmd == "/plan":
+                    arg = cmd_args.strip().lower()
+                    if arg == "":
+                        interval = getattr(agent, "planning_interval", None)
+                        status = f"on (every {interval} steps)" if interval else "off"
+                        console.print(f"[cyan]Planning: {status}[/]")
+                    elif arg == "on":
+                        agent.planning_interval = 22
+                        console.print("[cyan]Planning: on (every 22 steps)[/]")
+                    elif arg == "off":
+                        agent.planning_interval = None
+                        console.print("[cyan]Planning: off[/]")
+                    else:
+                        try:
+                            n = int(arg)
+                            if n < 1:
+                                raise ValueError
+                            agent.planning_interval = n
+                            console.print(f"[cyan]Planning: on (every {n} steps)[/]")
+                        except ValueError:
+                            console.print("[yellow]Usage: /plan [on|off|N][/]")
+                    continue
+                elif cmd == "/show-compression-stats":
+                    cmd_compression_stats(agent)
+                    continue
+                elif cmd == "/show-memory-stats":
+                    cmd_memory_stats(agent)
+                    continue
+                elif cmd == "/compress":
+                    cmd_compress(agent, cmd_args)
+                    continue
+                elif cmd == "/compression":
+                    cmd_compression_toggle(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-keep-recent-steps":
+                    cmd_compression_keep_recent(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-max-uncompressed-steps":
+                    cmd_compression_max_uncompressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-keep-compressed-steps":
+                    cmd_compression_keep_compressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-max-compressed-steps":
+                    cmd_compression_max_compressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-set-high":
+                    cmd_compression_set_high(agent)
+                    continue
+                elif cmd == "/compression-set-ultra":
+                    cmd_compression_set_ultra(agent)
+                    continue
+                elif cmd == "/compression-set-medium":
+                    cmd_compression_set_normal(agent)
+                    continue
+                elif cmd == "/compression-set-low":
+                    cmd_compression_set_low(agent)
+                    continue
+                elif cmd == "/compression-model":
+                    cmd_compression_model(agent, cmd_args)
+                    continue
+                elif cmd == "/model":
+                    new_model = cmd_model(agent, cmd_args)
+                    if new_model is not None:
+                        model = new_model  # /clear and /repeat build agents from this
+                        model_id = new_model.model_id  # banner
+                        round_trip_seconds = None  # measured for the old model only
+                        context_length = resolve_context_length(new_model)
+                        apply_context_length(agent, context_length)
+                    continue
+                elif cmd == "/save-step":
+                    cmd_save_step(agent, cmd_args)
+                    continue
+                elif cmd == "/show-step":
+                    cmd_show_step(agent, cmd_args)
+                    continue
+                elif cmd == "/show-steps":
+                    cmd_show_steps(agent)
+                    continue
+                elif cmd == "/show-knowledge":
+                    cmd_show_knowledge(agent)
+                    continue
+                elif cmd == "/undo-steps":
+                    cmd_undo(agent, cmd_args)
+                    continue
+                elif cmd == "/repeat":
+                    parts = cmd_args.strip().split(None, 1)
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: /repeat <N> <prompt>[/]")
+                        continue
+                    try:
+                        repeat_n = int(parts[0])
+                        if repeat_n < 1:
+                            raise ValueError
+                    except ValueError:
+                        console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
+                        continue
+                    if session_budget_blocks_turn(session_stats):
+                        continue
+                    cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
+                    continue
+                elif cmd == "/repeat-prompt":
+                    parts = cmd_args.strip().split(None, 1)
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: /repeat-prompt <N> <path>[/]")
+                        continue
+                    try:
+                        repeat_n = int(parts[0])
+                        if repeat_n < 1:
+                            raise ValueError
+                    except ValueError:
+                        console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
+                        continue
+                    file_content = load_file_as_prompt(parts[1])
+                    if file_content is None or session_budget_blocks_turn(session_stats):
+                        continue
+                    cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
+                    continue
+                elif cmd == "/session-save":
+                    cmd_session_save(agent, session_stats, cmd_args)
+                    continue
+                elif cmd == "/session-load":
+                    result = cmd_session_load(agent, cmd_args)
+                    if result is not None:
+                        session_stats = result
+                        first_turn = False
+                        budget_warned = set()  # loaded totals count; warn again from what they are now
+                        warn_session_budget(session_stats, budget_warned)
+                    continue
+                elif cmd == "/auto-approve":
+                    arg = cmd_args.strip().lower()
+                    if arg == "on":
+                        _auto_approve = True
+                    elif arg == "off":
+                        _auto_approve = False
+                    elif arg == "":
+                        _auto_approve = not _auto_approve
+                    else:
+                        console.print("[yellow]Usage: /auto-approve [on|off][/]")
+                        continue
+                    _auto_approve_source = "/auto-approve"
+                    console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
+                    continue
+                elif cmd == "/dictation":
+                    arg = cmd_args.strip().lower()
+                    if arg == "on":
+                        console.print("[cyan]Loading dictation support.[/]")
+                        if not _has_prompt_toolkit:
+                            console.print("[red]Dictation requires voicelistener. Install with: pip install voicelistener[/]")
+                        else:
+                            err = _voice_start()
+                            if err:
+                                console.print(f"[red]{err}[/]")
+                            else:
+                                console.print("[cyan][mic] Dictation active[/]")
+                    elif arg == "off":
+                        err = _voice_stop()
+                        if err:
+                            console.print(f"[yellow]{err}[/]")
+                        else:
+                            console.print("[cyan]Dictation deactivated[/]")
+                    elif arg == "":
+                        if _voice_listener is not None:
+                            transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default="(unknown)")
+                            model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
+                            console.print(f"[cyan]Dictation: on | transcriber: {transcriber} | model: {model}[/]")
+                        else:
+                            console.print("[dim]Dictation: off[/]")
+                    else:
+                        console.print("[yellow]Usage: /dictation [on|off][/]")
+                    continue
                 else:
-                    console.print("[yellow]Usage: /dictation [on|off][/]")
-                continue
-            else:
-                print_with_console_highlighting(console_literal(f"Unknown command: {cmd}. Type /help for available commands.", "yellow"))
-                continue
+                    print_with_console_highlighting(console_literal(f"Unknown command: {cmd}. Type /help for available commands.", "yellow"))
+                    continue
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted.[/]")
+            continue
 
         if session_budget_blocks_turn(session_stats):
             continue
