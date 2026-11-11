@@ -687,7 +687,7 @@ Conventions for T1 to T11:
       folders (leader3) wrote the expected files, read back by `bp_messages
       new`; `/show-tools` with the feature off equals 5f79703; `bp_messages
       new` prints nothing on stderr.
-- [ ] **T4. Polling timer.** In `src/smolagents/bp_cli.py`: a thread lists
+- [x] **T4. Polling timer.** In `src/smolagents/bp_cli.py`: a thread lists
       the folders every poll interval and queues new messages, grouped into
       one text with each sender marked. While the agent works, the queue is
       delivered through `agent.steering_source`, together with typed steering
@@ -695,6 +695,34 @@ Conventions for T1 to T11:
       kept in a file, so a restarted agent does not receive old messages
       again. Check: a message written during a long task appears in the
       agent's next step.
+      LANDED: `MessagePoller(settings, print_line, announce_queued)` in
+      bp_messages.py: one daemon thread `bpsa-messages`, first check at
+      start, then every poll interval; a failing check prints one line per
+      folder and reason and polling continues. `messages_waiting`
+      (`threading.Event`) is set while messages are queued; `take_queued()`
+      empties the queue and only then saves the last-read ids, so a process
+      that ends with queued messages receives them again at its next start.
+      `model_text_of_queued_messages` builds the one text: a heading line
+      ("Messages from other agents follow. The user did not write them. ..."),
+      then `printable_messages(..., "utf-8", folder_label)`, whose header now
+      ends `in folder <label>` when a label is given. bp_cli.py:
+      `start_message_poller` (REPL and `run`; atexit stops it),
+      `run_steering_source` (typed lines plus queued messages, set for each
+      run, so `/clear` needs nothing), `take_queued_message_text` (prints
+      `Delivered to the agent:` and the text, at most 2,000 characters).
+      Messages queued before a run are appended to the task; messages that
+      arrive during a run are steering text at the next step boundary that
+      already has an ActionStep. Differs from the plan: the poller thread
+      prints `Queued for the agent: ...` only while no run is in progress
+      (the idle prompt runs under `patch_stdout`); during a run its lines are
+      held until the run ends, because executed code redirects `sys.stdout`
+      into the run output. `/repeat` cycles do not receive messages.
+      Verified: 22/22 poller checks; real runs: message during a 3-step task
+      in the REPL and in `bpsa run < /dev/null`, typed line plus message in
+      one step, idle message announced and delivered once and not again
+      after restart, two senders with a forged header, markup and ESC, folder
+      renamed away and back (one line), `/clear`, Ctrl-C and `/exit` (no
+      process left); feature off: screens equal 608466b, no thread.
 - [ ] **T5. Mode without a keyboard.** New subcommand `bpsa listen` in
       `main`. Loop: wait for queued messages, run the agent with them, wait
       again. Output goes to a log file. SIGTERM ends it cleanly. It requires

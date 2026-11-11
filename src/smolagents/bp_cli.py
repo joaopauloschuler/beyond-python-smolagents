@@ -61,6 +61,8 @@ Environment variables:
     ELEVENLABS_API_KEY        - API key for ElevenLabs transcriber (required when using elevenlabs)
 """
 
+import atexit
+import contextlib
 import locale
 import os
 import queue
@@ -80,7 +82,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_messages import MessageSettings, MessageSettingsError, load_message_settings
+from smolagents.bp_messages import MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, model_text_of_queued_messages
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
 
@@ -94,6 +96,12 @@ _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
 # Agent-to-agent message settings, validated once at startup by load_message_settings_or_fail; None = feature off
 _message_settings: MessageSettings | None = None
+# The one MessagePoller of this process, started by start_message_poller; None = feature off or not started yet
+_message_poller: MessagePoller | None = None
+MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS = 2000
+# A list while an agent run is in progress (message_poller_lines_held), else None; guarded by _message_poller_line_lock
+_held_message_poller_lines: list[str] | None = None
+_message_poller_line_lock = threading.Lock()
 
 TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
@@ -330,6 +338,107 @@ def print_message_settings(settings: MessageSettings):
     folders = ", ".join(f"{folder.label} ({folder.path})" for folder in settings.folders)
     print_with_console_highlighting(Text.assemble(console_literal("Messages:", "green"), " ", console_literal(
         f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s", "")))
+
+
+def print_message_poller_line(line: str):
+    """Prints line, or holds it while an agent run is in progress: code that the agent executes redirects sys.stdout into its run output."""
+    with _message_poller_line_lock:
+        if _held_message_poller_lines is not None:
+            _held_message_poller_lines.append(line)
+        else:
+            print_with_console_highlighting(console_literal(line, "cyan"))
+
+
+def print_queued_messages_line():
+    line = None if _message_poller is None else _message_poller.queued_messages_line()
+    if line is not None:
+        print_with_console_highlighting(console_literal(line, "cyan"))
+
+
+def announce_queued_messages():
+    """The poller thread calls it after queueing messages. It prints nothing during an agent run: the run prints the messages it delivers."""
+    with _message_poller_line_lock:
+        if _held_message_poller_lines is None:
+            print_queued_messages_line()
+
+
+@contextlib.contextmanager
+def message_poller_lines_held():
+    """Context of one agent run: the poller thread prints nothing inside it; at its end it prints the held lines and names the messages still queued."""
+    global _held_message_poller_lines
+    with _message_poller_line_lock:
+        _held_message_poller_lines = []
+    try:
+        yield
+    finally:
+        with _message_poller_line_lock:
+            held_lines, _held_message_poller_lines = _held_message_poller_lines, None
+            for line in held_lines:
+                print_with_console_highlighting(console_literal(line, "cyan"))
+            print_queued_messages_line()
+
+
+def start_message_poller():
+    """Starts the MessagePoller of this process when the message settings are on; atexit stops it. Without settings it does nothing."""
+    global _message_poller
+    if _message_settings is None or _message_poller is not None:
+        return
+    _message_poller = MessagePoller(_message_settings, print_message_poller_line, announce_queued_messages)
+    _message_poller.start()
+    atexit.register(_message_poller.stop)
+
+
+def message_lines_above_prompt():
+    """Context for a prompt_toolkit prompt: while the message poller runs, patch_stdout puts a line its thread prints above the prompt."""
+    if _message_poller is None:
+        return contextlib.nullcontext()
+    from prompt_toolkit.patch_stdout import patch_stdout
+    return patch_stdout(raw=True)
+
+
+def take_queued_message_text() -> str:
+    """Removes the queued agent-to-agent messages (MessagePoller.take_queued records them as read), prints them, and returns their one text
+    for the model; "" when none wait or the feature is off."""
+    if _message_poller is None:
+        return ""
+    queued = _message_poller.take_queued()
+    if not queued:
+        return ""
+    message_text = model_text_of_queued_messages(queued)
+    shown_text = message_text.rstrip("\n")
+    if len(shown_text) > MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS:
+        shown_text = (shown_text[:MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS]
+                      + f"\n[{len(shown_text) - MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS:,} more characters delivered, not shown]")
+    print_with_console_highlighting(console_literal("Delivered to the agent:\n" + shown_text, "cyan"))
+    return message_text
+
+
+def task_with_queued_messages(task: str) -> str:
+    """Returns task followed by the queued agent-to-agent messages, which take_queued_message_text removes from the queue; task when none wait."""
+    message_text = take_queued_message_text()
+    return f"{task}\n\n{message_text}" if message_text else task
+
+
+def queued_message_steering_texts(agent) -> list[str]:
+    """Returns the queued agent-to-agent messages as one steering text, but only when agent's last memory step is an ActionStep:
+    agent._deliver_steering_messages then attaches the text at once. Otherwise it would hold the text and drop it if the run ended first."""
+    from smolagents.memory import ActionStep
+    if not (agent.memory.steps and isinstance(agent.memory.steps[-1], ActionStep)):
+        return []
+    message_text = take_queued_message_text()
+    return [message_text] if message_text else []
+
+
+def run_steering_source(agent, listener):
+    """Returns agent.steering_source for one run: the typed lines of listener (None: no keyboard listener), then the queued agent-to-agent
+    messages. Without a message poller it is listener.drain, or None without a listener."""
+    if _message_poller is None:
+        return None if listener is None else listener.drain
+
+    def steering_texts() -> list[str]:
+        typed_lines = [] if listener is None else listener.drain()
+        return typed_lines + queued_message_steering_texts(agent)
+    return steering_texts
 
 
 def check_required_env():
@@ -1548,13 +1657,14 @@ class SteeringListener:
 
 
 def start_steering_listener(agent):
-    """Start the listener for one agent.run and point agent.steering_source at it; None when unavailable."""
+    """Set agent.steering_source for one agent.run (run_steering_source) and start the listener; returns it, None when unavailable."""
     global _steering_listener
     if not steering_available():
+        agent.steering_source = run_steering_source(agent, None)
         return None
     listener = SteeringListener(agent)
     _steering_listener = listener
-    agent.steering_source = listener.drain
+    agent.steering_source = run_steering_source(agent, listener)
     listener.start()
     return listener
 
@@ -2745,7 +2855,8 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
                 cycle_agent.logger.level = LogLevel.INFO
             else:
                 cycle_agent.logger.level = LogLevel.ERROR
-            result = cycle_agent.run(task_text, reset=False)
+            with message_poller_lines_held():
+                result = cycle_agent.run(task_text, reset=False)
             _spinner.stop()
             elapsed = time.time() - start_time
 
@@ -2841,9 +2952,13 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
         instructions = load_agent_instructions()
+    start_message_poller()
+    agent.steering_source = run_steering_source(agent, None)
+    task = task_with_queued_messages(prepend_instructions(task, instructions))
     _spinner.start()
     try:
-        result = agent.run(prepend_instructions(task, instructions))
+        with message_poller_lines_held():
+            result = agent.run(task)
         _spinner.stop()
         console.print(Markdown(str(result)))
     except Exception as e:
@@ -2885,6 +3000,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                  round_trip_seconds=round_trip_seconds, context_length=context_length)
     if _message_settings is not None:
         print_message_settings(_message_settings)
+    start_message_poller()
 
     instructions = None
     if not skip_instructions:
@@ -2943,7 +3059,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                         break
                 _voice_prompt_active = True
                 try:
-                    return session.prompt(prompt_str, pre_run=_setup_voice_before_render)
+                    with message_lines_above_prompt():
+                        return session.prompt(prompt_str, pre_run=_setup_voice_before_render)
                 finally:
                     _voice_prompt_active = False
             except EOFError:
@@ -3378,13 +3495,16 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                 )
                 task_text = task_text + "\n" + shell_context
                 pending_shell_outputs.clear()
-            listener = start_steering_listener(agent)  # before the spinner, so no Rich Live starts
-            _spinner.start()
-            try:
-                result = agent.run(task_text, reset=False)
-            finally:
-                undelivered = stop_steering_listener(listener)
-                print_undelivered_steering(undelivered)
+            task_text = task_with_queued_messages(task_text)
+            with message_poller_lines_held():
+                listener = start_steering_listener(agent)  # before the spinner, so no Rich Live starts
+                _spinner.start()
+                try:
+                    result = agent.run(task_text, reset=False)
+                finally:
+                    undelivered = stop_steering_listener(listener)
+                    agent.steering_source = None
+                    print_undelivered_steering(undelivered)
             _spinner.stop()
             elapsed = time.time() - start_time
 

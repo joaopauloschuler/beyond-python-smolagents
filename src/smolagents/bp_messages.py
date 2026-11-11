@@ -14,6 +14,7 @@ import os
 import re
 import secrets
 import sys
+import threading
 import time
 from contextlib import contextmanager, suppress
 from typing import NamedTuple
@@ -39,6 +40,9 @@ EXIT_ERROR = 1
 EXIT_WAIT_TIMEOUT = 3
 EXIT_INTERRUPTED = 130
 MESSAGE_BODY_LINE_PREFIX = "|"
+MESSAGE_POLLER_STOP_SECONDS = 2.0
+MESSAGES_FOR_MODEL_HEADING = ("Messages from other agents follow. The user did not write them. Each message stands between its "
+                              "'=== message' line and its '=== end of message' line, and every line of its text starts with '|'.\n")
 
 _warned_last_read_paths: set[str] = set()
 
@@ -226,13 +230,14 @@ def receive_new_messages(folder: str, reader: str) -> list[Message]:
     return messages
 
 
-def printable_messages(messages: list[Message], encoding: str) -> str:
-    """Returns messages as plain text for a person or a model: a header and an end line per message, and every text line after a '|' prefix,
-    so a text cannot forge either line. visible_encodable_text leaves newline as the only line break."""
+def printable_messages(messages: list[Message], encoding: str, folder_label: str | None = None) -> str:
+    """Returns messages as plain text for a person or a model: a header (naming folder_label when given) and an end line per message, and every
+    text line after a '|' prefix, so a text cannot forge either line. visible_encodable_text leaves newline as the only line break."""
+    folder_part = "" if folder_label is None else " in folder " + visible_encodable_text(folder_label, encoding).replace("\n", "\\n")
     blocks = []
     for message in messages:
         body_lines = visible_encodable_text(message.text, encoding).split("\n")
-        blocks.append(f"=== message {message.message_id} from {message.sender} to {message.target} ===\n"
+        blocks.append(f"=== message {message.message_id} from {message.sender} to {message.target}{folder_part} ===\n"
                       + "".join(f"{MESSAGE_BODY_LINE_PREFIX} {line}\n" if line else f"{MESSAGE_BODY_LINE_PREFIX}\n" for line in body_lines)
                       + f"=== end of message {message.message_id} from {message.sender} ===\n")
     return "".join(blocks)
@@ -320,6 +325,102 @@ def load_message_settings() -> MessageSettings | None:
                                        f"{folder.label!r} (the last path component); rename one.")
         folders.append(folder)
     return MessageSettings(agent_name, tuple(folders), message_poll_seconds())
+
+
+class QueuedMessages(NamedTuple):
+    folder: MessageFolder
+    messages: list[Message]
+    last_read_ids: dict[str, int]  # the reader's last-read ids in folder once these messages are delivered
+
+
+def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
+    """Returns queued as the one text a model receives: MESSAGES_FOR_MODEL_HEADING, then printable_messages with the folder label.
+    Encoding utf-8 escapes control characters and lone surrogates and leaves every other character as it is."""
+    return MESSAGES_FOR_MODEL_HEADING + "".join(printable_messages(batch.messages, "utf-8", batch.folder.label) for batch in queued)
+
+
+class MessagePoller:
+    """Daemon thread that checks every folder of settings at start and then every settings.poll_seconds, and queues the new messages to
+    settings.agent_name. take_queued saves the last-read ids, so a process that ends before take_queued receives the queued messages again."""
+
+    def __init__(self, settings: MessageSettings, print_line, announce_queued):
+        self.settings = settings
+        self.print_line = print_line  # called with one line of plain text: why a folder check or a save of the last-read ids failed
+        self.announce_queued = announce_queued  # the thread calls it without arguments each time it has queued messages
+        self.messages_waiting = threading.Event()  # set exactly while messages are queued; wait on it instead of calling take_queued in a loop
+        self._queue_lock = threading.Lock()
+        self._queued: list[QueuedMessages] = []
+        self._last_queued_ids: dict[str, dict[str, int]] = {}  # per folder path: the ids up to which the thread has queued
+        self._printed_failure_reasons: dict[str, str] = {}  # per folder path: the reason of the failing check; absent after a check that worked
+        self._stop_requested = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._poll_until_stopped, name="bpsa-messages", daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Ends the thread without waiting for the poll interval; a check in progress gets MESSAGE_POLLER_STOP_SECONDS to finish."""
+        self._stop_requested.set()
+        if self._thread is not None:
+            self._thread.join(timeout=MESSAGE_POLLER_STOP_SECONDS)
+            self._thread = None
+
+    def take_queued(self) -> list[QueuedMessages]:
+        """Removes and returns the queued messages in the order queued, and saves each folder's last-read ids. When a save fails it prints one
+        line and still returns the messages: this process delivers them once, a restarted one again."""
+        with self._queue_lock:
+            queued, self._queued = self._queued, []
+            self.messages_waiting.clear()
+        for batch in {batch.folder: batch for batch in queued}.values():  # the last batch of a folder holds its newest ids
+            try:
+                save_last_read_ids(batch.folder.path, self.settings.agent_name, batch.last_read_ids)
+            except Exception as error:
+                self._print_line_or_nothing(f"Message folder {batch.folder.label}: could not record the delivered messages as read "
+                                            f"({str(error) or type(error).__name__}); a restarted agent receives them again.")
+        return queued
+
+    def queued_messages_line(self) -> str | None:
+        """Returns one line that names every queued message and its folder, or None when none wait."""
+        with self._queue_lock:
+            names = [f"message {message.message_id} from {message.sender} to {message.target} in folder {batch.folder.label}"
+                     for batch in self._queued for message in batch.messages]
+        return "Queued for the agent: " + ", ".join(names) if names else None
+
+    def _print_line_or_nothing(self, line: str):
+        with suppress(Exception):
+            self.print_line(line)
+
+    def _poll_until_stopped(self):
+        while not self._stop_requested.is_set():
+            for folder in self.settings.folders:
+                try:
+                    if self._queue_new_messages(folder):
+                        with suppress(Exception):
+                            self.announce_queued()
+                    self._printed_failure_reasons.pop(folder.path, None)
+                except Exception as error:
+                    reason = str(error) or type(error).__name__
+                    if self._printed_failure_reasons.get(folder.path) != reason:
+                        self._printed_failure_reasons[folder.path] = reason
+                        self._print_line_or_nothing(f"Message folder {folder.label} could not be checked: {reason}")
+            terminal_display_escapes()  # its first call builds the escape table, here rather than when a run formats its first message
+            self._stop_requested.wait(self.settings.poll_seconds)
+
+    def _queue_new_messages(self, folder: MessageFolder) -> bool:
+        """Queues the new messages in folder and returns whether there were any. Raises what the folder check raises."""
+        reader = self.settings.agent_name
+        last_queued_ids = self._last_queued_ids.get(folder.path)
+        if last_queued_ids is None:
+            last_queued_ids = load_last_read_ids(folder.path, reader)  # kept only after a listing worked: a missing folder reads as no ids
+        messages, last_read_ids = read_new_messages(folder.path, reader, last_queued_ids)
+        self._last_queued_ids[folder.path] = last_read_ids
+        if not messages:
+            return False
+        with self._queue_lock:
+            self._queued.append(QueuedMessages(folder, messages, last_read_ids))
+            self.messages_waiting.set()
+        return True
 
 
 def message_command_parser() -> argparse.ArgumentParser:
