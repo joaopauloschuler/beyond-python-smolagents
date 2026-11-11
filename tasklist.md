@@ -597,3 +597,82 @@ is caused by the entries above.
       fresh process, `main()` for `bpsa run` (stopped before the model is
       built) with `BPSA_AUTO_APPROVE=on` only in `./.env` ended with
       auto-approve on, source `.env`.
+
+
+## Agent-to-agent messages through folders (branch `swarm`)
+
+Goal: one global leader (a person or another agent) exchanges messages with
+up to ten bpsa leaders, and each leader with up to nine bpsa members, through
+plain files. One folder serves the global leader and the leaders; one folder
+serves each group. A leader reads both.
+
+Conventions for T1 to T11:
+
+- With `BPSA_AGENT_NAME` unset, bpsa behaves exactly as before. All new
+  behaviour is behind the new settings.
+- No model call in any message routine. File names are built by code, never
+  by the model.
+- Message file name: `from_to_id.txt`. `id` is a zero-padded counter per
+  sender and per folder. `to` is an agent name or `all`. Agent names contain
+  no `_` and are never `all`.
+- Each task is verified by a real bpsa run in tmux with HOME redirected to a
+  scratch directory, then committed. pytest is not run.
+- Left to each problem, not part of these tasks: approval rules, a working
+  copy or branch per agent, how a run ends, a task board, heartbeats, several
+  machines.
+
+- [ ] **T1. Message file routines.** New module
+      `src/smolagents/bp_messages.py`. Build and parse `from_to_id.txt`;
+      reject agent names that contain `_` or equal `all`. Write as `.tmp`,
+      then rename. The next id of a sender is its highest existing id plus
+      one. List the new messages for one reader (`to` equals its name or
+      `all`, sender is not itself) given the last id read per sender. Check:
+      two writer processes with 1,000 messages each and one reader; none
+      lost, none duplicated, none read half-written.
+- [ ] **T2. Settings.** In `src/smolagents/bp_cli.py`: `BPSA_AGENT_NAME`,
+      `BPSA_MESSAGE_FOLDERS` (one per line, as `BPSA_MCP`),
+      `BPSA_MESSAGE_POLL_SECONDS` (default 60). Check: with none set, the
+      startup output and the tool list are identical to commit `81e64dc`.
+- [ ] **T3. `send_message` tool.** In `src/smolagents/bp_tools.py`,
+      registered in `build_agent` only when an agent name is set.
+      `send_message(to, text)` for an agent with one folder; an agent with
+      two folders also names the folder. Check: the file appears with the
+      correct name and content; a bad target name gives an error line and no
+      file.
+- [ ] **T4. Polling timer.** In `src/smolagents/bp_cli.py`: a thread lists
+      the folders every poll interval and queues new messages, grouped into
+      one text with each sender marked. While the agent works, the queue is
+      delivered through `agent.steering_source`, together with typed steering
+      lines when `SteeringListener` is active. The last id read per sender is
+      kept in a file, so a restarted agent does not receive old messages
+      again. Check: a message written during a long task appears in the
+      agent's next step.
+- [ ] **T5. Mode without a keyboard.** New subcommand `bpsa listen` in
+      `main`. Loop: wait for queued messages, run the agent with them, wait
+      again. Output goes to a log file. SIGTERM ends it cleanly. It requires
+      auto-approve on. It must not write the shared `~/.bpsa_autosave.json`;
+      each agent saves under its own name or not at all. Check: an idle
+      process makes no model call for five minutes, then answers a message
+      within one poll interval.
+- [ ] **T6. `start_agent` tool.** In `src/smolagents/bp_tools.py`. Starts one
+      `bpsa listen` process with its name and group folder set. The tool
+      assigns the name (for example `agent31` under `leader3`) and refuses
+      above `BPSA_MAX_GROUP_MEMBERS` (default 9). It writes the process id
+      and the log path into the group folder. Check: a leader starts two
+      members; both answer a message to `all`.
+- [ ] **T7. Commands for the global leader.**
+      `python -m smolagents.bp_messages` with `send`, `new` (messages since
+      the caller's last read) and `wait` (block until one arrives or a time
+      limit passes). Check: `wait` returns within one second of a file
+      appearing.
+- [ ] **T8. Prompt text.** In `src/smolagents/bp_cli.py`: when a name is set,
+      a short paragraph tells the agent its name, its folders, how incoming
+      messages look, and the tools. Leader and member roles come from the
+      first message, not from code. Check: the paragraph is absent when no
+      name is set.
+- [ ] **T9. Documentation.** `docs/CLI.md`: the settings, the subcommand, the
+      file name format, one worked example.
+- [ ] **T10. Trial on one machine.** One global leader, one bpsa leader and
+      two bpsa members, with a non-coding task. Report: messages sent, delays
+      measured, model calls made while idle, and anything that failed.
+- [ ] **T11. Code review** of T1 to T9 by an agent that wrote none of it.
