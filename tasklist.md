@@ -621,7 +621,7 @@ Conventions for T1 to T11:
   copy or branch per agent, how a run ends, a task board, heartbeats, several
   machines.
 
-- [ ] **T1. Message file routines.** New module
+- [x] **T1. Message file routines.** New module
       `src/smolagents/bp_messages.py`. Build and parse `from_to_id.txt`;
       reject agent names that contain `_` or equal `all`. Write as `.tmp`,
       then rename. The next id of a sender is its highest existing id plus
@@ -629,6 +629,19 @@ Conventions for T1 to T11:
       `all`, sender is not itself) given the last id read per sender. Check:
       two writer processes with 1,000 messages each and one reader; none
       lost, none duplicated, none read half-written.
+      LANDED: `write_message`, `read_new_messages`, `next_message_id`,
+      `message_file_name`, `parse_message_file_name`, `check_agent_name`.
+      Agent names: 1 to 64 of `[a-z0-9-]`, not starting with `-`, not `all`.
+      Differs from the plan: `write_message` creates the final name with
+      `os.link` from the `.tmp` file (never overwrites; retries the next id)
+      instead of a rename, and holds an flock on `.<sender>.lock` in the
+      folder while it picks the id, because two targets give two names for
+      one id. An unreadable or undecodable file is delivered as a bracketed
+      line naming the file. Verified: 2 writers x 1,000 messages (up to 64 KB)
+      with a polling reader: 1,334 of 1,334 received, 0 lost, 0 duplicated,
+      0 bad checksums; the same with both writers named `gamma`: 2,000
+      distinct ids, 0 lost; invalid names, stray files, an undecodable file,
+      ids above 999999 and a sender restart behave as stated.
 - [ ] **T2. Settings.** In `src/smolagents/bp_cli.py`: `BPSA_AGENT_NAME`,
       `BPSA_MESSAGE_FOLDERS` (one per line, as `BPSA_MCP`),
       `BPSA_MESSAGE_POLL_SECONDS` (default 60). Check: with none set, the
