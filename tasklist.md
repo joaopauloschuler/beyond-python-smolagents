@@ -673,11 +673,31 @@ Conventions for T1 to T11:
       above `BPSA_MAX_GROUP_MEMBERS` (default 9). It writes the process id
       and the log path into the group folder. Check: a leader starts two
       members; both answer a message to `all`.
-- [ ] **T7. Commands for the global leader.**
+- [x] **T7. Commands for the global leader.**
       `python -m smolagents.bp_messages` with `send`, `new` (messages since
       the caller's last read) and `wait` (block until one arrives or a time
       limit passes). Check: `wait` returns within one second of a file
       appearing.
+      LANDED: `load_last_read_ids`/`save_last_read_ids` keep a reader's
+      last-read ids in `.<reader>.read.json` in the folder (saved through
+      `replace_file_with_text`); a missing file is empty, a corrupt or
+      wrongly typed one is empty with one stderr line, an unreadable one is
+      an error. `receive_new_messages` loads, reads, saves (for T4). CLI:
+      `send --to T [TEXT|-]`, `new [--peek]`, `wait [--timeout S] [--peek]`
+      (polls every 0.5 s, default 300 s, exit 3 on timeout with nothing
+      printed); errors are one stderr line with exit 1. `--folder`/`--name`
+      default to `BPSA_MESSAGE_FOLDERS` (only when it names one folder) and
+      `BPSA_AGENT_NAME`. Output per message: `=== message N from S to T ===`,
+      every text line after `| `, `=== end of message N from S ===`; text
+      goes through `visible_encodable_text` for the stdout encoding. The CLI
+      saves after printing. Differs from the plan: `wait` also takes
+      `--peek`; `wait` builds the escape table of `visible_encodable_text`
+      before polling (it cost about 1 s on the first message). Verified:
+      wait printed 0.04 to 0.50 s after another process's send created the
+      file (3 rounds); new twice, peek, timeout, a body forging headers with
+      markup, ESC, CR, U+2028, NEL, RLO and a lone surrogate under UTF-8 and
+      ASCII stdout, 8 corrupt last-read files, bad names, missing folder:
+      43/43; the T1 check still passes.
 - [ ] **T8. Prompt text.** In `src/smolagents/bp_cli.py`: when a name is set,
       a short paragraph tells the agent its name, its folders, how incoming
       messages look, and the tools. Leader and member roles come from the
