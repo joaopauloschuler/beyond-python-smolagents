@@ -59,6 +59,7 @@ MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # write_message refuses a longer text: ev
 MAX_MESSAGE_FILE_BYTES = 6 * MAX_MESSAGE_TEXT_CHARACTERS  # write_message encodes a character in at most 6 bytes (a lone surrogate as \udcxx)
 MAX_LAST_READ_FILE_BYTES = 1_000_000
 MAX_MEMBER_RECORD_FILE_BYTES = 100_000
+MAX_LOCK_FILE_BYTES = 20  # .<sender>.lock holds the sender's highest id; longer content counts as no id
 
 _warned_last_read_paths: set[str] = set()
 
@@ -114,28 +115,64 @@ def parsed_message_files(folder: str) -> dict[tuple[str, int], tuple[str, str]]:
     return message_files
 
 
+def stored_message_id(lock_descriptor: int) -> int:
+    """Returns the highest id that write_message stored in the open lock file of a sender; 0 when its content is not such a number."""
+    os.lseek(lock_descriptor, 0, os.SEEK_SET)
+    content = os.read(lock_descriptor, MAX_LOCK_FILE_BYTES + 1)
+    digits = content.strip()
+    return int(digits) if len(content) <= MAX_LOCK_FILE_BYTES and digits.isdigit() else 0
+
+
+def store_message_id(lock_descriptor: int, message_id: int):
+    """Replaces the content of the open lock file of a sender with message_id as decimal text and a newline."""
+    content = f"{message_id}\n".encode("ascii")
+    os.lseek(lock_descriptor, 0, os.SEEK_SET)
+    os.write(lock_descriptor, content)
+    os.ftruncate(lock_descriptor, len(content))
+
+
+def next_message_id_with_lock_file(folder: str, sender: str, lock_descriptor: int) -> int:
+    """Returns one above the larger of the id stored in sender's open lock file and the highest id of sender's messages in folder, to any target."""
+    highest_file_id = max((message_id for message_sender, message_id in parsed_message_files(folder) if message_sender == sender), default=0)
+    return 1 + max(stored_message_id(lock_descriptor), highest_file_id)
+
+
 def next_message_id(folder: str, sender: str) -> int:
-    """Returns the highest id of sender's messages in folder, to any target, plus one; 1 when it has none."""
-    return 1 + max((message_id for message_sender, message_id in parsed_message_files(folder) if message_sender == sender), default=0)
+    """Returns the id that sender's next message in folder gets (next_message_id_with_lock_file under sender_lock); 1 for a new sender."""
+    with sender_lock(folder, sender) as lock_descriptor:
+        return next_message_id_with_lock_file(folder, sender, lock_descriptor)
 
 
 @contextmanager
 def sender_lock(folder: str, sender: str):
-    """Holds the exclusive flock of the file .<sender>.lock in folder, so processes of one sender take ids one at a time. No lock without fcntl."""
-    if fcntl is None:
-        yield
-        return
-    descriptor = os.open(os.path.join(folder, f".{sender}.lock"), os.O_RDWR | os.O_CREAT, 0o666)
+    """Opens the regular file .<sender>.lock in folder, holds its exclusive flock (none without fcntl) and yields its descriptor, so processes of
+    one sender take ids one at a time. Raises OSError for a symlink, FIFO, directory or other non-regular file there."""
+    path = os.path.join(folder, f".{sender}.lock")
+    reason = f"the lock file {path} is a symlink, FIFO, directory or other non-regular file; remove it"
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield
+        descriptor = os.open(path, flags, 0o666)
+    except OSError:
+        try:
+            is_regular_file = stat.S_ISREG(os.lstat(path).st_mode)
+        except OSError:
+            is_regular_file = True  # nothing at path: the open's own error says why
+        if not is_regular_file:
+            raise OSError(reason) from None
+        raise
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(reason)
+        if fcntl is not None:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield descriptor
     finally:
         os.close(descriptor)
 
 
 def write_message(folder: str, sender: str, target: str, text: str) -> str:
-    """Writes text (at most MAX_MESSAGE_TEXT_CHARACTERS) as sender's next message to target in folder and returns its file name. Under sender_lock,
-    a hard link from a temporary file creates the final name, so it never replaces an existing message: when that name exists, it retries with the next id."""
+    """Writes text (at most MAX_MESSAGE_TEXT_CHARACTERS) as sender's next message to target in folder and returns its file name. Under sender_lock, a hard
+    link from a temporary file creates the final name, never replacing a message (it retries with the next id), and then its id is stored in the lock file."""
     check_agent_name(sender)
     check_message_target(target)
     if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
@@ -147,12 +184,16 @@ def write_message(folder: str, sender: str, target: str, text: str) -> str:
         with open(descriptor, "wb") as temporary_file:
             temporary_file.write(encoded_text)
         # Two targets give two names for one id, so only the lock stops two processes of one sender taking the same id.
-        with sender_lock(folder, sender):
+        with sender_lock(folder, sender) as lock_descriptor:
             attempted_file_name = None
             while True:
-                file_name = message_file_name(sender, target, next_message_id(folder, sender))
+                message_id = next_message_id_with_lock_file(folder, sender, lock_descriptor)
+                file_name = message_file_name(sender, target, message_id)
                 try:
                     os.link(temporary_path, os.path.join(folder, file_name))
+                    # The message is sent: a failed store only leaves the id to the listing.
+                    with suppress(OSError):
+                        store_message_id(lock_descriptor, message_id)
                     return file_name
                 except FileExistsError:
                     # A name the listing does not parse, such as another case of it, holds this id.

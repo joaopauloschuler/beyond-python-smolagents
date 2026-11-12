@@ -908,3 +908,9 @@ Conventions for T1 to T11:
         `.<name>.agent.json` (100,000) use it; `save_last_read_ids` unlinks a non-regular entry
         first. `MAX_MESSAGE_TEXT_CHARACTERS` (100,000) moved to bp_messages.py: tool, `write_message`
         and `send` refuse more. Verified: h12/check_h12.py 60/60, T1 PASS, T7 43/43, one `bpsa listen`.
+        FIXED H3 (this commit, 2026-11-12): `write_message` stores the sender's highest id in
+        `.<sender>.lock` (through the descriptor `sender_lock` holds, after the link); the next id is one
+        above the larger of that number and the highest message file. `sender_lock` opens with
+        O_NOFOLLOW|O_NONBLOCK and refuses a non-regular file with one OSError line. docs/CLI.md says
+        read `*.txt` may be deleted, hidden files must stay. Verified: h3/check_h3.py 75/75; T1 PASS
+        with one expectation changed (deleted id 1 now counts: next id 2); T7 43/43; h12 PASS.

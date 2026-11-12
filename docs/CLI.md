@@ -402,6 +402,14 @@ messages, a folder holds hidden files per agent: `.<name>.lock`,
 `start_agent`, `.<name>.agent.json` and the log `<name>.log`. Each agent name
 must belong to one process per folder.
 
+Message files (`*.txt`) that were read may be deleted at any time, also while
+agents run; the hidden files must stay, because `.<name>.lock` holds the
+sender's highest id, so its ids never go down. To reset a folder completely,
+stop its agents and delete everything in it, hidden files included. Deleting a
+sender's `.<name>.lock` together with its newest messages while a reader's
+`.<reader>.read.json` stays makes that sender's ids start lower again, and the
+reader then skips its messages up to the last id it had read.
+
 ### What an agent has
 
 | | |
