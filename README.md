@@ -166,6 +166,29 @@ Define command aliases with `/alias <name> <value>` (e.g., `/alias gs !!git stat
 
 Sessions are automatically saved every 5 turns to `~/.bpsa_autosave.json`. Configure the interval with the `BPSA_AUTOSAVE_INTERVAL` environment variable (set to 0 to disable).
 
+#### Agent swarms
+
+A `bpsa` session can start other `bpsa` agents and exchange messages with them through plain files in a shared folder. The feature is off by default. To enable it, set an agent name and an existing message folder before starting `bpsa`:
+
+```bash
+mkdir -p /tmp/team
+export BPSA_AGENT_NAME=boss
+export BPSA_MESSAGE_FOLDERS=/tmp/team
+bpsa
+```
+
+| Variable | Meaning |
+|----------|---------|
+| `BPSA_AGENT_NAME` | The agent's name: lower-case letters, digits and `-` |
+| `BPSA_MESSAGE_FOLDERS` | One existing folder per line; agents that share a folder can talk to each other |
+| `BPSA_MAX_GROUP_MEMBERS` | Optional: how many agents this agent may start (default 9) |
+
+When the feature is on, the start-up output shows a `Messages:` line and `/show-config` lists the settings. The agent then has the tools `start_agent`, `stop_agent`, `reset_agent`, `send_message` and `wait_for_messages`, so you can ask, for example: "Start three agents, ask each for one haiku about rivers, and show me the three haiku."
+
+Started agents are named after their starter (`boss-1`, `boss-2`, ...), run in the background and write their logs into the message folder. **They run with auto-approve on: they act on the messages they receive without a person approving each step, and each makes its own paid model calls.**
+
+Another program (for example a coding assistant that can only run shell commands) can lead `bpsa` agents with `python -m smolagents.bp_messages start | send | wait | status | reset | stop | list`. The feature was tested on Linux only. See "Agent-to-Agent Messages" in [CLI.md](docs/CLI.md) for the details and limits.
+
 Find more about bpsa CLI at [CLI.md](docs/CLI.md).
 
 ## CLI (`ad-infinitum`)
