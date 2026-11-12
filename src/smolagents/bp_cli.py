@@ -85,7 +85,7 @@ from rich.table import Table
 from rich.text import Span, Text
 from smolagents.bp_messages import (
     LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, discarded_messages_phrase, live_members_line,
-    load_message_settings, message_prompt_paragraph, model_text_of_queued_messages, reset_done_text, stop_live_members, write_message,
+    load_message_settings, message_prompt_paragraph, model_text_of_queued_messages, reset_done_text, stop_live_members, write_agent_status, write_message,
 )
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
@@ -3168,6 +3168,25 @@ def fail_listen(message: str):
     sys.exit(1)
 
 
+_recorded_listen_state: tuple[str, int] | None = None  # the state and run number that record_listen_state wrote last
+_printed_listen_status_failures: set[tuple[str, str]] = set()  # (folder label, reason) of the status file writes that failed
+
+
+def record_listen_state(state: str, run_number: int, session_stats: dict | None, detail: str = ""):
+    """bpsa listen calls it at each change of state (bp_messages.AGENT_STATES): write_agent_status writes it, with the runs and tokens of
+    session_stats, for the status command. The same state and run number again writes nothing; a write that failed prints one line per folder and reason."""
+    global _recorded_listen_state
+    if _message_settings is None or _recorded_listen_state == (state, run_number):
+        return
+    _recorded_listen_state = (state, run_number)
+    totals = session_stats or new_session_stats()
+    failures = write_agent_status(_message_settings, state, run_number, totals["turns"], totals["total_input_tokens"], totals["total_output_tokens"], detail)
+    for failure in failures.items():
+        if failure not in _printed_listen_status_failures:
+            _printed_listen_status_failures.add(failure)
+            print_listen_line(f"Message folder {failure[0]}: the status file could not be written ({failure[1]}); the status command shows this agent's state as unknown.", "yellow")
+
+
 def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_stats: dict):
     """One run of bpsa listen, with the accounting and the turn summary of a run_repl turn. A failure, SIGINT, a reset request or the step
     limit prints one line and returns, so the caller waits for the next messages."""
@@ -3226,6 +3245,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
     activity = "while starting"
     stop_reason = None
     run_number = 0
+    session_stats = None
     try:
         try_load_dotenv()
         _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
@@ -3235,6 +3255,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             fail_listen("bpsa listen needs BPSA_AGENT_NAME and BPSA_MESSAGE_FOLDERS: agent-to-agent messages are its only input.")
         if not _auto_approve:
             fail_listen(f"bpsa listen has nobody to ask for approval. {_NO_TERMINAL_ADVICE}")
+        record_listen_state("starting", 0, None)
         check_required_env()
         model = build_model()
         if "litellm" in sys.modules:
@@ -3257,6 +3278,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             if _message_poller.has_pending_reset():
                 # As /clear: a new agent has no conversation and no Python variables. session_stats and budget_warned stay, so the budget counts on.
                 activity = "during a reset"
+                record_listen_state("resetting", 0, session_stats)
                 replaced_agent, agent = agent, None
                 _shutdown_browser(replaced_agent)
                 _shutdown_gui(replaced_agent)
@@ -3268,6 +3290,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
                 is_context_new = is_context_reset = True
                 continue
             activity = "while waiting for messages"
+            record_listen_state("idle", 0, session_stats)
             try:
                 with listen_reset_interruptible():
                     _message_poller.messages_waiting.wait()
@@ -3283,6 +3306,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             if is_context_new:
                 task_text = prepend_instructions(task_text, instructions)
             is_context_new = is_context_reset = False
+            record_listen_state("busy", run_number, session_stats)
             run_agent_on_listen_task(agent, task_text, run_number, session_stats)
             if warn_session_budget(session_stats, budget_warned, LISTEN_BUDGET_STOP_HINT) == "exceeded":
                 stop_reason = "its session budget"
@@ -3305,6 +3329,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             _shutdown_gui(agent)
             _shutdown_mcp(agent)
         _shutdown_members()
+        record_listen_state("ended", 0, session_stats, f"stopped by {stop_reason or 'an error'} {activity}")
     not_delivered_again = "; the messages of that run are not delivered again, except those that wait_for_messages printed in the code step in progress" if activity.startswith("during run") else ""
     print_listen_line(f"Listener stopped by {stop_reason} {activity}{not_delivered_again}.")
     if stop_reason == "its session budget":

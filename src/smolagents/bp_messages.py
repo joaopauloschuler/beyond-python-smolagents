@@ -66,6 +66,11 @@ MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # write_message refuses a longer text: ev
 MAX_MESSAGE_FILE_BYTES = 6 * MAX_MESSAGE_TEXT_CHARACTERS  # write_message encodes a character in at most 6 bytes (a lone surrogate as \udcxx)
 MAX_LAST_READ_FILE_BYTES = 1_000_000
 MAX_MEMBER_RECORD_FILE_BYTES = 100_000
+MEMBER_RECORD_FILE_SUFFIX = ".agent.json"
+AGENT_STATUS_FILE_SUFFIX = ".status.json"
+MAX_AGENT_STATUS_FILE_BYTES = 10_000
+AGENT_STATES = ("starting", "idle", "busy", "resetting", "ended")  # what a `bpsa listen` process records in .<name>.status.json
+EXIT_SOME_NOT_STARTED = 2  # the start command started at least one agent and failed to start at least one
 MAX_LOCK_FILE_BYTES = 20  # .<sender>.lock holds the sender's highest id; longer content counts as no id
 
 _warned_last_read_paths: set[str] = set()
@@ -357,12 +362,16 @@ def load_last_read_ids(folder: str, reader: str) -> dict[str, int]:
 def save_last_read_ids(folder: str, reader: str, last_read_ids: dict[str, int]):
     """Writes last_read_ids as reader's last-read ids in folder through replace_file_with_text (a temporary file renamed over the old one).
     It first removes a symlink, FIFO, socket or device at that path: writing to one would block or write elsewhere."""
-    path = last_read_file_path(folder, reader)
+    replace_hidden_file_with_text(last_read_file_path(folder, reader), json.dumps(last_read_ids, sort_keys=True) + "\n")
+
+
+def replace_hidden_file_with_text(path: str, text: str):
+    """Writes text to path through replace_file_with_text. It first removes a symlink, FIFO, socket or device at path. Raises OSError."""
     with suppress(FileNotFoundError):
         path_mode = os.lstat(path).st_mode
         if not (stat.S_ISREG(path_mode) or stat.S_ISDIR(path_mode)):
             os.unlink(path)
-    replace_file_with_text(path, json.dumps(last_read_ids, sort_keys=True) + "\n")
+    replace_file_with_text(path, text)
 
 
 def receive_new_messages(folder: str, reader: str) -> list[Message]:
@@ -468,19 +477,28 @@ def load_message_settings() -> MessageSettings | None:
     paths = message_folder_paths()
     if not paths:
         raise MessageSettingsError("BPSA_AGENT_NAME is set but BPSA_MESSAGE_FOLDERS names no folder (one folder path per line).")
+    try:
+        folders = message_folders_of_paths(paths)
+    except MessageSettingsError as error:
+        raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: {error}") from None
+    return MessageSettings(agent_name, folders, message_poll_seconds(), max_group_members())
+
+
+def message_folders_of_paths(paths: list[str]) -> tuple[MessageFolder, ...]:
+    """Returns the folder of each path. Raises MessageSettingsError for a path that is no directory or has no last component, and for two paths with one label."""
     folders = []
     for path in paths:
         if not os.path.isdir(path):
-            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folder {path} does not exist or is not a folder.")
+            raise MessageSettingsError(f"the folder {path} does not exist or is not a folder.")
         folder = MessageFolder(message_folder_label(path), os.path.abspath(path))
         if not folder.label:
-            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folder {path} has no last path component to use as its label.")
+            raise MessageSettingsError(f"the folder {path} has no last path component to use as its label.")
         same_label_paths = [other.path for other in folders if other.label == folder.label]
         if same_label_paths:
-            raise MessageSettingsError(f"BPSA_MESSAGE_FOLDERS: the folders {same_label_paths[0]} and {folder.path} have the same label "
+            raise MessageSettingsError(f"the folders {same_label_paths[0]} and {folder.path} have the same label "
                                        f"{folder.label!r} (the last path component); rename one.")
         folders.append(folder)
-    return MessageSettings(agent_name, tuple(folders), message_poll_seconds(), max_group_members())
+    return tuple(folders)
 
 
 def message_folder_of_label(settings: MessageSettings, label: str | None) -> MessageFolder:
@@ -507,6 +525,8 @@ class MemberRecord(NamedTuple):
     process_id: int  # 0 when the file could not be read as a record
     process_start_ticks: int  # field 22 of /proc/<process_id>/stat: tells this process from a later one with the same id
     log_path: str
+    message_folder_paths: tuple[str, ...] = ()  # every folder the process reads, folder.path first; empty when the file could not be read as a record
+    max_group_members: int = 0  # how many agents the process may start itself
 
 
 class MemberStartResult(NamedTuple):
@@ -522,7 +542,7 @@ _started_member_processes: dict[str, subprocess.Popen] = {}  # per member name: 
 def member_record_path(folder_path: str, member_name: str) -> str:
     """Returns the path of the file .<member_name>.agent.json in folder_path; its name never parses as a message."""
     check_agent_name(member_name)
-    return os.path.join(folder_path, f".{member_name}.agent.json")
+    return os.path.join(folder_path, f".{member_name}{MEMBER_RECORD_FILE_SUFFIX}")
 
 
 def member_number(parent_name: str, member_name: str) -> int | None:
@@ -539,10 +559,20 @@ def loaded_member_record(folder: MessageFolder, member_name: str) -> MemberRecor
         fields = json.loads(content_of_regular_file(member_record_path(folder.path, member_name), MAX_MEMBER_RECORD_FILE_BYTES).decode("utf-8"))
         process_id, process_start_ticks, log_path = fields["process_id"], fields["process_start_ticks"], fields["log_path"]
         if type(process_id) is int and process_id > 1 and type(process_start_ticks) is int and isinstance(log_path, str):
-            return MemberRecord(member_name, folder, process_id, process_start_ticks, log_path)
+            folder_paths, member_limit = fields.get("message_folders"), fields.get("max_group_members")  # absent in a record of an earlier version
+            if not (isinstance(folder_paths, list) and folder_paths and all(isinstance(path, str) for path in folder_paths)):
+                folder_paths = [folder.path]
+            return MemberRecord(member_name, folder, process_id, process_start_ticks, log_path, tuple(folder_paths),
+                                member_limit if type(member_limit) is int and member_limit > 0 else 0)
     except (OSError, ValueError, RecursionError, KeyError, TypeError):
         pass
     return MemberRecord(member_name, folder, 0, -1, "")
+
+
+def agent_names_of_hidden_files(file_names: list[str], suffix: str) -> list[str]:
+    """Returns each valid agent name <name> for which file_names holds .<name><suffix>."""
+    names = [file_name[1:-len(suffix)] for file_name in file_names if file_name.startswith(".") and file_name.endswith(suffix)]
+    return [name for name in names if is_valid_agent_name(name)]
 
 
 def own_member_records(settings: MessageSettings, unlisted_folder_errors: dict[str, str] | None = None) -> list[MemberRecord]:
@@ -557,12 +587,10 @@ def own_member_records(settings: MessageSettings, unlisted_folder_errors: dict[s
                 raise
             unlisted_folder_errors[folder.label] = error.strerror or type(error).__name__
             continue
-        for file_name in file_names:
-            if file_name.startswith(".") and file_name.endswith(".agent.json"):
-                member_name = file_name[1:-len(".agent.json")]
-                number = member_number(settings.agent_name, member_name)
-                if number is not None and is_valid_agent_name(member_name):
-                    records.setdefault(number, loaded_member_record(folder, member_name))
+        for member_name in agent_names_of_hidden_files(file_names, MEMBER_RECORD_FILE_SUFFIX):
+            number = member_number(settings.agent_name, member_name)
+            if number is not None:
+                records.setdefault(number, loaded_member_record(folder, member_name))
     return [records[number] for number in sorted(records)]
 
 
@@ -612,16 +640,18 @@ def member_start_timeout_seconds(member_count: int) -> float:
     return MEMBER_START_TIMEOUT_SECONDS + (member_count - 1) * MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER
 
 
-def launch_member(settings: MessageSettings, folder: MessageFolder, working_directory: str, name: str) -> tuple[subprocess.Popen, MemberRecord]:
+def launch_member(settings: MessageSettings, folder: MessageFolder, working_directory: str, name: str,
+                  further_folders: tuple[MessageFolder, ...] = (), member_limit: int = 0) -> tuple[subprocess.Popen, MemberRecord]:
     """Starts the `bpsa listen` process of the member name without waiting for it and returns it with its record, which is not written
     yet; the record's start ticks are -1 when /proc/<process id>/stat could not be read. Raises OSError; then no process was started."""
+    folder_paths = (folder.path, *(further_folder.path for further_folder in further_folders))
     log_path = os.path.join(folder.path, f"{name}.log")
     package_parent_folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the member runs this code from any working directory
     environment = dict(os.environ) | {
         "BPSA_AGENT_NAME": name,
-        "BPSA_MESSAGE_FOLDERS": folder.path,
+        "BPSA_MESSAGE_FOLDERS": "\n".join(folder_paths),
         "BPSA_MESSAGE_POLL_SECONDS": repr(settings.poll_seconds),
-        "BPSA_MAX_GROUP_MEMBERS": "0",
+        "BPSA_MAX_GROUP_MEMBERS": str(member_limit),
         "BPSA_AUTO_APPROVE": "on",
         "PYTHONPATH": os.pathsep.join(filter(None, [package_parent_folder, os.environ.get("PYTHONPATH")])),
     }
@@ -631,7 +661,8 @@ def launch_member(settings: MessageSettings, folder: MessageFolder, working_dire
                                    stderr=subprocess.STDOUT, cwd=working_directory, env=environment, start_new_session=True)
     _started_member_processes[name] = process
     state_and_start_ticks = process_state_and_start_ticks(process.pid)
-    return process, MemberRecord(name, folder, process.pid, -1 if state_and_start_ticks is None else state_and_start_ticks[1], log_path)
+    return process, MemberRecord(name, folder, process.pid, -1 if state_and_start_ticks is None else state_and_start_ticks[1], log_path,
+                                 folder_paths, member_limit)
 
 
 def write_member_record(record: MemberRecord, working_directory: str):
@@ -640,7 +671,8 @@ def write_member_record(record: MemberRecord, working_directory: str):
         raise MemberStartError(f"/proc/{record.process_id}/stat could not be read, so {record.name} could not be told from a later process with its id; it was stopped.")
     replace_file_with_text(member_record_path(record.folder.path, record.name), json.dumps({
         "name": record.name, "process_id": record.process_id, "process_start_ticks": record.process_start_ticks, "log_path": record.log_path,
-        "start_time": time.strftime("%Y-%m-%d %H:%M:%S %z"), "working_directory": working_directory}, indent=1) + "\n")
+        "start_time": time.strftime("%Y-%m-%d %H:%M:%S %z"), "working_directory": working_directory,
+        "message_folders": list(record.message_folder_paths), "max_group_members": record.max_group_members}, indent=1) + "\n")
 
 
 def errors_of_members_that_do_not_listen(launched: dict[str, tuple[subprocess.Popen, MemberRecord]], timeout_seconds: float) -> dict[str, Exception]:
@@ -682,11 +714,12 @@ def stop_launched_members(launched: list[tuple[subprocess.Popen, MemberRecord]])
     stop_members([record for process, record in launched])
 
 
-def start_members(settings: MessageSettings, folder: MessageFolder, working_directory: str, member_count: int) -> list[MemberStartResult]:
+def start_members(settings: MessageSettings, folder: MessageFolder, working_directory: str, member_count: int,
+                  further_folders: tuple[MessageFolder, ...] = (), member_limit: int = 0) -> list[MemberStartResult]:
     """Starts member_count `bpsa listen` processes at the same time, named <settings.agent_name>-<k> with consecutive k from one above the
-    highest k that has a record. Each reads only folder, cannot start agents itself, runs in working_directory, in its own session, and logs
-    to <name>.log in folder. It launches each and writes its record, then waits until all listen or have failed, stops those that failed and
-    returns one result per name, in name order. Raises MemberStartError or OSError when it started none; any other exception stops them all."""
+    highest k that has a record. Each reads folder and further_folders, may start member_limit agents itself, runs in working_directory, in its
+    own session, and logs to <name>.log in folder. It launches each and writes its record, then waits until all listen or have failed, stops those
+    that failed and returns one result per name, in name order. Raises MemberStartError or OSError when it started none; any other exception stops them all."""
     records = own_member_records(settings)
     live_names = [record.name for record in records if is_member_live(record)]
     if len(live_names) + member_count > settings.max_group_members:
@@ -708,7 +741,7 @@ def start_members(settings: MessageSettings, folder: MessageFolder, working_dire
     try:
         for name in names:
             try:
-                launched[name] = launch_member(settings, folder, working_directory, name)
+                launched[name] = launch_member(settings, folder, working_directory, name, further_folders, member_limit)
                 write_member_record(launched[name][1], working_directory)
             except (OSError, MemberStartError) as error:
                 errors[name] = error
@@ -756,6 +789,116 @@ def stop_members(records: list[MemberRecord]) -> list[str]:
 def stop_live_members(settings: MessageSettings) -> list[str]:
     """Stops every live member that the records in the folders of settings name as this agent's own. Returns one line per member stopped."""
     return stop_members([record for record in own_member_records(settings) if is_member_live(record)])
+
+
+def stop_members_left_by(record: MemberRecord, was_stopped_now: bool) -> list[str]:
+    """For record of an ended process that could start agents: stops those it started and left running (its orderly exit stops them, a kill
+    does not). Returns one line when it stopped any, or when was_stopped_now and it had started any; otherwise none."""
+    if record.max_group_members == 0 or is_member_live(record):
+        return []
+    folders = tuple(MessageFolder(message_folder_label(path), path) for path in record.message_folder_paths)
+    member_records = own_member_records(MessageSettings(record.name, folders, DEFAULT_MESSAGE_POLL_SECONDS), {})
+    live_member_records = [member_record for member_record in member_records if is_member_live(member_record)]
+    if live_member_records:
+        return [f"{record.name} left {len(live_member_records)} of the agents it started running: {' '.join(stop_members(live_member_records))}"]
+    if was_stopped_now and member_records:
+        return [f"The agents that {record.name} had started have ended: {', '.join(member_record.name for member_record in member_records)}."]
+    return []
+
+
+class AgentStatus(NamedTuple):
+    """What the file .<name>.status.json in a message folder says: the state that a `bpsa listen` process last recorded. Field names are its JSON keys."""
+    process_id: int
+    process_start_ticks: int  # as in MemberRecord; -1 when the writer could not read it
+    state: str  # one of AGENT_STATES
+    state_start_time: float  # seconds since the epoch
+    run_number: int  # of the run in progress when state is "busy"
+    completed_run_count: int
+    input_tokens: int  # of the completed runs
+    output_tokens: int
+    detail: str  # with state "ended": what ended the process
+
+
+def agent_status_path(folder_path: str, agent_name: str) -> str:
+    """Returns the path of the file .<agent_name>.status.json in folder_path; its name never parses as a message."""
+    check_agent_name(agent_name)
+    return os.path.join(folder_path, f".{agent_name}{AGENT_STATUS_FILE_SUFFIX}")
+
+
+def write_agent_status(settings: MessageSettings, state: str, run_number: int, completed_run_count: int, input_tokens: int, output_tokens: int,
+                       detail: str = "") -> dict[str, str]:
+    """Writes state as the status of this process, the agent settings.agent_name, to its status file in every folder of settings, each
+    replaced by rename. Returns {folder label: reason} for the folders in which that failed."""
+    state_and_start_ticks = process_state_and_start_ticks(os.getpid())
+    status = AgentStatus(os.getpid(), -1 if state_and_start_ticks is None else state_and_start_ticks[1], state, time.time(), run_number,
+                         completed_run_count, input_tokens, output_tokens, detail)
+    errors = {}
+    for folder in settings.folders:
+        try:
+            replace_hidden_file_with_text(agent_status_path(folder.path, settings.agent_name), json.dumps(status._asdict(), indent=1) + "\n")
+        except OSError as error:
+            errors[folder.label] = error.strerror or type(error).__name__
+    return errors
+
+
+def loaded_agent_status(folder_path: str, agent_name: str) -> AgentStatus | str | None:
+    """Returns the status in agent_name's status file in folder_path; None when the file is missing; a one-line reason when it is not a
+    regular file of at most MAX_AGENT_STATUS_FILE_BYTES, cannot be read, or is not a status."""
+    try:
+        fields = json.loads(content_of_regular_file(agent_status_path(folder_path, agent_name), MAX_AGENT_STATUS_FILE_BYTES).decode("utf-8"))
+        status = AgentStatus(*(fields[field_name] for field_name in AgentStatus._fields))
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        return f"its status file could not be read: {error.strerror or type(error).__name__}"
+    except (ValueError, RecursionError, KeyError, TypeError):
+        status = None
+    counts = () if status is None else (status.process_id, status.run_number, status.completed_run_count, status.input_tokens, status.output_tokens)
+    if (status is not None and all(type(count) is int and count >= 0 for count in counts) and type(status.process_start_ticks) is int
+            and isinstance(status.state, str) and status.state in AGENT_STATES and isinstance(status.detail, str)
+            and type(status.state_start_time) in (int, float) and 0 <= status.state_start_time < 1e11):
+        return status
+    return "its status file does not hold a status"
+
+
+def local_time_text(seconds_since_epoch: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(seconds_since_epoch))
+
+
+def agent_status_line(folder: MessageFolder, agent_name: str, record: MemberRecord | None, current_time: float) -> str:
+    """Returns the status command's line for agent_name in folder: the recorded state while the process that wrote the status file runs,
+    'unknown' while only the process of record runs, otherwise 'ended'. It makes no model call and signals no process."""
+    status = loaded_agent_status(folder.path, agent_name)
+    has_status = isinstance(status, AgentStatus)
+    is_writer_live = has_status and is_member_live(MemberRecord(agent_name, folder, status.process_id, status.process_start_ticks, ""))
+    is_record_live = record is not None and is_member_live(record)
+    state_start_time = None
+    if is_writer_live or (has_status and status.state == "ended" and not is_record_live):
+        state, state_start_time, note, process_id = status.state, status.state_start_time, status.detail, status.process_id
+    elif is_record_live:
+        state, process_id = "unknown", record.process_id
+        note = "the process runs; " + ("its status file is of an earlier process" if has_status else status or "it has written no status file")
+    elif has_status:
+        state, process_id = "ended", status.process_id
+        run_part = f" in run {status.run_number}" if status.state == "busy" else ""
+        note = f"the process ended without recording it; last recorded state: {status.state}{run_part} since {local_time_text(status.state_start_time)}"
+    else:
+        state, process_id = "ended", record.process_id if record is not None and record.process_id > 1 else "unknown"
+        note = status or "it wrote no status file"
+    run_number = status.run_number if has_status and state == "busy" else "-"
+    counts = (status.completed_run_count, status.input_tokens, status.output_tokens) if has_status else ("unknown",) * 3
+    since = "unknown" if state_start_time is None else local_time_text(state_start_time)
+    seconds = "unknown" if state_start_time is None else int(max(0.0, current_time - state_start_time))
+    return (f"{agent_name} state={state} run={run_number} runs_done={counts[0]} input_tokens={counts[1]} output_tokens={counts[2]} "
+            f"since={since} seconds={seconds} process={process_id}" + (f" note={json.dumps(note)}" if note else ""))
+
+
+def member_record_line(record: MemberRecord) -> str:
+    """Returns the list command's line for record: name, live or ended, process id, member limit, log file and message folders."""
+    note = "" if record.process_id > 1 else ' note="its record file could not be read as a record"'
+    return (f"{record.name} {'live' if is_member_live(record) else 'ended'} process={record.process_id if record.process_id > 1 else 'unknown'} "
+            f"max_members={record.max_group_members} log={json.dumps(record.log_path)} "
+            f"folders={json.dumps(list(record.message_folder_paths) or [record.folder.path])}{note}")
 
 
 def message_prompt_paragraph(settings: MessageSettings) -> str:
@@ -1116,7 +1259,7 @@ def message_command_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--folder", help="message folder; default: BPSA_MESSAGE_FOLDERS when it names exactly one folder")
     common.add_argument("--name", help="your agent name; default: BPSA_AGENT_NAME")
-    parser = argparse.ArgumentParser(prog="python -m smolagents.bp_messages", description="Send and read agent-to-agent messages in a message folder, and reset listening agents.")
+    parser = argparse.ArgumentParser(prog="python -m smolagents.bp_messages", description="Send and read agent-to-agent messages in a message folder; start, stop, list, reset and show the status of listening agents.")
     commands = parser.add_subparsers(dest="command", required=True)
     send = commands.add_parser("send", parents=[common], help="write one message and print its file name")
     send.add_argument("--to", required=True, help="an agent name or 'all'")
@@ -1129,7 +1272,94 @@ def message_command_parser() -> argparse.ArgumentParser:
                       help=f"seconds to wait (default {DEFAULT_WAIT_TIMEOUT_SECONDS:g}); on timeout exit code {EXIT_WAIT_TIMEOUT} with nothing printed")
     for reading_command in (new, wait):
         reading_command.add_argument("--peek", action="store_true", help="print without recording the messages as read")
+    start = commands.add_parser("start", parents=[common], help="start `bpsa listen` agents named <name>-<k> in the folder; they act on messages with auto-approve on, "
+                                "without a person approving each step, and keep running after this command")
+    start.add_argument("--count", type=int, default=1, help="how many agents to start at the same time (default 1)")
+    start.add_argument("--directory", help="existing directory the new agents work in; default: the current directory")
+    start.add_argument("--group-folder", action="append", default=[], metavar="FOLDER",
+                       help="existing folder that each new agent reads in addition, as a leader of its own group; may be repeated")
+    start.add_argument("--max-members", type=int, default=0, metavar="N", help="how many agents each new agent may start itself (default 0: none)")
+    stop = commands.add_parser("stop", parents=[common], help="stop one agent that <name> started in the folder, or all of them")
+    stop.add_argument("agent", help="the name that start printed, or 'all'")
+    list_command = commands.add_parser("list", parents=[common], help="print one line per agent that <name> started in the folder: live or ended, process, log, folders")
+    status = commands.add_parser("status", parents=[common], help="print one line per agent that <name> started in the folder: state, runs done, tokens, since when; no model call")
+    for listing_command in (list_command, status):
+        listing_command.add_argument("--all", dest="is_every_agent", action="store_true",
+                                     help="every agent with a record in the folder (status: also every agent with a status file), whoever started it; --name is then not needed")
     return parser
+
+
+def run_agent_command(args: argparse.Namespace, folder: MessageFolder, name: str | None) -> int:
+    """Runs start, stop, list or status for the agents that name started in folder (name None: list or status with --all).
+    Prints plain lines, an agent that was not started as an 'Error:' line on stderr, and returns the exit status."""
+    settings = None if name is None else MessageSettings(name, (folder,), DEFAULT_MESSAGE_POLL_SECONDS)
+    if args.command in ("list", "status"):
+        if args.is_every_agent:
+            file_names = os.listdir(folder.path)
+            records = [loaded_member_record(folder, record_name) for record_name in sorted(agent_names_of_hidden_files(file_names, MEMBER_RECORD_FILE_SUFFIX))]
+            status_names = sorted({record.name for record in records} | set(agent_names_of_hidden_files(file_names, AGENT_STATUS_FILE_SUFFIX)))
+        else:
+            records = own_member_records(settings)
+            status_names = [record.name for record in records]
+        records_by_name = {record.name: record for record in records}
+        lines = ([member_record_line(record) for record in records] if args.command == "list" else
+                 [agent_status_line(folder, status_name, records_by_name.get(status_name), time.time()) for status_name in status_names])
+        if not lines:
+            whose = "" if args.is_every_agent else f" started by {name}"
+            print(f"No agent{whose} is recorded in folder {stderr_literal(folder.path)}.", file=sys.stderr)
+        for line in lines:
+            print(line)
+        return 0
+    if args.command == "stop":
+        records = own_member_records(settings)
+        if args.agent != MESSAGE_TARGET_ALL:
+            if member_number(name, args.agent) is None:
+                raise ValueError(f"{ascii(args.agent)} is not an agent that {name} started: those are named {name}-1, {name}-2 and so on. Nothing was stopped.")
+            records = [record for record in records if record.name == args.agent]
+            if not records:
+                raise ValueError(f"The folder {folder.path} holds no record of an agent {args.agent}. Nothing was stopped.")
+        live_names = {record.name for record in records if is_member_live(record)}
+        lines = stop_members([record for record in records if record.name in live_names or args.agent != MESSAGE_TARGET_ALL])
+        if not lines:
+            lines = [f"No agent started by {name} is running in folder {folder.label}; nothing was stopped."]
+        for record in records:
+            lines.extend(stop_members_left_by(record, record.name in live_names))
+        for line in lines:
+            print(line)
+        return 0
+    if args.count < 1:
+        raise ValueError("--count must be a whole number of at least 1. No agent was started.")
+    if args.max_members < 0:
+        raise ValueError("--max-members must be a whole number, 0 or more. No agent was started.")
+    working_directory = os.path.abspath(args.directory if args.directory is not None else os.getcwd())
+    if not os.path.isdir(working_directory):
+        raise ValueError(f"The working directory {working_directory} does not exist or is not a directory. No agent was started.")
+    try:
+        further_folders = message_folders_of_paths([folder.path, *args.group_folder])[1:]
+        if any("\n" in agent_folder.path or "\r" in agent_folder.path for agent_folder in (folder, *further_folders)):
+            raise MessageSettingsError("a folder path holds a line break, and BPSA_MESSAGE_FOLDERS names one folder per line.")
+        start_settings = settings._replace(poll_seconds=message_poll_seconds(), max_group_members=max_group_members())
+        results = start_members(start_settings, folder, working_directory, args.count, further_folders, args.max_members)
+    except ValueError as error:
+        raise ValueError(f"{error} No agent was started.") from None
+    except OSError as error:
+        raise ValueError(f"{error}. No agent was started.") from None
+    started_names = [result.name for result in results if result.error is None]
+    failed_names = [result.name for result in results if result.error is not None]
+    if args.count > 1:
+        print(f"Started {len(started_names)} of {args.count} agents{': ' if started_names else ''}{', '.join(started_names)}."
+              + (f" Not started: {', '.join(failed_names)}." if failed_names else ""))
+    for result in results:
+        if result.error is None:
+            print(f"Started agent {result.name} (process {result.record.process_id}, log {result.record.log_path}). It listens in folder "
+                  f"{folder.label} and knows nothing yet: send it a task with the send command, --to {result.name}.")
+    sys.stdout.flush()
+    for result in results:
+        if result.error is not None:
+            # A MemberStartError text ends with its own full stop; an OSError text has none.
+            reason = stderr_literal(f"{result.error}{'.' if isinstance(result.error, OSError) else ''}")
+            print(f"Error: agent {result.name} was not started: {reason}", file=sys.stderr)
+    return 0 if not failed_names else EXIT_SOME_NOT_STARTED if started_names else EXIT_ERROR
 
 
 def run_message_command(args: argparse.Namespace) -> int:
@@ -1137,11 +1367,14 @@ def run_message_command(args: argparse.Namespace) -> int:
     if folder is None:
         raise ValueError("--folder is required when BPSA_MESSAGE_FOLDERS does not name exactly one folder.")
     name = args.name if args.name is not None else get_env("BPSA_AGENT_NAME")
-    if name is None:
+    if name is None and not getattr(args, "is_every_agent", False):
         raise ValueError("--name is required when BPSA_AGENT_NAME is unset.")
-    check_agent_name(name)
+    if name is not None:
+        check_agent_name(name)
     if not os.path.isdir(folder):
         raise ValueError(f"The message folder {folder} does not exist or is not a folder.")
+    if args.command in ("start", "stop", "list", "status"):
+        return run_agent_command(args, message_folders_of_paths([folder])[0], name)
     if args.command == "send":
         check_message_target(args.to)
         text = sys.stdin.buffer.read().decode("utf-8", "surrogateescape") if args.text == "-" else args.text
@@ -1167,7 +1400,7 @@ def run_message_command(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Runs the send, reset, new and wait commands. An error prints one line on stderr and returns EXIT_ERROR; Ctrl-C returns EXIT_INTERRUPTED."""
+    """Runs the send, reset, new, wait, start, stop, list and status commands. An error prints one line on stderr and returns EXIT_ERROR; Ctrl-C returns EXIT_INTERRUPTED."""
     args = message_command_parser().parse_args(argv)
     try:
         return run_message_command(args)

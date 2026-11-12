@@ -1340,3 +1340,136 @@ Conventions for T1 to T11:
       next process ignores it as an old request); a folder that is missing
       at start and appears later (its first successful listing counts as
       first); pytest.
+
+- [x] **T16. `start`, `stop`, `list`, `status` on the command line.** A
+      program that can only run shell commands (a Claude Code session) leads
+      `bpsa listen` agents: it starts them, sees their state without a
+      model call and stops them. Before, it could only `send`, `wait` and
+      `reset`, and had to start a listener by hand.
+      LANDED (2026-11-12). `python -m smolagents.bp_messages`:
+      `start --folder F --name ME [--count N] [--directory D]
+      [--group-folder G]... [--max-members M]` calls `start_members` with
+      `MessageSettings(ME, (F,), BPSA_MESSAGE_POLL_SECONDS,
+      BPSA_MAX_GROUP_MEMBERS)` of the command's environment, so names
+      (`ME-<k>`), records, logs, limit and memory refusals, the joint start
+      timeout and the partial-failure handling are those of `start_agent`.
+      `start_members` and `launch_member` take two new parameters with
+      defaults that keep `start_agent` as it was: `further_folders` (the
+      started agent's `BPSA_MESSAGE_FOLDERS` is `F` plus these) and
+      `member_limit` (its `BPSA_MAX_GROUP_MEMBERS`, 0 before). `stop
+      AGENT|all` calls `stop_members` on `own_member_records`; `list` prints
+      `member_record_line` per record; `status` prints `agent_status_line`.
+      `run_agent_command` holds the four; `main` reports their refusals as
+      the one `Error:` line with exit 1 like the other commands.
+      What assumed a living bpsa starter, and what was done: nothing had to
+      change. `launch_member` already gives the listener `/dev/null` as
+      stdin, the log file as stdout and stderr and its own session, so the
+      command's pipe is not inherited (`start ... | cat` ends) and the end
+      of the shell does not reach it. `is_member_live` reads `/proc` and
+      does not need the starter. `stop_members` waits on a child only when
+      `_started_member_processes` holds it; a listener whose starter ended
+      belongs to init, which collects its exit status. `_shutdown_members`
+      of the starter does not run, because the command is no bpsa session:
+      the agents stay until `stop`.
+      Status: `bpsa listen` (`record_listen_state` in bp_cli.py, called in
+      `run_listen`) writes `.<name>.status.json` in each of its folders at
+      each change of state through `write_agent_status`
+      (`replace_hidden_file_with_text`: rename over the old file, after
+      removing a symlink, FIFO, socket or device at the path): process id,
+      start ticks, state (`AGENT_STATES`: starting, idle, busy, resetting,
+      ended), start time of the state, run number, runs done, input and
+      output tokens of the runs done (`session_stats`), and for `ended` the
+      reason. `loaded_agent_status` reads it with `content_of_regular_file`
+      (limit 10,000 bytes) and checks every field. `agent_status_line`
+      shows the recorded state only while the process that wrote the file
+      runs (`is_member_live` on the file's own process id and start ticks);
+      `unknown` while only the record's process runs; otherwise `ended`,
+      with `since=unknown` and the last recorded state in `note` when the
+      process did not record its end. So a killed process is never `busy`,
+      and a listener started by hand or by `start_agent` appears in `status
+      --all` without a record.
+      Decisions: (1) `--name` is the caller, as in `send`; the caller's
+      limit and the poll interval come from the environment of `start`
+      (`BPSA_MAX_GROUP_MEMBERS`, `BPSA_MESSAGE_POLL_SECONDS`), no new
+      options. (2) A leader gets its group with `--group-folder G`
+      (repeatable, must exist; `start` creates no folder) and
+      `--max-members M`; default none and 0, so a plain worker has neither.
+      (3) The record gains `message_folders` and `max_group_members`
+      (`MemberRecord.message_folder_paths`, `.max_group_members`; a record
+      without them reads as its own folder and 0); `list` shows them.
+      (4) `list` and `status` show the caller's agents; `--all` shows every
+      record (status: or status file) in the folder and needs no `--name`.
+      (5) Only `bpsa listen` writes the status file, not the REPL or `bpsa
+      run` with a name. (6) A leader writes its status file in every folder
+      it reads, so `status --all` on the group folder shows leader and
+      members. (7) Tokens are those of finished runs. (8) `stop` exits 0
+      also for `was not running`; 1 only for a name that is not the
+      caller's or has no record. `start` exits 0 (all listen), 1 (none
+      started), 2 (some). (9) After stopping a leader, `stop` reports its
+      members: `The agents that ME-1 had started have ended: ...`; members
+      that a killed leader left running are stopped by the same command
+      (`stop_members_left_by`), also when the leader had ended earlier.
+      (10) Line formats: `name key=value ...`, paths as JSON strings, free
+      text only in a last `note="..."`; stated in docs/CLI.md.
+      Small refactors for reuse, texts unchanged:
+      `message_folders_of_paths` (from `load_message_settings`),
+      `replace_hidden_file_with_text` (from `save_last_read_ids`),
+      `agent_names_of_hidden_files` (from `own_member_records`).
+      Verified with real runs (scratch `t16/`, model
+      `anthropic/claude-opus-5-5`, poll 2 s, one processor with load
+      average 3 to 4): (a) `start ... | cat` from `bash -c` returned in
+      26.9 s with exit 0; the agent answered `PONG` 11.3 s after `send`,
+      after the starting shell had ended. (b) `status`: idle `runs_done=0`;
+      `busy run=2` 2.8 s after a task with `time.sleep(25)`; `runs_done`
+      1, 2, 3 with input tokens 11,686, 23,605, 35,304; a watcher of the
+      status file saw idle, busy, resetting (0.28 s), idle for a reset
+      during a run; SIGKILL during run 2: `state=ended since=unknown` with
+      the note `last recorded state: busy in run 2`, `list` says `ended`.
+      (c) `stop claude-1`: `Stopped claude-1 (process 245035).` in 7.7 s,
+      exit 0; second `stop`: `claude-1 was not running.`, exit 0; `stop
+      all` with none running: one line, exit 0; no process left. (d)
+      `start --count 2`: both listen after 68 s; `--count 2` with a
+      directory at `claude-2.log`: exit 2, `Started 1 of 2 agents`, one
+      stderr line; exit 1 with one `Error:` line for: limit (`--count 99`;
+      `BPSA_MAX_GROUP_MEMBERS=1` with one agent running; `=0`; `=x`),
+      memory (`--count 9`: 2,340 MB needed, 2,290 MB available), name
+      `Claude`, a folder, group folder or directory that does not exist, a
+      group folder with the label of the folder. (e) A leader started with
+      `--group-folder g1 --max-members 2` logged `may start 2 agents`, got
+      a task by `send`, started `boss-1-1` in `g1` and reported its reply
+      85.7 s after the task; `status --all` and `list --all` on `g1` show
+      the member; `stop boss-1` printed `The agents that boss-1 had started
+      have ended: boss-1-1.` and both processes were gone. A second leader
+      killed with SIGKILL left its member running; `stop boss-2` printed
+      `boss-2 was not running.` and `boss-2 left 1 of the agents it started
+      running: Stopped boss-2-1 (process 249323).` (f) start, send, wait,
+      status, reset, wait, send, wait, status, stop, list: 111.2 s in all;
+      per command 39.6, 5.7, 9.8, 6.1, 5.8, 6.1, 6.0, 7.0, 6.4, 12.6, 5.7 s
+      (about 6 s of each is the start of Python with the package under
+      that load); the agent answered `391`, `Reset done:`, `FRESH`. (g) A
+      symlink, a FIFO, a 20,000-byte file and a directory at the status
+      path: `status` returned at once with `state=unknown` and the reason;
+      the listener answered the next task each time, replaced the first
+      three by a regular file (the symlink's target kept its content) and
+      for the directory printed one line and went on. (h) Feature off:
+      system prompt and tool list byte-identical to `33e9df8` (42,960
+      bytes); with a name and a folder also identical (56,071 bytes, so the
+      texts of `start_agent` and `stop_agent` are unchanged); `bpsa run`
+      without and with `BPSA_AGENT_NAME` wrote no status file. (i) t15fix
+      check_a.py 77/77; check_bcd.py 43/45 twice, then 45/45 three times,
+      and 43/45 once in three runs on `33e9df8` code: the two assertions of
+      section c1 wait 0.8 s for a 0.2 s poller and depend on the load (a
+      scratch copy with 6 s passes 45/45); T7 43/43; h12 slow PASS (60
+      `PASS`); h3 slow PASS (75 `ok`); m12 copies check_x.py 30/30,
+      check_a.py 31/31, check_ab.py 64/64 (E7 passed in this run). No
+      assertion of an earlier check was changed.
+      Not run: a `start` whose listener never comes up (the 120 s timeout
+      path through the command); a leader that needs more than 20 s to stop
+      its members; two `start` commands for one name at the same time
+      (they can choose the same member name, as two `start_agent` calls of
+      two processes could); a machine without `/proc`; pytest.
+      Seen, not changed: the limit refusal of `start` names the tool
+      (`before you stop one with stop_agent`), because the text is
+      `start_members`' and the tool must keep it; every command of
+      `python -m smolagents.bp_messages` takes 1.6 to 6 s to start, because
+      it imports the `smolagents` package.
