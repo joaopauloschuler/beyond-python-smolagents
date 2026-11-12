@@ -3431,6 +3431,10 @@ class StopAgentTool(Tool):
             return f"Error: {error}. Nothing was stopped."
 
 
+class CodeStepEndedForMessages(Exception):
+    """WaitForMessagesTool raises it to end the code step: messages wait that it cannot print there, and they are delivered after the code step."""
+
+
 class WaitForMessagesTool(Tool):
     """Waits for agent-to-agent messages to this process's agent and prints them into the execution log of the code step that called it."""
 
@@ -3438,17 +3442,16 @@ class WaitForMessagesTool(Tool):
     description_template = (
         "Waits until at least one new message from another agent has arrived for you, or until `timeout_seconds` have passed. "
         "Use it instead of time.sleep whenever you wait for a reply; it returns as soon as a message is there. "
-        "The tool itself prints the messages into the execution log of your code step, as '=== message' blocks, "
-        "so you need no print; these messages are not shown to you a second time, unless the code step was interrupted. "
-        "When none arrived, it prints one line saying so; you may then call it again or go on without the reply. "
-        "It returns the number of messages it printed (0 after a timeout), so when you expect several replies, "
-        "call it again until you have them all. "
-        "It prints only into the first {log_characters:,} characters of the execution log, in the order the messages arrived: "
-        "a message that does not fit there, and every message after it in the same code step, is not printed and not counted. "
-        "One line then says how many were not printed; they reach you in full after the code step, so end the code step instead of waiting for them. "
-        "Where a code step has no execution log that the tool can print into (executor 'local'), it prints nothing and returns 0, "
-        "and every message reaches you after the code step. "
-        "`timeout_seconds` is a number above 0 and at most {max_seconds:g}; any other value prints one line starting with 'Error:' and returns 0 at once."
+        "The tool itself prints the messages into the execution log of your code step, as '=== message' blocks, so you need no print, "
+        "and it returns the number of messages it printed; these messages are not shown to you a second time, unless the code step was interrupted. "
+        "It returns 0 only when no message arrived within `timeout_seconds`; it then prints one line saying so. "
+        "So when you expect several replies, call it again until you have them all or it returns 0. "
+        "When a message has arrived that the tool cannot print, it does not return: it ends your code step by raising an exception, "
+        "and the lines after the call do not run. This happens when the first {log_characters:,} characters of the execution log have no room "
+        "for the message, and for every message where a code step has no execution log that the tool can print into (executor 'local'). "
+        "It is not a failure: the exception text says how many messages wait, and they reach you in full right after the code step. "
+        "Do not catch this exception and do not repeat the call; continue in your next code step. "
+        "`timeout_seconds` is a number above 0 and at most {max_seconds:g}; any other value raises an exception."
     )
     inputs = {"timeout_seconds": {"type": "number", "description": "The longest time to wait, in seconds."}}
     output_type = "integer"
@@ -3472,20 +3475,19 @@ class WaitForMessagesTool(Tool):
         log_file = sys.stdout if is_stdout_execution_log else io.StringIO()
         is_number = isinstance(timeout_seconds, (int, float)) and not isinstance(timeout_seconds, bool)
         if not (is_number and 0 < timeout_seconds <= MAX_WAIT_FOR_MESSAGES_SECONDS):  # false for NaN
-            print(f"Error: timeout_seconds must be a number above 0 and at most {MAX_WAIT_FOR_MESSAGES_SECONDS:g}. Nothing was waited for.", file=log_file)
-            return 0
+            raise ValueError(f"timeout_seconds must be a number above 0 and at most {MAX_WAIT_FOR_MESSAGES_SECONDS:g}. Nothing was waited for.")
         message_poller = self._message_poller_source()
         if message_poller is None:
-            print("Error: this process does not check its message folders yet. Nothing was waited for.", file=log_file)
-            return 0
+            raise RuntimeError("This process does not check its message folders yet. Nothing was waited for.")
         message_poller.wait_for_new_messages(float(timeout_seconds))
         # A later print of the code step can push the log over the cut; only its first kept_log_start_characters are certain to stay.
         free_characters = self.kept_log_start_characters - len(log_file.getvalue()) if is_stdout_execution_log else 0
         printed_count, unprinted_count = message_poller.write_new_messages(log_file, free_characters)
         if unprinted_count:
-            print(f"{unprinted_count} {'more ' if printed_count else ''}message(s) arrived and are not printed here: the first {self.kept_log_start_characters:,} characters "
-                  "of this execution log have no room for them, or an earlier message waits unprinted. They reach you in full after this code step; "
-                  "end the code step instead of waiting for them.", file=log_file)
-        elif not printed_count:
+            raise CodeStepEndedForMessages(
+                f"Not a failure: {unprinted_count} {'more ' if printed_count else ''}message(s) arrived that wait_for_messages cannot print into this "
+                "code step's execution log. It ended this code step so that you receive them: they reach you in full right after this code step. "
+                "The lines after the wait_for_messages call did not run. Do not repeat the call for these messages.")
+        if not printed_count:
             print(f"No message arrived within {timeout_seconds:g} seconds.", file=log_file)
         return printed_count

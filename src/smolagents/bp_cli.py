@@ -420,11 +420,19 @@ def take_queued_message_text() -> str:
     return message_text
 
 
-def record_printed_messages_as_read(memory_step):
-    """Step callback: records as read the messages that wait_for_messages printed and that memory_step holds in its observations or its error,
-    the two texts of a code step that the model receives. A step that an interrupt ended holds neither, so its messages stay queued."""
+def mark_printed_messages_as_shown(memory_step, agent):
+    """Step callback: marks as shown the messages that wait_for_messages printed and that memory_step holds in its observations or its error,
+    the two texts of a code step that the model receives. It records nothing as read for memory_step, which is not in agent's memory yet."""
     if _message_poller is not None:
-        _message_poller.record_printed_as_read(f"{memory_step.observations or ''}{memory_step.error or ''}")
+        record_shown_messages_as_read(agent)  # of the step before, when no steering source did it
+        _message_poller.mark_printed_as_shown(f"{memory_step.observations or ''}{memory_step.error or ''}", memory_step)
+
+
+def record_shown_messages_as_read(agent):
+    """Records as read the messages that mark_printed_messages_as_shown marked, when their step is in agent's memory; otherwise, after
+    an interrupt or a failure between the step's end and its place in memory, they stay queued and are delivered again."""
+    if _message_poller is not None:
+        _message_poller.record_shown_as_read(agent.memory.steps)
 
 
 def task_with_queued_messages(task: str) -> str:
@@ -437,6 +445,7 @@ def queued_message_steering_texts(agent) -> list[str]:
     """Returns the queued agent-to-agent messages as one steering text, but only when agent's last memory step is an ActionStep:
     agent._deliver_steering_messages then attaches the text at once. Otherwise it would hold the text and drop it if the run ended first."""
     from smolagents.memory import ActionStep
+    record_shown_messages_as_read(agent)
     if not (agent.memory.steps and isinstance(agent.memory.steps[-1], ActionStep)):
         return []
     message_text = take_queued_message_text()
@@ -828,7 +837,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
 
     step_cbs = [_compact_step_callback, load_image_callback]
     if _message_settings is not None:
-        step_cbs.append(record_printed_messages_as_read)
+        step_cbs.append(mark_printed_messages_as_shown)
     if gui_manager:
         from smolagents.bp_tools_gui import gui_screenshot_callback
         step_cbs.append(gui_screenshot_callback)
@@ -3127,6 +3136,7 @@ def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_sta
             finally:
                 listen_signal_exception_received()
                 _spinner.stop()
+                record_shown_messages_as_read(agent)
         console.print()
         console.print(Markdown(str(result)))
         console.print()
@@ -3214,7 +3224,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             _shutdown_gui(agent)
             _shutdown_mcp(agent)
         _shutdown_members()
-    not_delivered_again = "; the messages of that run are not delivered again" if activity.startswith("during run") else ""
+    not_delivered_again = "; the messages of that run are not delivered again, except those that wait_for_messages printed in the code step in progress" if activity.startswith("during run") else ""
     print_listen_line(f"Listener stopped by {stop_reason} {activity}{not_delivered_again}.")
     if stop_reason == "its session budget":
         sys.exit(1)
@@ -3737,6 +3747,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                     undelivered = stop_steering_listener(listener)
                     agent.steering_source = None
                     print_undelivered_steering(undelivered)
+                    record_shown_messages_as_read(agent)
             _spinner.stop()
             elapsed = time.time() - start_time
 

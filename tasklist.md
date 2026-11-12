@@ -1076,3 +1076,76 @@ Conventions for T1 to T11:
       listener's stop line "the messages of that run are not delivered
       again" does not hold for messages a wait printed in the interrupted
       step (they are delivered again).
+      REVIEW FIX (2026-11-12, findings M-1, M-2, L-1, L-2, L-3 of the review
+      of `437e96f`). M-1: the step callback recorded a printed message as
+      read before `_run_stream` had appended the step to memory; an
+      interrupt or exception in a later callback (the compression callback
+      makes a model call) lost the message, also after a restart. M-2: the
+      tool returned 0 both for "nothing arrived" and for "arrived, not
+      printed", so `while got < n: got += wait_for_messages(600)` never
+      ended (with executor `local` for any message).
+      Design, M-1: two stages. The step callback, now
+      `mark_printed_messages_as_shown(memory_step, agent)`, only marks
+      (`MessagePoller.mark_printed_as_shown(step_text, ended_step)`).
+      `record_shown_messages_as_read(agent)` removes the marked messages
+      and saves the ids (`MessagePoller.record_shown_as_read`), but only
+      when the marked step object is in `agent.memory.steps`; otherwise it
+      removes the mark and the messages stay queued for `take_queued`.
+      Callers: `queued_message_steering_texts` (before each step), the
+      callback itself for the step before (agents without a steering
+      source, as `/repeat` builds them), and after `agent.run` in `run_repl`
+      and `run_agent_on_listen_task`. `run_one_shot` does not call it: the
+      process ends, so a message printed in its last step is not recorded.
+      `agents.py` is unchanged. M-2: the tool raises
+      `CodeStepEndedForMessages` (an `Exception`) when a message waits that
+      it cannot print; the executor makes it the step's error text, the
+      step ends and the steering source delivers the messages. A further
+      call in the same step raises again at once (the poller no longer
+      counts unprinted messages as announced; `_announced_message_count`
+      is removed). 0 now means only "none arrived in that time". An
+      invalid `timeout_seconds` and a call before the poller exists raise
+      too (they returned 0 at once, which the same loop turned into an
+      endless one). Tool description, docs/CLI.md row and the comments at
+      bp_messages.py 48 and 775 rewritten; the listener's SIGTERM line and
+      the docs sentence now except the messages a wait printed in the code
+      step in progress. Rejected: counting unprinted messages in the return
+      value (counts what the model was not shown); returning 0 at once on
+      later calls (busy loop); recording at the next step's end, after a
+      model call has carried the step (`take_queued` would have to skip a
+      held prefix and save ids out of queue order); an `agents.py` change
+      (append before the callbacks).
+      L-1, what remains: the ids are saved before the model call that
+      carries the step returns, as for every `take_queued` delivery; in the
+      REPL and `bpsa listen` the last step of a run is recorded when the
+      run ends, so a process that ends before its next run has the message
+      only in a memory that no model call read.
+      Verified (scripts in scratch `m12/`): check_x.py 30/30: a later
+      callback raising KeyboardInterrupt, `ListenStopSignal` or
+      RuntimeError leaves the step out of memory, no id saved, the message
+      queued; the next run's input holds it once, a new poller queues it
+      again; `wait_for_messages` + `final_answer` in one step; no steering
+      source; the reviewer's loops: 11,000 characters end the step in 0.2 s
+      and the model receives the text once after `<error>`; two of three
+      printed, third after the step; a loop that catches the exception
+      (three raises in 0.2 s); timeout 7200. check_ab.py 64/64 in a copy
+      with 8 blocks changed (E1, E2, E3, E3c, E7, both E5 parts,
+      `local`), check_a.py 31/31 in a copy with 5 changes. Real `bpsa
+      listen` agents `asker` and `helper` (poll 5 s): reply `51` printed in
+      an 8.8 s step, `wait` returned 1; then a reply of 10,515 characters
+      to a `while got < 1` loop: the step ended after 7.2 s with the
+      "Not a failure" text, the reply was delivered once after the step,
+      the agent did not retry and reported one copy and the right last 14
+      characters; read ids `{"boss": 2, "helper": 2}`. Feature off: system
+      prompt and tool list byte-identical to b1b7a10, no message callback.
+      T7 43/43, h12 and h3 slow copies pass. Not run: REPL with a real
+      Ctrl-C, a signal to a real listener during a wait, `bpsa run`,
+      `/repeat`, executor `local` in a real bpsa run, pytest.
+      Seen, not fixed: with executor `local`, `agents.py` (about line 2396)
+      raises UnboundLocalError (`code_output`) on every exception of a code
+      step and the run ends; the tool's exception therefore ends the run
+      there and the messages arrive with the next task (before this fix a
+      single call returned 0 and they arrived between steps).
+      `LISTEN_RUN_END` ("its messages are not delivered again") has the
+      same inexact wording as the stop line had. The exception text says
+      "right after this code step"; when that step was the last one the
+      run may take, the messages arrive with the next task.

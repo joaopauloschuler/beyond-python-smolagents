@@ -45,7 +45,7 @@ EXIT_WAIT_TIMEOUT = 3
 EXIT_INTERRUPTED = 130
 MESSAGE_BODY_LINE_PREFIX = "|"
 MESSAGE_POLLER_STOP_SECONDS = 2.0
-WAITED_MESSAGE_CHECK_SECONDS = 1.0  # while MessagePoller.wait_until_queued runs, its thread checks the folders this often
+WAITED_MESSAGE_CHECK_SECONDS = 1.0  # while MessagePoller.wait_for_new_messages runs, its thread checks the folders this often
 MAX_WAIT_FOR_MESSAGES_SECONDS = 3600.0
 DEFAULT_MAX_GROUP_MEMBERS = 9
 MEMBER_START_TIMEOUT_SECONDS = 120.0
@@ -755,7 +755,7 @@ def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
 
 class MessagePoller:
     """Daemon thread that checks every folder of settings at start and then every settings.poll_seconds, and queues the new messages to
-    settings.agent_name. take_queued and record_printed_as_read save the last-read ids, so a process that ends before them receives the queued messages again.
+    settings.agent_name. take_queued and record_shown_as_read save the last-read ids, so a process that ends before them receives the queued messages again.
     Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent removes messages from the queue."""
 
     def __init__(self, settings: MessageSettings, print_line, announce_queued):
@@ -765,14 +765,15 @@ class MessagePoller:
         self.messages_waiting = threading.Event()  # set exactly while messages are queued; wait on it instead of calling take_queued in a loop
         self._queue_lock = threading.Lock()
         self._queued: list[QueuedMessages] = []
-        self._announced_message_count = 0  # write_new_messages has printed or counted the first this-many queued messages
-        self._printed_message_count = 0  # of those, the first this-many are printed in the execution log of the code step in progress
-        self._new_messages_waiting = threading.Event()  # set exactly while more messages are queued than _announced_message_count
+        self._printed_message_count = 0  # write_new_messages has printed the first this-many queued messages; the next call starts after them
+        self._shown_message_count = 0  # of those, the text of the ended code step _step_with_shown_messages holds the first this-many
+        self._step_with_shown_messages = None  # the object given to mark_printed_as_shown; record_shown_as_read looks for it among the steps in memory
+        self._new_messages_waiting = threading.Event()  # set exactly while more messages are queued than _printed_message_count
         self._last_queued_ids: dict[str, dict[str, int]] = {}  # per folder path: the ids up to which the thread has queued
         self._printed_failure_reasons: dict[str, str] = {}  # per folder path: the reason of the failing check; absent after a check that worked
         self._stop_requested = threading.Event()
         self._check_requested = threading.Event()  # ends the thread's pause between two checks at once
-        self._is_wait_in_progress = False  # written by wait_until_queued, read by the thread
+        self._is_wait_in_progress = False  # written by wait_for_new_messages, read by the thread
         self._thread = None
 
     def start(self):
@@ -788,7 +789,7 @@ class MessagePoller:
             self._thread = None
 
     def wait_for_new_messages(self, timeout_seconds: float) -> bool:
-        """Blocks the caller until a message is queued that write_new_messages has not announced, or timeout_seconds pass; returns whether one is.
+        """Blocks the caller until a message is queued that write_new_messages has not written, or timeout_seconds pass; returns whether one is.
         It reads no folder: during the wait the thread checks them at once and then every WAITED_MESSAGE_CHECK_SECONDS (or settings.poll_seconds when shorter)."""
         self._is_wait_in_progress = True
         self._check_requested.set()
@@ -798,16 +799,13 @@ class MessagePoller:
             self._is_wait_in_progress = False
 
     def write_new_messages(self, log_file, max_characters: int) -> tuple[int, int]:
-        """Writes to log_file the messages queued since its last call, in the order queued, as far as their one text stays within max_characters; none
-        once a call has left one unwritten. All stay queued until record_printed_as_read or take_queued. Returns how many it wrote and how many it left unwritten."""
+        """Writes to log_file the queued messages that no earlier call has written, in the order queued, up to the first whose text would exceed
+        max_characters. All stay queued until record_shown_as_read or take_queued. Returns how many it wrote and how many it left unwritten."""
         with self._queue_lock:
-            new_messages = [(batch.folder, message) for batch in self._queued for message in batch.messages][self._announced_message_count:]
-            may_print = self._printed_message_count == self._announced_message_count  # false: an earlier message waits for take_queued, and order is kept
-            self._announced_message_count += len(new_messages)
-            self._new_messages_waiting.clear()
+            unwritten_messages = [(batch.folder, message) for batch in self._queued for message in batch.messages][self._printed_message_count:]
         message_text = MESSAGES_FOR_MODEL_HEADING
         written_count = 0
-        for folder, message in new_messages if may_print else []:
+        for folder, message in unwritten_messages:
             message_block = printable_messages([message], "utf-8", folder.label)
             if len(message_text) + len(message_block) > max_characters:
                 break
@@ -815,28 +813,44 @@ class MessagePoller:
             written_count += 1
         if written_count:
             log_file.write(message_text)
-            self._printed_message_count += written_count
-        return written_count, len(new_messages) - written_count
+            with self._queue_lock:
+                self._printed_message_count += written_count
+                self._set_waiting_events()
+        return written_count, len(unwritten_messages) - written_count
 
-    def record_printed_as_read(self, step_text: str):
-        """Call it when a code step has ended, with the text of that step that the model receives. Removes from the queue the messages that
-        write_new_messages printed and step_text holds, and saves the last-read ids of the batches this empties; the other messages stay queued."""
+    def mark_printed_as_shown(self, step_text: str, ended_step):
+        """Call it when the code step ended_step has ended, with the text of that step that the model receives. Marks as shown the messages that
+        write_new_messages printed and step_text holds, up to the first it does not hold; all stay queued until record_shown_as_read or take_queued."""
         with self._queue_lock:
-            printed_count = self._printed_message_count
-            self._printed_message_count = self._announced_message_count = 0
+            printed_messages = [(batch.folder, message) for batch in self._queued for message in batch.messages][:self._printed_message_count]
+            self._shown_message_count = 0
+            for folder, message in printed_messages:
+                if printable_messages([message], "utf-8", folder.label) not in step_text:
+                    break
+                self._shown_message_count += 1
+            self._printed_message_count = self._shown_message_count
+            self._step_with_shown_messages = ended_step
+            self._set_waiting_events()
+
+    def record_shown_as_read(self, steps_in_memory: list):
+        """Removes from the queue the messages marked by mark_printed_as_shown and saves the last-read ids of the batches this empties, but only
+        when the step given to mark_printed_as_shown is one of steps_in_memory; otherwise it removes the mark and the messages stay queued."""
+        with self._queue_lock:
+            is_step_in_memory = any(step is self._step_with_shown_messages for step in steps_in_memory)
+            shown_count = self._shown_message_count
+            self._printed_message_count -= shown_count
+            self._shown_message_count = 0
+            self._step_with_shown_messages = None
             read_batches, unread_batches = [], []
-            for batch in self._queued:
-                read_count = 0
-                while (read_count < min(printed_count, len(batch.messages))
-                       and printable_messages([batch.messages[read_count]], "utf-8", batch.folder.label) in step_text):
-                    read_count += 1
-                if read_count < len(batch.messages):
-                    printed_count = 0  # the queue order is the order of the last-read ids: nothing after an unread message is recorded
-                    unread_batches.append(batch._replace(messages=batch.messages[read_count:]))
-                else:
-                    printed_count -= read_count
+            for batch in self._queued if is_step_in_memory and shown_count else []:
+                if shown_count >= len(batch.messages):
+                    shown_count -= len(batch.messages)
                     read_batches.append(batch)
-            self._queued = unread_batches
+                else:  # the queue order is the order of the last-read ids: a batch is recorded only when all its messages are read
+                    unread_batches.append(batch._replace(messages=batch.messages[shown_count:]))
+                    shown_count = 0
+            if read_batches or unread_batches:
+                self._queued = unread_batches
             self._set_waiting_events()
         self._save_last_read_ids(read_batches)
 
@@ -845,7 +859,8 @@ class MessagePoller:
         one line and still returns the messages: this process delivers them once, a restarted one again."""
         with self._queue_lock:
             queued, self._queued = self._queued, []
-            self._printed_message_count = self._announced_message_count = 0
+            self._printed_message_count = self._shown_message_count = 0
+            self._step_with_shown_messages = None
             self._set_waiting_events()
         self._save_last_read_ids(queued)
         return queued
@@ -854,7 +869,7 @@ class MessagePoller:
         """Sets or clears messages_waiting and _new_messages_waiting to match the queue; the caller holds _queue_lock."""
         queued_message_count = sum(len(batch.messages) for batch in self._queued)
         for event, is_set in ((self.messages_waiting, queued_message_count > 0),
-                              (self._new_messages_waiting, queued_message_count > self._announced_message_count)):
+                              (self._new_messages_waiting, queued_message_count > self._printed_message_count)):
             event.set() if is_set else event.clear()
 
     def _save_last_read_ids(self, read_batches: list[QueuedMessages]):
