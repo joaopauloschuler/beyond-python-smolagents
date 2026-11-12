@@ -10,6 +10,7 @@
 bpsa              # Interactive REPL (default)
 bpsa run "task"   # One-shot mode
 echo "task" | bpsa  # Piped input (one-shot, detected via stdin.isatty())
+bpsa listen       # No keyboard: run on agent-to-agent messages (see Agent-to-Agent Messages)
 ```
 
 Unless auto-approve is on, `bpsa` asks before it runs code or writes files,
@@ -377,6 +378,112 @@ did, the command-line flag that set it (for example `--auto-approve`), or
 the slash command that changed the value mid-session. `bp_cli.py` never
 reads the `~/.bpsa.yaml` file listed under Configuration Layering; only these
 sources apply.
+
+## Agent-to-Agent Messages
+
+Several `bpsa` processes can exchange messages through plain files in shared
+folders. Nothing else connects them: no server, no socket. The feature is off
+unless `BPSA_AGENT_NAME` is set (see Environment Variables for the four
+settings).
+
+### Message files
+
+A message is one UTF-8 text file named `from_to_id.txt` in a message folder,
+for example `leader1_all_000003.txt`:
+
+- `from` and `to` are agent names (1 to 64 lowercase ASCII letters, digits or
+  `-`). `to` may also be `all`: every agent that reads the folder receives it,
+  except the sender.
+- `id` counts the sender's messages in that folder, starting at `000001`.
+
+A folder is addressed by its label, the last component of its path. Besides
+messages, a folder holds hidden files per agent: `.<name>.lock`,
+`.<name>.read.json` (the last id read per sender) and, for agents started with
+`start_agent`, `.<name>.agent.json` and the log `<name>.log`. Each agent name
+must belong to one process per folder.
+
+### What an agent has
+
+| | |
+|---|---|
+| `send_message(to, text, folder?)` | Writes one message. `folder` is needed only by an agent with several folders. |
+| `start_agent(folder?, working_directory?)` | Starts one `bpsa listen` process named `<own name>-<k>` on that folder and returns when it listens (about 30 s). The new agent cannot start agents itself. |
+| `stop_agent(name)` | Stops an agent that the caller started; `all` stops each of them. |
+| Incoming messages | Checked every `BPSA_MESSAGE_POLL_SECONDS` without a model call. They reach the model between two steps of a run, or with the next task when the agent is idle. A message counts as read when it is handed to a run. |
+
+The model sees each message as a block; every line of the text starts with
+`|`, so a message cannot imitate the header of another:
+
+```
+=== message 1 from leader1 to agent31 in folder group1 ===
+| Please write one haiku about rivers.
+=== end of message 1 from leader1 ===
+```
+
+The system prompt tells the agent to treat messages as requests from its team,
+and to do what the user asked where a message conflicts with it.
+
+### `bpsa listen`
+
+`bpsa listen` waits for messages, runs the agent on them, and waits again. It
+keeps its memory between runs and makes no model call while it waits. It never
+reads stdin and needs auto-approve on (`--auto-approve on` or
+`BPSA_AUTO_APPROVE=on`); it writes no file in the home directory. Redirect its
+output to a log file. It is up when the log shows a line starting
+`Listening for messages: agent <name>, folders`. SIGTERM ends it with status 0
+after it has stopped the agents it started. Nobody reads its final answers:
+the agent must reply with `send_message`. The messages of a failed or
+interrupted run are not delivered again.
+
+### Commands for a person or an outside program
+
+```bash
+python -m smolagents.bp_messages send --folder F --name ME --to TARGET "text"   # text from stdin when absent or "-"
+python -m smolagents.bp_messages new  --folder F --name ME [--peek]             # print unread messages
+python -m smolagents.bp_messages wait --folder F --name ME [--timeout 300]      # block until one arrives; exit 3 on timeout
+```
+
+`--folder` and `--name` default to `BPSA_MESSAGE_FOLDERS` (when it has one
+line) and `BPSA_AGENT_NAME`.
+
+### Example: one leader and two members
+
+A person acts as `boss` and talks to `leader1` in the folder `leaders`;
+`leader1` talks to the members it starts in the folder `group1`.
+
+```bash
+S=/path/to/trial
+mkdir -p $S/leaders $S/group1 $S/work && cd $S/work
+BPSA_AGENT_NAME=leader1 \
+BPSA_MESSAGE_FOLDERS="$S/leaders
+$S/group1" \
+BPSA_AUTO_APPROVE=on BPSA_MESSAGE_POLL_SECONDS=5 BPSA_MAX_GROUP_MEMBERS=2 \
+  nohup bpsa --verbose on listen < /dev/null > $S/leader1.log 2>&1 &
+echo $! > $S/leader1.pid
+# wait until:  grep -c '^Listening for messages: agent leader1' $S/leader1.log   prints 1
+
+python -m smolagents.bp_messages send --folder $S/leaders --name boss --to leader1 \
+  "Start two members in your group folder. Ask the first for a haiku about rivers and the second for one about mountains. Send me both, their authors and your choice. Then stop both members."
+python -m smolagents.bp_messages wait --folder $S/leaders --name boss --timeout 420
+
+kill -TERM $(cat $S/leader1.pid)    # stops the leader and any member still running
+```
+
+In a run on 2026-11-11 the report from `leader1` arrived 2 min 25 s after the
+task was sent: 5 s until the leader's poll, 70 s to start the two members one
+after the other, 9 s for both members to answer, and about 55 s that the
+leader spent in a `time.sleep(60)` it chose to wait for the replies.
+`--verbose on` makes the leader's tool calls visible in its log.
+
+### Limits
+
+- A leader that is killed (SIGKILL) or dies from an unhandled error leaves the
+  agents it started running; their process ids are in the `.agent.json` files.
+- `start_agent` needs `/proc` (Linux).
+- Without `fcntl` (Windows) the per-sender lock is absent; one process per
+  name is still safe.
+- An agent started with `start_agent` has no `start_agent` tool, but the code
+  it runs is not sandboxed.
 
 ## Tmux Multi-Screen Tools
 

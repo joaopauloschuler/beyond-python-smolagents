@@ -858,9 +858,29 @@ Conventions for T1 to T11:
       stopped `leader3-1` and reported to `boss`, 0 `Error:` results, 2 of 2;
       ordinary tasks unchanged, no message sent; feature off: system prompt
       byte-identical to cd0313a, start-up screen and `/show-tools` equal.
-- [ ] **T9. Documentation.** `docs/CLI.md`: the settings, the subcommand, the
+- [x] **T9. Documentation.** `docs/CLI.md`: the settings, the subcommand, the
       file name format, one worked example.
-- [ ] **T10. Trial on one machine.** One global leader, one bpsa leader and
+      LANDED: `docs/CLI.md` has a new section "Agent-to-Agent Messages"
+      (message files, tools, `bpsa listen`, the `bp_messages` commands, the
+      example of T10 with its measured times, limits) and `bpsa listen` in the
+      Command block. The settings rows were written by T2, T3 and T6.
+- [x] **T10. Trial on one machine.** One global leader, one bpsa leader and
       two bpsa members, with a non-coding task. Report: messages sent, delays
       measured, model calls made while idle, and anything that failed.
+      LANDED (run on 2026-11-11 at commit 4a0accb, poll 5 s,
+      `BPSA_MAX_GROUP_MEMBERS=2`, leader with `--verbose on`): `boss` sent one
+      message to `leader1` (two haiku from two members, choose one, report,
+      stop the members) and received the report 2 min 25 s later with both
+      haiku, their authors and the choice. Messages: 6 files (1 boss to
+      leader, 2 leader to members, 2 replies, 1 report). Delays: leader took
+      the task at its next poll (5 s); starting two members one after the
+      other took 70 s; both members answered 9 s after the leader wrote to
+      them (3 s poll wait, 6 to 7 s model step); the leader then spent about
+      55 s in a `time.sleep(60)` that it chose itself to wait for replies that
+      had arrived after 9 s. Tokens: leader 50,259 in 4 steps, members 11,342
+      and 11,436 in 1 step each. Model calls while idle: none (each member log
+      shows one turn). Tool `Error:` results: 0. SIGTERM ended the leader in
+      8 s, status line present, no process left; redirected HOME held only
+      `.cache` and `.config`. Finding: an agent that needs replies has no way
+      to wait for messages except sleeping inside a step or ending its run.
 - [ ] **T11. Code review** of T1 to T9 by an agent that wrote none of it.
