@@ -958,3 +958,62 @@ Conventions for T1 to T11:
       results, leader 64,500 tokens in 5 steps; feature off: system prompt and
       tool list byte-identical to 41dd4b2, `/show-tools` screen equal; T7
       43/43, h12 and h3 checks pass.
+- [x] **T13. Start several members at once.** One `start_agent` call starts
+      `count` members at the same time (a leader spent 50 to 70 s starting
+      two members one after the other).
+      LANDED (2026-11-12): `start_agent(folder?, working_directory?, count?)`;
+      `count` is last, so the calls that models already write
+      (`start_agent()`, `start_agent(folder="group1")`, a positional label)
+      keep working; a whole number of at least 1 (bool, float, string, None
+      refused with one `Error:` line). `bp_messages.start_members` replaces
+      `start_member`: it checks the limit for the whole call (live members
+      plus `count`; the `Error:` line says how many more may be started, and
+      nothing is started), fixes the names `<own name>-<k>` with consecutive
+      k, launches each child and writes its record at once (`launch_member`,
+      `write_member_record`), then waits for all of them together
+      (`errors_of_members_that_do_not_listen`): up to
+      `MEMBER_START_TIMEOUT_SECONDS` = 120 s plus
+      `MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER` = 30 s for each
+      member after the first. Members that listen stay; a member that
+      ended, timed out or could not be launched is stopped and reported, the
+      others are not touched. KeyboardInterrupt or the listener's stop
+      exception during launch or wait stops every child of the call
+      (`stop_launched_members`) and is raised again. Memory rule (finding
+      M7): the call is refused when `count` x `MEMBER_MEMORY_BYTES` (260 MB,
+      the measured resident size of an idle listener) exceeds `MemAvailable`
+      of `/proc/meminfo`, also for `count` 1; skipped where that file or
+      line is absent. Return text: `count` 1 as before (one line); above 1 a
+      first line `Started 2 of 3 agents: a, c. Not started: b.`, then per
+      member in name order the `Started agent ...` line or `Error: agent
+      <name> was not started: <reason>`. The tool description says to start
+      several agents with one call; `message_prompt_paragraph` is unchanged.
+      docs/CLI.md: three rows. Not changed: record trust (M1), the log open
+      (M2), REPL signal handling (M5), naming (a member whose log cannot be
+      opened leaves no record, so its number is free again, as before).
+      Verified with real runs on this machine (one processor, a pytest of
+      another project running part of the time): tool object: `count` 1
+      text equal to f55392a (also at the limit and for a member that ends);
+      wall time 28.7 s for one, 40.5 s for two, 57.3 s for three (each
+      further member adds its own import time on one processor; the model
+      call overlaps), each child in its own session, records and ready
+      lines present, `stop_agent("all")` leaves none; limit 2: `count` 3
+      refused with nothing started, with one live `count` 2 refused and 1
+      accepted; 10 invalid counts; one of three failing (its log path made
+      a directory): the two others listen, 4 lines name all three; two of
+      two ending before they listen: 0 started, no process, numbers used
+      up; SIGINT during a `count` 2 wait: both children gone after 4.4 s;
+      memory rule with a patched reader: refused at 500 MB for 2, passed at
+      520 MB, skipped for None (28/28). `bpsa listen` leader, poll 5 s,
+      limit 3: it called `start_agent(folder="group1", count=3)` unprompted
+      in 2 of 2 tasks; three haiku with authors reached `boss` 136 s after
+      the send (start step 92 s including its model call, load average 4 to
+      6), 0 `Error:` results, leader 66,387 tokens in 5 steps, members
+      about 11,700 each; SIGTERM with three idle members: all four processes
+      gone after 20 s, three `Stopped` lines; SIGTERM during the start wait:
+      the three starting children and the leader gone after 6 s. Feature
+      off: system prompt and tool list byte-identical to f55392a.
+      Earlier checks: T7 43/43, t12/check_a.py 31/31; h12 60/60 and h3
+      pass only with their per-case time limits raised (10 s to 60 s) in a
+      scratch copy, because the other project's pytest kept the load average
+      near 4 and the unchanged scripts timed out in a different case each
+      run.

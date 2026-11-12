@@ -3317,30 +3317,41 @@ class SendMessageTool(Tool):
 
 
 class StartAgentTool(Tool):
-    """Starts one group member of this process's agent: a `bpsa listen` process on one of its message folders (bp_messages.start_member)."""
+    """Starts group members of this process's agent: `bpsa listen` processes on one of its message folders (bp_messages.start_members)."""
 
     name = "start_agent"
     description = (
-        "Starts one new agent as a separate background process that reads one of your message folders. "
-        "The tool chooses the new agent's name (your own name, '-' and a number) and waits until the agent listens, which takes up to a few minutes. "
+        "Starts one new agent as a separate background process that reads one of your message folders, or `count` new agents at the same time. "
+        "When you need several agents, start them all with one call, such as start_agent(count=3): together they take about as long as one, "
+        "while one call for each takes that long every time. "
+        "The tool chooses each new agent's name (your own name, '-' and a number) and waits until every new agent listens or has failed, "
+        "which takes up to a few minutes. "
         "The new agent knows nothing until it receives a message: send it its instructions with send_message to the returned name. "
         "It keeps running, and answers every message addressed to it or to 'all' in that folder, until you stop it with stop_agent "
         "or your own process ends. It cannot start agents itself. "
         "Every started agent makes its own model calls, which cost money: start only as many as the work needs, "
         "and no more than your limit allows. "
         "`folder` is the label of one of your message folders; leave it out when you have only one. "
-        "`working_directory` is the existing directory the new agent works in; left out, it is your current directory. "
-        "Returns one line with the new agent's name, process id and log file, or one line starting with 'Error:' when no agent was started."
+        "`working_directory` is the existing directory the new agents work in; left out, it is your current directory. "
+        "`count` is a whole number of at least 1; a call for more agents than your limit or the machine's available memory allows starts none. "
+        "Returns one line with the new agent's name, process id and log file, or one line starting with 'Error:' when no agent was started. "
+        "With `count` above 1 it returns a first line that names the agents started and those not started, then one such line per agent: "
+        "only the agents with a line 'Started agent' run."
     )
     inputs = {
         "folder": {
             "type": "string",
-            "description": "Label of the message folder the new agent reads and writes; required only when you have several folders.",
+            "description": "Label of the message folder the new agents read and write; required only when you have several folders.",
             "nullable": True,
         },
         "working_directory": {
             "type": "string",
-            "description": "Existing directory in which the new agent runs; default: your current directory.",
+            "description": "Existing directory in which the new agents run; default: your current directory.",
+            "nullable": True,
+        },
+        "count": {
+            "type": "integer",
+            "description": "How many agents to start at the same time; default: 1.",
             "nullable": True,
         },
     }
@@ -3350,9 +3361,11 @@ class StartAgentTool(Tool):
         super().__init__()
         self._settings = settings  # bp_messages.MessageSettings
 
-    def forward(self, folder: str | None = None, working_directory: str | None = None) -> str:
-        from smolagents.bp_messages import message_folder_of_label, start_member
+    def forward(self, folder: str | None = None, working_directory: str | None = None, count: int | None = 1) -> str:
+        from smolagents.bp_messages import message_folder_of_label, start_members
 
+        if type(count) is not int or count < 1:  # type() refuses True
+            return f"Error: count must be a whole number of at least 1, not {ascii(count)[:40]}. No agent was started."
         try:
             message_folder = message_folder_of_label(self._settings, folder)
         except ValueError as error:
@@ -3361,13 +3374,26 @@ class StartAgentTool(Tool):
         if not os.path.isdir(member_directory):
             return f"Error: the working directory {ascii(member_directory)} does not exist or is not a directory. No agent was started."
         try:
-            record = start_member(self._settings, message_folder, member_directory)
+            results = start_members(self._settings, message_folder, member_directory, count)
         except ValueError as error:
             return f"Error: {error} No agent was started."
         except OSError as error:
             return f"Error: {error}. No agent was started."
-        return (f"Started agent {record.name} (process {record.process_id}, log {record.log_path}). It listens in folder {message_folder.label} "
-                f"and knows nothing yet: send it its instructions with send_message to {record.name}.")
+        lines = []
+        for result in results:
+            if result.error is None:
+                lines.append(f"Started agent {result.name} (process {result.record.process_id}, log {result.record.log_path}). It listens in folder "
+                             f"{message_folder.label} and knows nothing yet: send it its instructions with send_message to {result.name}.")
+            else:
+                # A MemberStartError text ends with its own full stop; an OSError text has none.
+                reason = f"{result.error}{'.' if isinstance(result.error, OSError) else ''}"
+                lines.append(f"Error: {reason} No agent was started." if count == 1 else f"Error: agent {result.name} was not started: {reason}")
+        if count > 1:
+            started_names = [result.name for result in results if result.error is None]
+            failed_names = [result.name for result in results if result.error is not None]
+            lines.insert(0, f"Started {len(started_names)} of {count} agents{': ' if started_names else ''}{', '.join(started_names)}."
+                         + (f" Not started: {', '.join(failed_names)}." if failed_names else ""))
+        return "\n".join(lines)
 
 
 class StopAgentTool(Tool):

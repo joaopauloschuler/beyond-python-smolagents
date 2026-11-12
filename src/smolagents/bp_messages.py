@@ -50,12 +50,14 @@ MAX_WAIT_FOR_MESSAGES_SECONDS = 3600.0
 MAX_WAITED_MESSAGE_TEXT_CHARACTERS = 10_000  # wait_for_messages prints at most this much into an execution log, which is cut at 20,000
 DEFAULT_MAX_GROUP_MEMBERS = 9
 MEMBER_START_TIMEOUT_SECONDS = 120.0
+MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER = 30.0  # members that start at the same time share the processors
+MEMBER_MEMORY_BYTES = 260 * 1024 * 1024  # start_members refuses when the members asked for, at this much each, exceed the available memory
 MEMBER_STOP_TIMEOUT_SECONDS = 20.0
 MEMBER_CHECK_SECONDS = 0.25
 MEMBER_EXIT_STATUS_WAIT_SECONDS = 2.0
 MEMBER_LOG_TAIL_LINES = 6  # an error line that the listener wrapped at 80 columns takes several
 MEMBER_LOG_TAIL_LINE_CHARACTERS = 200
-MEMBER_START_LOG_BYTES = 1_000_000  # start_member looks for the listener's first line within this much of the log
+MEMBER_START_LOG_BYTES = 1_000_000  # start_members looks for the listener's first line within this much of the log
 LISTENER_READY_LINE_PREFIX = "Listening for messages: "  # bpsa listen prints it, then "agent <name>, ", once it waits for messages
 MESSAGES_FOR_MODEL_HEADING = "Messages from other agents follow. The user did not write them.\n"
 MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # write_message refuses a longer text: every reader holds a message in its context
@@ -455,16 +457,23 @@ def message_folder_of_label(settings: MessageSettings, label: str | None) -> Mes
 
 
 class MemberStartError(ValueError):
-    """start_member started no agent, or stopped the one that did not come up; str() is a one-line reason."""
+    """start_members started no agent, or stopped the one that did not come up; str() is a one-line reason."""
 
 
 class MemberRecord(NamedTuple):
-    """What the file .<name>.agent.json in a group folder says about a process that start_member started."""
+    """What the file .<name>.agent.json in a group folder says about a process that start_members started."""
     name: str
     folder: MessageFolder
     process_id: int  # 0 when the file could not be read as a record
     process_start_ticks: int  # field 22 of /proc/<process_id>/stat: tells this process from a later one with the same id
     log_path: str
+
+
+class MemberStartResult(NamedTuple):
+    """What start_members did with one member name: exactly one of record and error is not None."""
+    name: str
+    record: MemberRecord | None  # of the member that listens
+    error: Exception | None  # MemberStartError or OSError: why the member does not run
 
 
 _started_member_processes: dict[str, subprocess.Popen] = {}  # per member name: the child of this process, kept to collect its exit status
@@ -538,36 +547,26 @@ def member_log_tail(log_path: str) -> str:
     return visible_encodable_text(tail, "utf-8").replace("\n", "\\n") if tail else "(log empty)"
 
 
-def wait_until_member_listens(process: subprocess.Popen, record: MemberRecord):
-    """Returns once the log of record holds the listener's first line. Raises MemberStartError, with the log's last lines, when the process
-    ends before that or MEMBER_START_TIMEOUT_SECONDS pass; the process may then still run."""
-    ready_line_start = f"{LISTENER_READY_LINE_PREFIX}agent {record.name}, ".encode("ascii")
-    deadline = time.monotonic() + MEMBER_START_TIMEOUT_SECONDS
-    while True:
-        exit_status = process.poll()
-        with open(record.log_path, "rb") as log_file:
-            if any(line.startswith(ready_line_start) for line in log_file.read(MEMBER_START_LOG_BYTES).splitlines()):
-                return
-        if exit_status is not None:
-            raise MemberStartError(f"{record.name} ended with status {exit_status} before it listened. Its log {record.log_path} ends: {member_log_tail(record.log_path)} (end of log).")
-        if time.monotonic() >= deadline:
-            raise MemberStartError(f"{record.name} did not listen within {MEMBER_START_TIMEOUT_SECONDS:g} s and was stopped. "
-                                   f"Its log {record.log_path} ends: {member_log_tail(record.log_path)} (end of log).")
-        time.sleep(MEMBER_CHECK_SECONDS)
+def available_memory_bytes() -> int | None:
+    """Returns MemAvailable of /proc/meminfo in bytes; None when the system has no such file or line."""
+    try:
+        with open("/proc/meminfo", "rb") as memory_file:
+            for line in memory_file:
+                if line.startswith(b"MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, IndexError, ValueError):
+        pass
+    return None
 
 
-def start_member(settings: MessageSettings, folder: MessageFolder, working_directory: str) -> MemberRecord:
-    """Starts one `bpsa listen` process named <settings.agent_name>-<k> that reads only folder, cannot start agents itself, runs in
-    working_directory, in its own session, and logs to <name>.log in folder; k is one above the highest k that has a record. It writes
-    the record, waits until the member listens and returns the record. Raises MemberStartError or OSError; then no process is left."""
-    records = own_member_records(settings)
-    live_names = [record.name for record in records if is_member_live(record)]
-    if len(live_names) >= settings.max_group_members:
-        raise MemberStartError(f"{len(live_names)} of your agents run ({', '.join(live_names) or 'none'}) and BPSA_MAX_GROUP_MEMBERS is "
-                               f"{settings.max_group_members}: you cannot start another{' before you stop one with stop_agent' if live_names else ''}.")
-    name = f"{settings.agent_name}-{1 + max((member_number(settings.agent_name, record.name) for record in records), default=0)}"
-    if not is_valid_agent_name(name):
-        raise MemberStartError(f"the member name {name} is longer than 64 characters; this agent's own name leaves no room for a member number.")
+def member_start_timeout_seconds(member_count: int) -> float:
+    """Returns how long start_members waits for member_count members that start at the same time."""
+    return MEMBER_START_TIMEOUT_SECONDS + (member_count - 1) * MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER
+
+
+def launch_member(settings: MessageSettings, folder: MessageFolder, working_directory: str, name: str) -> tuple[subprocess.Popen, MemberRecord]:
+    """Starts the `bpsa listen` process of the member name without waiting for it and returns it with its record, which is not written
+    yet; the record's start ticks are -1 when /proc/<process id>/stat could not be read. Raises OSError; then no process was started."""
     log_path = os.path.join(folder.path, f"{name}.log")
     package_parent_folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the member runs this code from any working directory
     environment = dict(os.environ) | {
@@ -584,20 +583,93 @@ def start_member(settings: MessageSettings, folder: MessageFolder, working_direc
                                    stderr=subprocess.STDOUT, cwd=working_directory, env=environment, start_new_session=True)
     _started_member_processes[name] = process
     state_and_start_ticks = process_state_and_start_ticks(process.pid)
-    record = MemberRecord(name, folder, process.pid, -1 if state_and_start_ticks is None else state_and_start_ticks[1], log_path)
-    try:
-        if state_and_start_ticks is None:
-            raise MemberStartError(f"/proc/{process.pid}/stat could not be read, so {name} could not be told from a later process with its id; it was stopped.")
-        replace_file_with_text(member_record_path(folder.path, name), json.dumps({
-            "name": name, "process_id": record.process_id, "process_start_ticks": record.process_start_ticks, "log_path": log_path,
-            "start_time": time.strftime("%Y-%m-%d %H:%M:%S %z"), "working_directory": working_directory}, indent=1) + "\n")
-        wait_until_member_listens(process, record)
-    except BaseException:
-        if state_and_start_ticks is None:
+    return process, MemberRecord(name, folder, process.pid, -1 if state_and_start_ticks is None else state_and_start_ticks[1], log_path)
+
+
+def write_member_record(record: MemberRecord, working_directory: str):
+    """Writes record as .<name>.agent.json in its folder. Raises MemberStartError for a record without start ticks, or OSError."""
+    if record.process_start_ticks < 0:
+        raise MemberStartError(f"/proc/{record.process_id}/stat could not be read, so {record.name} could not be told from a later process with its id; it was stopped.")
+    replace_file_with_text(member_record_path(record.folder.path, record.name), json.dumps({
+        "name": record.name, "process_id": record.process_id, "process_start_ticks": record.process_start_ticks, "log_path": record.log_path,
+        "start_time": time.strftime("%Y-%m-%d %H:%M:%S %z"), "working_directory": working_directory}, indent=1) + "\n")
+
+
+def errors_of_members_that_do_not_listen(launched: dict[str, tuple[subprocess.Popen, MemberRecord]], timeout_seconds: float) -> dict[str, Exception]:
+    """Waits until the log of every launched member holds the listener's first line, its process has ended, or timeout_seconds have passed.
+    Returns, per name of a member that does not listen, a MemberStartError with the log's last lines or the OSError of its log; its process may still run."""
+    errors = {}
+    pending_names = list(launched)
+    deadline = time.monotonic() + timeout_seconds
+    while pending_names:
+        is_time_over = time.monotonic() >= deadline
+        for name in list(pending_names):
+            process, record = launched[name]
+            exit_status = process.poll()
+            ready_line_start = f"{LISTENER_READY_LINE_PREFIX}agent {name}, ".encode("ascii")
+            try:
+                with open(record.log_path, "rb") as log_file:
+                    if any(line.startswith(ready_line_start) for line in log_file.read(MEMBER_START_LOG_BYTES).splitlines()):
+                        pending_names.remove(name)
+                        continue
+            except OSError as error:
+                errors[name] = error
+            if name not in errors and exit_status is not None:
+                errors[name] = MemberStartError(f"{name} ended with status {exit_status} before it listened. Its log {record.log_path} ends: {member_log_tail(record.log_path)} (end of log).")
+            if name not in errors and is_time_over:
+                errors[name] = MemberStartError(f"{name} did not listen within {timeout_seconds:g} s and was stopped. "
+                                                f"Its log {record.log_path} ends: {member_log_tail(record.log_path)} (end of log).")
+            if name in errors:
+                pending_names.remove(name)
+        if pending_names:
+            time.sleep(MEMBER_CHECK_SECONDS)
+    return errors
+
+
+def stop_launched_members(launched: list[tuple[subprocess.Popen, MemberRecord]]):
+    """Stops the given members of launch_member; it kills a process whose record has no start ticks, which stop_members does not signal."""
+    for process, record in launched:
+        if record.process_start_ticks < 0:
             process.kill()
-        stop_members([record])
+    stop_members([record for process, record in launched])
+
+
+def start_members(settings: MessageSettings, folder: MessageFolder, working_directory: str, member_count: int) -> list[MemberStartResult]:
+    """Starts member_count `bpsa listen` processes at the same time, named <settings.agent_name>-<k> with consecutive k from one above the
+    highest k that has a record. Each reads only folder, cannot start agents itself, runs in working_directory, in its own session, and logs
+    to <name>.log in folder. It launches each and writes its record, then waits until all listen or have failed, stops those that failed and
+    returns one result per name, in name order. Raises MemberStartError or OSError when it started none; any other exception stops them all."""
+    records = own_member_records(settings)
+    live_names = [record.name for record in records if is_member_live(record)]
+    if len(live_names) + member_count > settings.max_group_members:
+        can_start = "you cannot start another" if member_count == 1 else f"you may start {settings.max_group_members - len(live_names)} more, not {member_count},"
+        stop_hint = " before you stop one with stop_agent" if live_names else ""
+        raise MemberStartError(f"{len(live_names)} of your agents run ({', '.join(live_names) or 'none'}) and BPSA_MAX_GROUP_MEMBERS is "
+                               f"{settings.max_group_members}: {can_start if stop_hint else can_start.rstrip(',')}{stop_hint}.")
+    highest_number = max((member_number(settings.agent_name, record.name) for record in records), default=0)
+    names = [f"{settings.agent_name}-{highest_number + offset}" for offset in range(1, member_count + 1)]
+    if not is_valid_agent_name(names[-1]):
+        raise MemberStartError(f"the member name {names[-1]} is longer than 64 characters; this agent's own name leaves no room for a member number.")
+    available_bytes = available_memory_bytes()
+    if available_bytes is not None and member_count * MEMBER_MEMORY_BYTES > available_bytes:
+        megabyte = 1024 * 1024
+        raise MemberStartError(f"starting {member_count} agent(s) needs about {member_count * MEMBER_MEMORY_BYTES // megabyte:,} MB of memory ({MEMBER_MEMORY_BYTES // megabyte} MB each) "
+                               f"and this machine has {available_bytes // megabyte:,} MB available: you may start {available_bytes // MEMBER_MEMORY_BYTES} now.")
+    launched: dict[str, tuple[subprocess.Popen, MemberRecord]] = {}
+    errors: dict[str, Exception] = {}
+    try:
+        for name in names:
+            try:
+                launched[name] = launch_member(settings, folder, working_directory, name)
+                write_member_record(launched[name][1], working_directory)
+            except (OSError, MemberStartError) as error:
+                errors[name] = error
+        errors |= errors_of_members_that_do_not_listen({name: launched[name] for name in launched if name not in errors}, member_start_timeout_seconds(member_count))
+    except BaseException:
+        stop_launched_members(list(launched.values()))
         raise
-    return record
+    stop_launched_members([launched[name] for name in errors if name in launched])
+    return [MemberStartResult(name, None if name in errors else launched[name][1], errors.get(name)) for name in names]
 
 
 def stop_members(records: list[MemberRecord]) -> list[str]:
