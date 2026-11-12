@@ -10,6 +10,7 @@
 bpsa              # Interactive REPL (default)
 bpsa run "task"   # One-shot mode
 echo "task" | bpsa  # Piped input (one-shot, detected via stdin.isatty())
+bpsa listen       # No keyboard: run on agent-to-agent messages (see Agent-to-Agent Messages)
 ```
 
 Unless auto-approve is on, `bpsa` asks before it runs code or writes files,
@@ -96,6 +97,10 @@ matter. For any other value, `bpsa` prints a warning and uses the setting's defa
 | `BPSA_MAX_SESSION_COST` | No | `0` | Session cost budget in USD, same rule, compared against the session's `total_cost_usd`. It only works when the model reports a cost (OpenRouter `usage.cost`) or the `BPSA_PRICE_*` variables allow an estimate; without a known cost the total stays 0 and the limit never triggers. |
 | `BPSA_INJECT_FOLDER` | No | `true` | Inject directory tree (`false`, `true` = cwd, or a path) |
 | `BPSA_MCP` | No | `''` | Newline-separated list of MCP servers (URLs or stdio commands). Merged with `--mcp` CLI flags. |
+| `BPSA_AGENT_NAME` | No | - | This process's agent name for agent-to-agent messages: 1 to 64 lowercase ASCII letters, digits or `-`, not starting with `-`, not `all`. Unset or empty turns messages off, and the three variables below are then ignored. An invalid value stops `bpsa` at startup with one error line. When it is set, the agent has the tool `send_message(to, text, folder?)`: `to` is an agent name or `all`, `folder` the label of one of the message folders (needed only with several), `text` at most 100,000 characters (the `send` command below and every other writer have the same limit, and a reader shows a message file above 600,000 bytes as one bracketed line). It also has `wait_for_messages(timeout_seconds)`. Unless `BPSA_MAX_GROUP_MEMBERS` is `0`, it also has `start_agent(folder?, working_directory?, count?)`, which starts one `bpsa listen` process (or `count` of them at the same time) named `<own name>-<k>` on one of its folders and returns each one's name, process id and log file, and `stop_agent(name)` (`all` = every agent it started). |
+| `BPSA_MESSAGE_FOLDERS` | With `BPSA_AGENT_NAME` | - | Message folders, one existing folder path per line (as `BPSA_MCP`). The last path component labels each folder (`/x/y/leaders` is `leaders`); two folders with the same label are an error. |
+| `BPSA_MESSAGE_POLL_SECONDS` | No | `60` | Seconds between message folder checks; any number above 0, fractions allowed. |
+| `BPSA_MAX_GROUP_MEMBERS` | No | `9` | How many agents started with `start_agent` this agent may have running at once; a whole number, 0 or more. `start_agent(count=N)` starts none when the running agents plus `N` exceed it, or when `N` x 260 MB exceeds the machine's available memory (`MemAvailable` in `/proc/meminfo`). With `0` the tools `start_agent` and `stop_agent` do not exist; `start_agent` sets `0` for every agent it starts; the `start` command sets its `--max-members` value. Each started agent logs to `<name>.log` in its message folder and is recorded in `.<name>.agent.json` there (process id, log path, start time, working directory, message folders, member limit). An agent that ends in an orderly way (`/exit`, end of `bpsa run`, `bpsa listen` stopped by SIGTERM) first stops the agents it started. |
 | `BPSA_COPILOT_MODEL_ID` | No | - | When set, enables the **GitHub Copilot** tool (`GitHubCopilotCoder`). Value is the Copilot model ID to use (e.g. `claude-sonnet-4.6`). Requires the `github-copilot-sdk` package. |
 
 ### Tool-Enabling Environment Variables
@@ -373,6 +378,350 @@ did, the command-line flag that set it (for example `--auto-approve`), or
 the slash command that changed the value mid-session. `bp_cli.py` never
 reads the `~/.bpsa.yaml` file listed under Configuration Layering; only these
 sources apply.
+
+## Agent-to-Agent Messages
+
+Several `bpsa` processes can exchange messages through plain files in shared
+folders. Nothing else connects them: no server, no socket. The feature is off
+unless `BPSA_AGENT_NAME` is set (see Environment Variables for the four
+settings).
+
+### Message files
+
+A message is one UTF-8 text file named `from_to_id.txt` in a message folder,
+for example `leader1_all_000003.txt`:
+
+- `from` and `to` are agent names (1 to 64 lowercase ASCII letters, digits or
+  `-`). `to` may also be `all`: every agent that reads the folder receives it,
+  except the sender.
+- `id` counts the sender's messages in that folder, starting at `000001`.
+
+A reset request (see Reset below) is an empty file named `from_to_id.reset`,
+for example `boss_agent31_000004.reset`. Its `id` comes from the same counter
+as the sender's messages. Only the file name makes it a reset request: the
+`send` command and `send_message` always write `.txt`, so no message text can
+reset an agent. A bpsa version from before reset requests ignores such a file.
+
+A folder is addressed by its label, the last component of its path. Besides
+messages, a folder holds hidden files per agent: `.<name>.lock`,
+`.<name>.read.json` (the last id read per sender), for a `bpsa listen` process
+`.<name>.status.json` (its state, see `status` below) and, for agents started
+with `start_agent` or the `start` command, `.<name>.agent.json` and the log
+`<name>.log`. Each agent name must belong to one process per folder.
+
+Message files (`*.txt`) and reset requests (`*.reset`) that were read may be deleted at any time, also while
+agents run; the hidden files must stay, because `.<name>.lock` holds the
+sender's highest id, so its ids never go down. To reset a folder completely,
+stop its agents and delete everything in it, hidden files included. Deleting a
+sender's `.<name>.lock` together with its newest messages while a reader's
+`.<reader>.read.json` stays makes that sender's ids start lower again, and the
+reader then skips its messages up to the last id it had read.
+
+### What an agent has
+
+| | |
+|---|---|
+| `send_message(to, text, folder?)` | Writes one message. `folder` is needed only by an agent with several folders. |
+| `start_agent(folder?, working_directory?, count?)` | Starts one `bpsa listen` process named `<own name>-<k>` on that folder and returns when it listens (about 30 s). With `count=N` it starts `N` processes at the same time, with consecutive `k`, and returns when each listens or has failed (measured on one processor: 29 s for one, 41 s for two, 57 s for three), with one line per agent; those that failed are stopped, the others stay. It starts none when `N` exceeds the limit or the available memory. A new agent cannot start agents itself. |
+| `stop_agent(name)` | Stops an agent that the caller started; `all` stops each of them. |
+| `reset_agent(name, folder?)` | Writes a reset request to the agent `name`, or with `all` to every `bpsa listen` agent in that folder except the caller (see Reset). It returns at once; each agent that reset answers with a message starting `Reset done:`. Only agents that may start agents (`BPSA_MAX_GROUP_MEMBERS` above 0) have this tool, as `start_agent` and `stop_agent`; an agent started with `start_agent` has no `reset_agent` tool. |
+| `wait_for_messages(timeout_seconds)` | Blocks the code step until at least one message has arrived or `timeout_seconds` (above 0, at most 3,600; any other value raises an exception) have passed; meanwhile the folders are checked every second. It prints the new messages into the step's execution log and returns how many it printed; it returns 0 only when none arrived in that time. The tool prints only into the first 10,000 characters of the execution log (a log above 20,000 characters keeps its first and last 10,000) and in the order of arrival. When a message has arrived that does not fit there, the tool raises an exception instead of returning: the code step ends, its error text says how many messages wait, and they are delivered right after the step (with the next task when that step was the last one the run may take). A further call in the same code step raises again at once. With `BPSA_GLOBAL_EXECUTOR=local` the tool cannot print into the execution log, so it raises for every message; that executor at present ends the run on any exception of a code step, and the messages are then delivered with the next task. A printed message is recorded as read once its code step has ended, the step's output or error text holds the message and the step is in the agent's memory: before the next step, or when the run ends (REPL and `bpsa listen`; `bpsa run` does not record the messages printed in its last step). After an interrupt (Ctrl-C, SIGINT, SIGTERM) or a failure before that point the message is delivered again: with the next task or after a restart. |
+| Incoming messages | Checked every `BPSA_MESSAGE_POLL_SECONDS` without a model call. They reach the model between two steps of a run, or with the next task when the agent is idle. A message counts as read when it is handed to a run. |
+
+The model sees each message as a block; every line of the text starts with
+`|`, so a message cannot imitate the header of another:
+
+```
+=== message 1 from leader1 to agent31 in folder group1 ===
+| Please write one haiku about rivers.
+=== end of message 1 from leader1 ===
+```
+
+The system prompt tells the agent to treat messages as requests from its team,
+and to do what the user asked where a message conflicts with it.
+
+### `bpsa listen`
+
+`bpsa listen` waits for messages, runs the agent on them, and waits again. It
+keeps its memory between runs and makes no model call while it waits. It never
+reads stdin and needs auto-approve on (`--auto-approve on` or
+`BPSA_AUTO_APPROVE=on`); it writes no file in the home directory. Redirect its
+output to a log file. It is up when the log shows a line starting
+`Listening for messages: agent <name>, folders`. SIGTERM ends it with status 0
+after it has stopped the agents it started; a reset request (see Reset) clears
+its memory and keeps the process. Nobody reads its final answers:
+the agent must reply with `send_message`. The messages of a failed or
+interrupted run are not delivered again, except those that
+`wait_for_messages` printed in the code step that was in progress.
+
+At each change of state `bpsa listen` replaces the file `.<name>.status.json`
+in each of its folders (by rename): its process id, the state (`starting`,
+`idle`, `busy`, `resetting`, `ended`), when that state began, the number of
+the run in progress, the runs done and the input and output tokens of the runs
+done. The `status` command below reads it. Only `bpsa listen` writes this
+file; an interactive session and `bpsa run` do not. A file that cannot be
+written (a directory at its path) costs one line in the log and nothing else.
+
+### Reset
+
+A reset gives a `bpsa listen` agent a fresh start without stopping its process
+(a start takes about 30 s): for a new topic, or for an agent that is stuck.
+It is sent with `reset_agent` or with the `reset` command below, to one agent
+name or to `all` (every `bpsa listen` agent that reads the folder, except the
+sender). No model takes part: the listener finds the request at its next
+folder check (every `BPSA_MESSAGE_POLL_SECONDS`; every second while it is in
+`wait_for_messages`) and then:
+
+1. leaves the task in progress at once, also in the middle of a model call or
+   a code step (as SIGTERM does), and nothing of that task runs afterwards;
+2. replaces its agent by a new one, as `/clear` does in the interactive
+   session;
+3. answers the sender with a message written by code:
+   `Reset done: agent <name> cleared its conversation and its Python variables on reset <id> from <sender> (<N> unread messages discarded). Its next task starts in a fresh context.`
+   When several requests are found before the agent is replaced (from
+   several senders or folders), one replacement serves them all, each sender
+   gets its own message, and `<N>` is the total of that replacement:
+   `(<N> unread messages discarded in total for the <K> reset requests served by this one replacement)`.
+
+A process that has just started has a fresh context: the reset requests it
+finds at its first check of a folder (old requests to its name or to `all`)
+are recorded as read and neither carried out, refused nor answered. Requests
+written after that check are handled as described here.
+
+Cleared: the conversation, the knowledge notepad, the plan, the Python
+variables of the code executor; the browser, GUI and MCP connections of the
+old agent are closed and opened again. Kept: the process, the agent name, the
+folders, the last id read per sender (no old message is delivered again), and
+the session token and cost totals with `BPSA_MAX_SESSION_TOKENS` and
+`BPSA_MAX_SESSION_COST`, so a reset is no way around a budget. Not undone:
+files, the working directory of the process, imported modules, environment
+variables, tmux sessions and child processes of the old context.
+
+Messages around a reset:
+
+- Messages that the listener had queued when it found the request are
+  discarded: recorded as read and never shown. With several pending requests
+  these are the messages queued before the first of them was found.
+- Messages of the request's sender with an id below the request (in the same
+  folder) are discarded too. So `send`, `reset`, `send` in this order delivers
+  only the last one.
+- Every other message reaches the fresh context: the sender's messages with an
+  id above the request, other senders' messages found together with it or
+  later, also those of another folder.
+
+Agents that the reset agent had started keep running and keep their own
+context. When some run, the first task after the reset starts with one line:
+`Before your context was reset you started these agents, and they still run: leader1-1 (folder group1). They kept their own context and know nothing of your reset; stop those you no longer need with stop_agent.`
+A folder that cannot be listed then (removed, for example) adds no agent to
+that line; the listener prints one line naming it and runs the task.
+
+Only `bpsa listen` resets. An interactive session or a `bpsa run` with the
+same name keeps its context, shows one line and answers
+`Reset refused: agent <name> is not a 'bpsa listen' process, so reset <id> from <sender> changed nothing. Only a 'bpsa listen' process resets.`
+It records the request as read, so no later process under that name refuses it again.
+The `new` and `wait` commands pass over a reset request without output. A
+name that nobody listens under gives no answer. The sender is not checked:
+any agent that can write to the folder can reset any listener in it.
+
+Measured with a 5 s poll interval, from the request file to the confirmation
+file: 2.0 to 2.9 s for an idle listener, 0.5 s during `wait_for_messages`,
+0.3 s during a `time.sleep` code step and 4.4 s during a model call (the poll
+wait is part of each).
+
+### Commands for a person or an outside program
+
+```bash
+python -m smolagents.bp_messages send --folder F --name ME --to TARGET "text"   # text from stdin when absent or "-"
+python -m smolagents.bp_messages reset --folder F --name ME --to TARGET         # reset one `bpsa listen` agent, or `all`; prints the request's file name
+python -m smolagents.bp_messages new  --folder F --name ME [--peek]             # print unread messages
+python -m smolagents.bp_messages wait --folder F --name ME [--timeout 300]      # block until one arrives; exit 3 on timeout
+python -m smolagents.bp_messages start --folder F --name ME [--count N] [--directory D] [--group-folder G]... [--max-members M]
+python -m smolagents.bp_messages stop AGENT|all --folder F --name ME
+python -m smolagents.bp_messages list   --folder F --name ME | --all
+python -m smolagents.bp_messages status --folder F --name ME | --all
+```
+
+`--folder` and `--name` default to `BPSA_MESSAGE_FOLDERS` (when it has one
+line) and `BPSA_AGENT_NAME`. Every command prints plain lines on stdout and
+exits with 0; a refusal prints one line `Error: ...` on stderr and exits with
+1 (`wait`: 3 on timeout).
+
+#### Leading bpsa agents from another program: `start`, `stop`, `list`, `status`
+
+With these four commands a program that can only run shell commands (a script,
+or an AI agent of another kind) starts `bpsa listen` agents, gives them tasks
+with `send`, reads their replies with `wait` and stops them. `--name ME` is
+the name of the caller: the agents it starts are named `ME-1`, `ME-2`, ...
+and reply to `ME`.
+
+**`start`** does what `start_agent` does (the same routine): it starts one
+`bpsa listen` process, or `--count N` at the same time, in folder `F`, waits
+until each listens (about 30 s for one) and returns. The agents keep running
+after the command and after the shell that ran it; each runs in its own
+session with its output in `F/<name>.log`, so the command also returns when
+its output is a pipe.
+
+> **An agent started this way runs with auto-approve on: it acts on every
+> message it receives — runs code and shell commands, changes files — without
+> a person approving any step.** Anyone who can write a file into its message
+> folder can give it a task. Start it only in a working directory and with
+> folder permissions where that is acceptable.
+
+- `--directory D`: the existing directory the agents work in (default: the
+  current directory).
+- `--group-folder G` (may be repeated) and `--max-members M`: make each new
+  agent a leader. It reads `G` in addition to `F` and may start `M` agents of
+  its own with `start_agent`, in any of its folders. Without these options the
+  agent reads only `F` and cannot start agents (`M` is 0). `G` must exist and
+  its last path component must differ from that of `F`.
+- The caller's own limit is `BPSA_MAX_GROUP_MEMBERS` (default 9) agents
+  running at once in `F`; set it in the environment of the `start` command to
+  change it (10 leaders: `BPSA_MAX_GROUP_MEMBERS=10`). The agents check their
+  folders every `BPSA_MESSAGE_POLL_SECONDS` of that environment (default 60;
+  `2` makes a task start within 2 s). The API settings and every other
+  variable also come from the environment of the `start` command; there are
+  no model or budget options.
+- Output, one line per agent started:
+  `Started agent ME-1 (process 245035, log F/ME-1.log). It listens in folder f and knows nothing yet: send it a task with the send command, --to ME-1.`
+  With `--count` above 1 a first line `Started 2 of 2 agents: ME-2, ME-3.`
+  (with ` Not started: ME-3.` when one failed) comes before them.
+- Exit status: 0 when every agent listens; 1 when none was started (one
+  `Error: ... No agent was started.` line: limit, available memory, unknown
+  folder or directory, invalid name); 2 when some listen and some do not (one
+  stderr line `Error: agent ME-3 was not started: <reason>` for each that does
+  not).
+
+**`stop AGENT`** stops one agent that `ME` started in `F` (SIGTERM, then
+SIGKILL after 20 s) and prints `Stopped ME-1 (process 245035).`, or
+`ME-1 was not running.` when it had already ended; both exit with 0.
+`stop all` stops every running agent of `ME` in `F`, one line each, or prints
+`No agent started by ME is running in folder f; nothing was stopped.` A name
+that is not `ME-<k>` or has no record in `F` is an `Error:` with exit 1. A
+leader that receives SIGTERM first stops the agents it started; `stop` then
+adds the line
+`The agents that ME-1 had started have ended: ME-1-1, ME-1-2.`
+When the leader left some of them running (it was killed, or did not end
+within 20 s), `stop` stops those too and prints
+`ME-1 left 1 of the agents it started running: Stopped ME-1-1 (process 4711).`
+This also works for a leader that had ended before the command.
+
+**`list`** prints one line per agent that `ME` started in `F`, running or
+not, from the files `.<name>.agent.json`:
+
+```
+ME-1 live process=245035 max_members=0 log="/path/F/ME-1.log" folders=["/path/F"]
+ME-2 ended process=245101 max_members=3 log="/path/F/ME-2.log" folders=["/path/F", "/path/G"]
+```
+
+The second word is `live` or `ended`. `log` is a JSON string and `folders` a
+JSON list, so a path with spaces stays one value. `process=unknown` and a
+last field `note="..."` mark a record file that could not be read. `list
+--all` prints every record in `F`, whoever started the agent (for example the
+members a leader started in its group folder); it needs no `--name`.
+
+**`status`** prints one line per agent with no model call and without
+touching the agent: it reads `.<name>.status.json` and tests whether the
+process that wrote it still runs.
+
+```
+ME-1 state=idle run=- runs_done=2 input_tokens=23605 output_tokens=119 since=2026-11-12T14:44:00-0300 seconds=6 process=245035
+ME-2 state=busy run=2 runs_done=1 input_tokens=11686 output_tokens=49 since=2026-11-12T14:43:33-0300 seconds=0 process=245101
+ME-3 state=ended run=- runs_done=3 input_tokens=35304 output_tokens=197 since=2026-11-12T14:47:05-0300 seconds=7 process=245207 note="stopped by SIGTERM while waiting for messages"
+```
+
+| Field | Meaning |
+|---|---|
+| `state` | `starting` (not listening yet), `idle` (waiting for messages), `busy` (a run is in progress), `resetting`, `ended`, or `unknown` (the process of the record runs but has no readable status file of its own; `note` says why). |
+| `run` | The number of the run in progress when `busy`, otherwise `-`. A run is one task: the agent working on one batch of messages. |
+| `runs_done` | Runs finished since the process started (a reset does not set it back). |
+| `input_tokens`, `output_tokens` | Tokens of the finished runs; the run in progress is added when it ends. |
+| `since`, `seconds` | When the state began (local time with UTC offset) and how many seconds ago. |
+| `process` | The process id. |
+| `note` | Optional last field, a JSON string: what ended the process, or why a value is `unknown`. |
+
+A process that was killed cannot record `ended`: `status` then shows
+`state=ended since=unknown seconds=unknown` and
+`note="the process ended without recording it; last recorded state: busy in run 2 since <time>"`,
+never `busy`. Values that no file gives are `unknown`. Without `--all`,
+`status` shows the agents `ME` started in `F`; `status --all` shows every
+agent with a record or a status file in `F`, also a `bpsa listen` process
+started by hand or by another agent's `start_agent`. A leader writes its
+status file in each of its folders, so it also appears in `status --all` of
+its group folder. When no agent matches, `list` and `status` print nothing on
+stdout, one line on stderr, and exit with 0.
+
+Walk-through, as an agent named `claude` runs it with shell commands only.
+The times are the wall time of each command in one run on 2026-11-12 (one
+processor with a load average of 3 to 4, model `anthropic/claude-opus-5-5`);
+the whole sequence took 111 s:
+
+```bash
+M="python -m smolagents.bp_messages"; F=/path/to/folder; export BPSA_MESSAGE_POLL_SECONDS=2
+mkdir -p $F
+$M start  --folder $F --name claude                    # 40 s: Started agent claude-1 (process ..., log ...)
+$M send   --folder $F --name claude --to claude-1 "What is 17 * 23? Reply to claude with the number only."   # 6 s
+$M wait   --folder $F --name claude --timeout 300      # 10 s: the reply as a message block, "| 391"
+$M status --folder $F --name claude                    # 6 s: claude-1 state=idle run=- runs_done=1 input_tokens=11695 ...
+$M reset  --folder $F --name claude --to claude-1      # 6 s: fresh context for the next topic
+$M wait   --folder $F --name claude --timeout 60       # 6 s: | Reset done: agent claude-1 cleared ...
+$M send   --folder $F --name claude --to claude-1 "Next task ..."   # 6 s
+$M wait   --folder $F --name claude --timeout 300      # 7 s
+$M stop claude-1 --folder $F --name claude             # 13 s: Stopped claude-1 (process ...).
+```
+
+About 6 s of each command was the start of Python with the `smolagents`
+package under that load (1.6 s on the same machine with less load), so a
+command that only writes a file took as long as one that waited for a reply.
+`start` took 27 s for one agent and 68 s for `--count 2` in other runs of
+that day. To lead leaders, start
+them with their own group folders, for example
+`$M start --folder $F --name claude --count 2 --group-folder $G --max-members 9`
+gives both leaders the same folder `G`; start them one by one with different
+`--group-folder` values to give each its own. `stop` of a leader also ends the
+members it started.
+
+### Example: one leader and two members
+
+A person acts as `boss` and talks to `leader1` in the folder `leaders`;
+`leader1` talks to the members it starts in the folder `group1`.
+
+```bash
+S=/path/to/trial
+mkdir -p $S/leaders $S/group1 $S/work && cd $S/work
+BPSA_AGENT_NAME=leader1 \
+BPSA_MESSAGE_FOLDERS="$S/leaders
+$S/group1" \
+BPSA_AUTO_APPROVE=on BPSA_MESSAGE_POLL_SECONDS=5 BPSA_MAX_GROUP_MEMBERS=2 \
+  nohup bpsa --verbose on listen < /dev/null > $S/leader1.log 2>&1 &
+echo $! > $S/leader1.pid
+# wait until:  grep -c '^Listening for messages: agent leader1' $S/leader1.log   prints 1
+
+python -m smolagents.bp_messages send --folder $S/leaders --name boss --to leader1 \
+  "Start two members in your group folder. Ask the first for a haiku about rivers and the second for one about mountains. Send me both, their authors and your choice. Then stop both members."
+python -m smolagents.bp_messages wait --folder $S/leaders --name boss --timeout 420
+
+kill -TERM $(cat $S/leader1.pid)    # stops the leader and any member still running
+```
+
+In a run on 2026-11-11 the report from `leader1` arrived 2 min 25 s after the
+task was sent: 5 s until the leader's poll, 70 s to start the two members one
+after the other, 9 s for both members to answer, and about 55 s that the
+leader spent in a `time.sleep(60)` it chose to wait for the replies.
+`--verbose on` makes the leader's tool calls visible in its log.
+
+### Limits
+
+- A leader that is killed (SIGKILL) or dies from an unhandled error leaves the
+  agents it started running; their process ids are in the `.agent.json` files.
+  The `stop` command for that leader, run by whoever started it with `start`,
+  stops them.
+- Agent names are not protected: `stop --name X` stops the agents recorded as
+  started by `X`, whoever runs the command.
+- `start_agent` needs `/proc` (Linux).
+- Without `fcntl` (Windows) the per-sender lock is absent; one process per
+  name is still safe.
+- An agent started with `start_agent` has no `start_agent` tool, but the code
+  it runs is not sandboxed.
 
 ## Tmux Multi-Screen Tools
 

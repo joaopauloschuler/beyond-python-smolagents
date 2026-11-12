@@ -30,6 +30,10 @@ Environment variables:
     BPSA_PRICE_CACHED_INPUT_PER_M - USD per million cached input tokens (default: BPSA_PRICE_INPUT_PER_M)
     BPSA_VERBOSE        - Verbose output (0 or 1, default: 0)
     BPSA_AUTO_APPROVE - on/off: auto-approve tag execution when --auto-approve is not given (default: off)
+    BPSA_AGENT_NAME     - Agent name for agent-to-agent messages: 1-64 of a-z, 0-9, '-'; unset/empty = messages off
+    BPSA_MESSAGE_FOLDERS - Message folders, one path per line; each is named by its last path component (required with BPSA_AGENT_NAME)
+    BPSA_MESSAGE_POLL_SECONDS - Seconds between message folder checks, a number above 0 (default: 60)
+    BPSA_MAX_GROUP_MEMBERS - Agents this agent may have running through its start_agent tool, a whole number (default: 9; 0 = no start_agent tool)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -58,14 +62,19 @@ Environment variables:
     ELEVENLABS_API_KEY        - API key for ElevenLabs transcriber (required when using elevenlabs)
 """
 
+import atexit
+import contextlib
+import locale
 import os
 import queue
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
+import tokenize
 
 from smolagents.utils import truncate_content
 from rich.console import Console
@@ -74,7 +83,11 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
+from smolagents.bp_messages import (
+    LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, discarded_messages_phrase, live_members_line,
+    load_message_settings, message_prompt_paragraph, model_text_of_queued_messages, reset_done_text, stop_live_members, write_agent_status, write_message,
+)
+from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
 
 VERSION = "1.24-bp"
@@ -85,6 +98,14 @@ _verbose = False
 # Mutable state for auto-approve mode
 _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
+# Agent-to-agent message settings, validated once at startup by load_message_settings_or_fail; None = feature off
+_message_settings: MessageSettings | None = None
+# The one MessagePoller of this process, started by start_message_poller; None = feature off or not started yet
+_message_poller: MessagePoller | None = None
+MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS = 2000
+# A list while an agent run is in progress (message_poller_lines_held), else None; guarded by _message_poller_line_lock
+_held_message_poller_lines: list[str] | None = None
+_message_poller_line_lock = threading.Lock()
 
 TRUNCATE_PREVIEW_LINES = 5
 TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
@@ -214,6 +235,17 @@ def print_with_console_highlighting(line: Text) -> None:
     console.print(highlighted_line)
 
 
+def read_text_or_print_error(filepath: str, open_text=open) -> str | None:
+    """Returns the text of filepath, decoded as open_text decodes it (open: the locale encoding).
+    When filepath cannot be read or decoded, prints one line naming it and the reason and returns None."""
+    try:
+        with open_text(filepath) as f:
+            return f.read()
+    except (OSError, UnicodeDecodeError, SyntaxError, MemoryError) as e:
+        print_with_console_highlighting(console_literal(f"Not read: {filepath}: {str(e) or type(e).__name__}", "red"))
+        return None
+
+
 def _compact_step_callback(step):
     """Step callback that prints a compact one-liner when verbose is off."""
     if _verbose:
@@ -276,7 +308,7 @@ def _print_user_message(message: str):
 
 
 def fail(msg: str):
-    console.print(f"[bold red]Error:[/] {msg}", highlight=False)
+    console.print(Text.assemble(console_literal("Error:", "bold red"), " ", console_literal(msg, "")))
     sys.exit(1)
 
 # Names added from a .env file, including by the load in remote_executors.py while smolagents is imported.
@@ -292,10 +324,145 @@ def try_load_dotenv():
         return
     _dotenv_checked_paths.add(env_path)
     if os.path.isfile(env_path):
-        _dotenv_keys.update(load_dotenv_recording_names(env_path))
-        console.print(f"[green]Loaded .env from:[/] {env_path}")
+        if load_dotenv_recording_names(env_path) is not None:
+            console.print(f"[green]Loaded .env from:[/] {env_path}")
     else:
         console.print("[dim]No .env file found in current directory.[/]")
+
+
+def load_message_settings_or_fail() -> MessageSettings | None:
+    """Returns load_message_settings(); for invalid settings, fail prints its one-line reason and exits with status 1."""
+    try:
+        return load_message_settings()
+    except MessageSettingsError as error:
+        fail(str(error))
+
+
+def message_settings_text(settings: MessageSettings) -> str:
+    folders = ", ".join(f"{folder.label} ({folder.path})" for folder in settings.folders)
+    return f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s, may start {settings.max_group_members} agents"
+
+
+def print_message_settings(settings: MessageSettings):
+    print_with_console_highlighting(Text.assemble(console_literal("Messages:", "green"), " ", console_literal(message_settings_text(settings), "")))
+
+
+def print_message_poller_line(line: str):
+    """Prints line, or holds it while an agent run is in progress: code that the agent executes redirects sys.stdout into its run output."""
+    with _message_poller_line_lock:
+        if _held_message_poller_lines is not None:
+            _held_message_poller_lines.append(line)
+        else:
+            print_with_console_highlighting(console_literal(line, "cyan"))
+
+
+def print_queued_messages_line():
+    line = None if _message_poller is None else _message_poller.queued_messages_line()
+    if line is not None:
+        print_with_console_highlighting(console_literal(line, "cyan"))
+
+
+def announce_queued_messages():
+    """The poller thread calls it after queueing messages. It prints nothing during an agent run: the run prints the messages it delivers."""
+    with _message_poller_line_lock:
+        if _held_message_poller_lines is None:
+            print_queued_messages_line()
+
+
+@contextlib.contextmanager
+def message_poller_lines_held():
+    """Context of one agent run: the poller thread prints nothing inside it; at its end it prints the held lines and names the messages still queued."""
+    global _held_message_poller_lines
+    with _message_poller_line_lock:
+        _held_message_poller_lines = []
+    try:
+        yield
+    finally:
+        with _message_poller_line_lock:
+            held_lines, _held_message_poller_lines = _held_message_poller_lines, None
+            for line in held_lines:
+                print_with_console_highlighting(console_literal(line, "cyan"))
+            print_queued_messages_line()
+
+
+def start_message_poller(request_reset=None):
+    """Starts the MessagePoller of this process when the message settings are on; atexit stops it. Without settings it does nothing.
+    request_reset is MessagePoller's: None makes this process refuse reset requests."""
+    global _message_poller
+    if _message_settings is None or _message_poller is not None:
+        return
+    _message_poller = MessagePoller(_message_settings, print_message_poller_line, announce_queued_messages, request_reset)
+    _message_poller.start()
+    atexit.register(_message_poller.stop)
+
+
+def message_lines_above_prompt():
+    """Context for a prompt_toolkit prompt: while the message poller runs, patch_stdout puts a line its thread prints above the prompt."""
+    if _message_poller is None:
+        return contextlib.nullcontext()
+    from prompt_toolkit.patch_stdout import patch_stdout
+    return patch_stdout(raw=True)
+
+
+def take_queued_message_text() -> str:
+    """Removes the queued agent-to-agent messages (MessagePoller.take_queued records them as read), prints them, and returns their one text
+    for the model; "" when none wait or the feature is off."""
+    if _message_poller is None:
+        return ""
+    queued = _message_poller.take_queued()
+    if not queued:
+        return ""
+    message_text = model_text_of_queued_messages(queued)
+    shown_text = message_text.rstrip("\n")
+    if len(shown_text) > MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS:
+        shown_text = (shown_text[:MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS]
+                      + f"\n[{len(shown_text) - MAX_DELIVERED_MESSAGE_DISPLAY_CHARACTERS:,} more characters delivered, not shown]")
+    print_with_console_highlighting(console_literal("Delivered to the agent:\n" + shown_text, "cyan"))
+    return message_text
+
+
+def mark_printed_messages_as_shown(memory_step, agent):
+    """Step callback: marks as shown the messages that wait_for_messages printed and that memory_step holds in its observations or its error,
+    the two texts of a code step that the model receives. It records nothing as read for memory_step, which is not in agent's memory yet."""
+    if _message_poller is not None:
+        record_shown_messages_as_read(agent)  # of the step before, when no steering source did it
+        _message_poller.mark_printed_as_shown(f"{memory_step.observations or ''}{memory_step.error or ''}", memory_step)
+
+
+def record_shown_messages_as_read(agent):
+    """Records as read the messages that mark_printed_messages_as_shown marked, when their step is in agent's memory; otherwise, after
+    an interrupt or a failure between the step's end and its place in memory, they stay queued and are delivered again."""
+    if _message_poller is not None:
+        _message_poller.record_shown_as_read(agent.memory.steps)
+
+
+def task_with_queued_messages(task: str) -> str:
+    """Returns task followed by the queued agent-to-agent messages, which take_queued_message_text removes from the queue; task when none wait."""
+    message_text = take_queued_message_text()
+    return f"{task}\n\n{message_text}" if message_text else task
+
+
+def queued_message_steering_texts(agent) -> list[str]:
+    """Returns the queued agent-to-agent messages as one steering text, but only when agent's last memory step is an ActionStep:
+    agent._deliver_steering_messages then attaches the text at once. Otherwise it would hold the text and drop it if the run ended first."""
+    from smolagents.memory import ActionStep
+    record_shown_messages_as_read(agent)
+    if not (agent.memory.steps and isinstance(agent.memory.steps[-1], ActionStep)):
+        return []
+    message_text = take_queued_message_text()
+    return [message_text] if message_text else []
+
+
+def run_steering_source(agent, listener):
+    """Returns agent.steering_source for one run: the typed lines of listener (None: no keyboard listener), then the queued agent-to-agent
+    messages. Without a message poller it is listener.drain, or None without a listener."""
+    if _message_poller is None:
+        return None if listener is None else listener.drain
+
+    def steering_texts() -> list[str]:
+        typed_lines = [] if listener is None else listener.drain()
+        return typed_lines + queued_message_steering_texts(agent)
+    return steering_texts
 
 
 def check_required_env():
@@ -342,6 +509,10 @@ def check_required_env():
         console.print("  [bold]BPSA_PRICE_CACHED_INPUT_PER_M[/] USD per million cached input tokens (default: input price)")
         console.print("  [bold]BPSA_VERBOSE[/]          Verbose output, 0 or 1 (default: 0)")
         console.print("  [bold]BPSA_AUTO_APPROVE[/] on/off: auto-approve tag execution (default: off)")
+        console.print("  [bold]BPSA_AGENT_NAME[/]       Agent name for agent-to-agent messages (default: unset = messages off)")
+        console.print("  [bold]BPSA_MESSAGE_FOLDERS[/]  Message folders, one path per line (required with BPSA_AGENT_NAME)")
+        console.print("  [bold]BPSA_MESSAGE_POLL_SECONDS[/] Seconds between message folder checks (default: 60)")
+        console.print("  [bold]BPSA_MAX_GROUP_MEMBERS[/] Agents this agent may have running through start_agent (default: 9; 0 = none)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -651,12 +822,24 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         from smolagents.bp_tools import GitHubCopilotCoder
         tools.append(GitHubCopilotCoder(model_id=copilot_model_id))
 
+    if _message_settings is not None:
+        from smolagents.bp_tools import SendMessageTool, WaitForMessagesTool
+        tools.append(SendMessageTool(_message_settings))
+        tools.append(WaitForMessagesTool(lambda: _message_poller))
+        if _message_settings.max_group_members > 0:
+            from smolagents.bp_tools import ResetAgentTool, StartAgentTool, StopAgentTool
+            tools.append(StartAgentTool(_message_settings))
+            tools.append(StopAgentTool(_message_settings))
+            tools.append(ResetAgentTool(_message_settings))
+
     if mcp_servers:
         from smolagents import MCPClient
         mcp_client = MCPClient(mcp_servers, structured_output=True)
         tools.extend(mcp_client.__enter__())
 
     step_cbs = [_compact_step_callback, load_image_callback]
+    if _message_settings is not None:
+        step_cbs.append(mark_printed_messages_as_shown)
     if gui_manager:
         from smolagents.bp_tools_gui import gui_screenshot_callback
         step_cbs.append(gui_screenshot_callback)
@@ -685,6 +868,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         step_callbacks=step_cbs,
         approval_callback=approval_callback,
         stream_outputs=can_stream,
+        instructions=None if _message_settings is None else "\n" + message_prompt_paragraph(_message_settings),
     )
     agent.add_planning_tool()
     agent.python_executor.user_message_handler = _print_user_message
@@ -722,14 +906,10 @@ def load_agent_instructions() -> str | None:
     for filename in AGENT_INSTRUCTION_FILES:
         filepath = os.path.join(os.getcwd(), filename)
         if os.path.isfile(filepath):
-            try:
-                with open(filepath, "r") as f:
-                    content = f.read().strip()
-                if content:
-                    instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
-                    console.print(f"  [green]Loaded:[/] {filename}")
-            except OSError:
-                pass
+            content = (read_text_or_print_error(filepath) or "").strip()
+            if content:
+                instructions.append(f"# Content from {filename}\n\n<filecontent>{content}</filecontent>")
+                console.print(f"  [green]Loaded:[/] {filename}")
     if instructions:
         return """The folder contains some files with notes.
 You are not required to follow these notes. The notes in <filenotes> are there for your information.
@@ -778,18 +958,14 @@ def _load_readme_fallback() -> str | None:
     for ext in _README_EXTENSIONS_PRIORITY:
         if ext in candidates:
             filename, filepath = candidates[ext]
-            try:
-                with open(filepath, "r") as f:
-                    content = f.read().strip()
-            except OSError:
-                continue
+            content = (read_text_or_print_error(filepath) or "").strip()
             if not content:
                 continue
             truncated = ""
             if len(content) > README_MAX_CHARS:
                 content = content[:README_MAX_CHARS]
                 truncated = " (truncated to 20000 chars)"
-            console.print(f"  [green]Loaded README:[/] {filename}{truncated}")
+            print_with_console_highlighting(Text.assemble("  ", console_literal("Loaded README:", "green"), " ", console_literal(filename, ""), truncated))
             return f"""The folder contains a README file, provided for general context about the project.
 This is not an instruction file. Use it only as background information.
 <readme>
@@ -854,6 +1030,34 @@ def get_agent_cost_usd(agent) -> float:
 def format_cost_usd(cost: float) -> str:
     """Format a USD amount as `$0.0123`; six decimals below one tenth of a cent so tiny costs stay visible."""
     return f"${cost:.6f}" if cost < 0.001 else f"${cost:.4f}"
+
+
+def new_session_stats() -> dict:
+    return {
+        "turns": 0,
+        "total_time": 0.0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cached_input_tokens": 0,
+        "total_cost_usd": 0.0,
+    }
+
+
+def add_turn_to_session_stats(session_stats: dict, agent, tokens_before: tuple[int, int, int], cost_before: float, elapsed: float) -> tuple[int, int, int, float]:
+    """Adds one turn to session_stats: elapsed seconds and what agent's monitor counted since tokens_before (get_agent_token_usage) and
+    cost_before (get_agent_cost_usd). Returns the turn's (input tokens, output tokens, cached input tokens, cost in USD)."""
+    input_after, output_after, cached_after = get_agent_token_usage(agent)
+    turn_input = input_after - tokens_before[0]
+    turn_output = output_after - tokens_before[1]
+    turn_cached = cached_after - tokens_before[2]
+    turn_cost = get_agent_cost_usd(agent) - cost_before
+    session_stats["turns"] += 1
+    session_stats["total_time"] += elapsed
+    session_stats["total_input_tokens"] += turn_input
+    session_stats["total_output_tokens"] += turn_output
+    session_stats["total_cached_input_tokens"] = session_stats.get("total_cached_input_tokens", 0) + turn_cached
+    session_stats["total_cost_usd"] = session_stats.get("total_cost_usd", 0.0) + turn_cost
+    return turn_input, turn_output, turn_cached, turn_cost
 
 
 # Session budget: BPSA_MAX_SESSION_TOKENS / BPSA_MAX_SESSION_COST against session_stats totals.
@@ -979,8 +1183,9 @@ def print_turn_summary(
     the agent's monitor knows the last provider, the `$` cost only when cost_usd > 0, and Context: as a percentage
     of agent.context_length (last model call's input tokens over the window) when known, else in chars."""
     total = input_tokens + output_tokens
+    provider = None
     line = (
-        f"[dim]Turn {turn_num} | {elapsed:.1f}s | "
+        f"Turn {turn_num} | {elapsed:.1f}s | "
         f"In: {format_tokens(input_tokens)} | Out: {format_tokens(output_tokens)} | "
         f"Total: {format_tokens(total)}"
     )
@@ -1003,13 +1208,12 @@ def print_turn_summary(
         if knowledge:
             line += f" | Knowledge: {format_tokens(len(knowledge))} chars"
         provider = get_agent_last_provider(agent)
-        if provider:
-            line += f" | via {provider}"
-    if cost_usd > 0:
-        line += f" | {format_cost_usd(cost_usd)}"
-    line += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
-    line += "[/]"
-    console.print(line)
+    line_after_provider = f" | {format_cost_usd(cost_usd)}" if cost_usd > 0 else ""
+    line_after_provider += f" | Auto-approve: {'on' if _auto_approve else 'off'}"
+    literal_provider = visible_encodable_text(f" | via {provider}", console.encoding) if provider else ""
+    summary = Text.assemble(Text.from_markup(line), literal_provider, Text.from_markup(line_after_provider))
+    summary.stylize_before("dim")
+    print_with_console_highlighting(summary)
 
 
 def print_banner(model_id: str, server_model: str, tool_count: int, dictation_transcriber: str = None,
@@ -1024,11 +1228,16 @@ def print_banner(model_id: str, server_model: str, tool_count: int, dictation_tr
         endpoint_line += f"Context: [cyan]{context_length:,}[/] tokens\n"
     console.print(
         Panel.fit(
-            f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\n"
-            f"Model: [cyan]{model_id}[/] ({server_model})\n"
-            f"{reasoning_effort_line}"
-            f"{endpoint_line}"
-            f"Tools: [green]{tool_count}[/] loaded{dictation_line}",
+            Text.assemble(
+                Text.from_markup(f"[bold]BPSA - Beyond Python SmolAgents[/] v{VERSION}\nModel: "),
+                console_literal(str(model_id), "cyan"),
+                Text.from_markup(
+                    f" ({server_model})\n"
+                    f"{reasoning_effort_line}"
+                    f"{endpoint_line}"
+                    f"Tools: [green]{tool_count}[/] loaded{dictation_line}"
+                ),
+            ),
             border_style="blue",
         )
     )
@@ -1062,13 +1271,15 @@ def _run_shell_streaming(shell_cmd: str) -> str:
 
 
 ALIASES_FILE = os.path.expanduser("~/.bpsa_aliases")
+UNREADABLE_ALIASES_COPY = ALIASES_FILE + ".unreadable"
 
 
-def _load_aliases() -> dict:
-    """Load aliases from ~/.bpsa_aliases."""
+def _read_aliases_file() -> dict:
+    """Returns the aliases in ~/.bpsa_aliases, {} when there is no such file.
+    Raises OSError or UnicodeDecodeError when the file cannot be read in the locale encoding."""
     aliases = {}
     if os.path.isfile(ALIASES_FILE):
-        with open(ALIASES_FILE) as f:
+        with open(ALIASES_FILE, encoding=locale.getpreferredencoding(False)) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
@@ -1078,11 +1289,33 @@ def _load_aliases() -> dict:
     return aliases
 
 
-def _save_aliases(aliases: dict):
-    """Save aliases to ~/.bpsa_aliases."""
-    with open(ALIASES_FILE, "w") as f:
-        for name, value in sorted(aliases.items()):
-            f.write(f"{name} {value}\n")
+def _load_aliases() -> dict:
+    """Returns the aliases in ~/.bpsa_aliases; when the file cannot be read, prints one line, leaves the file alone and returns {}."""
+    try:
+        return _read_aliases_file()
+    except (OSError, UnicodeDecodeError) as e:
+        kept_copy_note = f". The next /alias change keeps this file as {UNREADABLE_ALIASES_COPY}." if isinstance(e, UnicodeDecodeError) else ""
+        print_with_console_highlighting(console_literal(f"Aliases not loaded from {ALIASES_FILE}: {e}{kept_copy_note}", "red"))
+        return {}
+
+
+def _save_aliases(aliases: dict) -> bool:
+    """Replaces ~/.bpsa_aliases with aliases, first copying a file that cannot be read to UNREADABLE_ALIASES_COPY.
+    On failure prints one line, leaves ~/.bpsa_aliases as it was and returns False."""
+    try:
+        try:
+            _read_aliases_file()
+        except (OSError, UnicodeDecodeError):
+            shutil.copyfile(ALIASES_FILE, UNREADABLE_ALIASES_COPY)
+        aliases_text = "".join(f"{name} {value}\n" for name, value in sorted(aliases.items()))
+        replace_file_with_text(ALIASES_FILE, aliases_text, locale.getpreferredencoding(False))
+    except UnicodeEncodeError as e:
+        print_with_console_highlighting(console_literal(f"Aliases not saved: {ALIASES_FILE} ({e.encoding}) cannot hold the character {e.object[e.start:e.end]}", "red"))
+        return False
+    except OSError as e:
+        print_with_console_highlighting(console_literal(f"Aliases not saved to {ALIASES_FILE}: {e}", "red"))
+        return False
+    return True
 
 
 SLASH_COMMANDS = [
@@ -1482,17 +1715,18 @@ class SteeringListener:
                 self._idle.set()
             if line and line.strip():
                 self.queue.put(line.strip())
-                console.print(f"[dim]queued: {line.strip()}[/]")
+                print_with_console_highlighting(console_literal(f"queued: {line.strip()}", "dim"))
 
 
 def start_steering_listener(agent):
-    """Start the listener for one agent.run and point agent.steering_source at it; None when unavailable."""
+    """Set agent.steering_source for one agent.run (run_steering_source) and start the listener; returns it, None when unavailable."""
     global _steering_listener
     if not steering_available():
+        agent.steering_source = run_steering_source(agent, None)
         return None
     listener = SteeringListener(agent)
     _steering_listener = listener
-    agent.steering_source = listener.drain
+    agent.steering_source = run_steering_source(agent, listener)
     listener.start()
     return listener
 
@@ -1675,11 +1909,10 @@ def save_answer(last_answer, args: str):
         console.print("[yellow]No answer to save yet.[/]")
         return
     try:
-        with open(filename, "w") as f:
-            f.write(str(last_answer))
-        console.print(f"[green]Saved to {filename}[/]")
+        replace_file_with_text(filename, str(last_answer), locale.getpreferredencoding(False), "backslashreplace")
+        print_with_console_highlighting(console_literal(f"Saved to {filename}", "green"))
     except OSError as e:
-        console.print(f"[red]Error saving: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Error saving: {e}", "red"))
 
 
 def print_stats(session_stats: dict, agent=None):
@@ -1717,7 +1950,7 @@ def print_stats(session_stats: dict, agent=None):
         knowledge_chars = len(knowledge) if knowledge else 0
         table.add_row("", "")
         table.add_row("Knowledge", f"{knowledge_chars:,} chars")
-        table.add_row("Last provider", get_agent_last_provider(agent) or "unknown")
+        table.add_row("Last provider", console_literal(get_agent_last_provider(agent) or "unknown", ""))
     console.print(table)
     console.print()
 
@@ -1775,7 +2008,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     table.add_column("Value", style="cyan")
     table.add_column("Source", style="dim")
     table.add_row("Model class", type(model).__name__, env_source("BPSA_SERVER_MODEL"))
-    table.add_row("Model id", str(model_id),
+    table.add_row("Model id", console_literal(str(model_id), ""),
                   _setting_source("BPSA_MODEL_ID", model_id, get_env("BPSA_MODEL_ID"), "/model"))
     endpoint = getattr(model, "api_base", None) or get_env("BPSA_API_ENDPOINT")
     table.add_row("Endpoint", endpoint or "(not set)", env_source("BPSA_API_ENDPOINT"))
@@ -1831,7 +2064,7 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
                 source = f"{round(100 * COMPRESSION_CONTEXT_FRACTION)}% of context length"
             table.add_row(f"Compression {attr}", str(value), source)
         comp_model_id = getattr(config.compression_model, "model_id", None) if config.compression_model else None
-        table.add_row("Compression model", comp_model_id or "same as main",
+        table.add_row("Compression model", console_literal(comp_model_id or "same as main", ""),
                       _setting_source("BPSA_COMPRESSION_MODEL", comp_model_id, get_env("BPSA_COMPRESSION_MODEL"),
                                       "/compression-model"))
     table.add_row("", "", "")
@@ -1846,6 +2079,19 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
     mcp_count = len(mcp_servers) if mcp_servers else 0
     table.add_row("MCP servers", str(mcp_count), (env_source("BPSA_MCP") if "BPSA_MCP" in os.environ else "--mcp")
                   if mcp_count else "default")
+    table.add_row("", "", "")
+    agent_name_source = env_source("BPSA_AGENT_NAME")
+    if _message_settings is None:
+        table.add_row("Agent name", "(not set)", agent_name_source)
+    else:
+        table.add_row("Agent name", console_literal(_message_settings.agent_name, ""), agent_name_source)
+        for folder in _message_settings.folders:
+            table.add_row(console_literal(f"Message folder {folder.label}", ""), console_literal(folder.path, ""),
+                          env_source("BPSA_MESSAGE_FOLDERS"))
+        table.add_row("Message poll seconds", f"{_message_settings.poll_seconds:g}",
+                      env_source("BPSA_MESSAGE_POLL_SECONDS") if (get_env("BPSA_MESSAGE_POLL_SECONDS") or "").strip() else "default")
+        table.add_row("Max group members", str(_message_settings.max_group_members),
+                      env_source("BPSA_MAX_GROUP_MEMBERS") if (get_env("BPSA_MAX_GROUP_MEMBERS") or "").strip() else "default")
     console.print(table)
     console.print("[dim]Sources: env = process environment, .env = loaded from ./.env at startup, "
                   "default = built in. The ~/.bpsa.yaml file named in docs/CLI.md is not read.[/]")
@@ -1862,16 +2108,12 @@ def load_file_as_prompt(args: str) -> str | None:
     if not os.path.isabs(filepath):
         filepath = os.path.join(os.getcwd(), filepath)
     if not os.path.isfile(filepath):
-        console.print(f"[red]File not found: {filepath}[/]")
+        print_with_console_highlighting(console_literal(f"File not found: {filepath}", "red"))
         return None
-    try:
-        with open(filepath, "r") as f:
-            content = f.read()
-        console.print(f"[green]Loaded {len(content):,} chars from {filepath}[/]")
-        return content
-    except OSError as e:
-        console.print(f"[red]Error reading file: {e}[/]")
-        return None
+    content = read_text_or_print_error(filepath)
+    if content is not None:
+        print_with_console_highlighting(console_literal(f"Loaded {len(content):,} chars from {filepath}", "green"))
+    return content
 
 
 def change_steps(agent, args: str):
@@ -1902,20 +2144,21 @@ def run_script(agent, args: str):
     if not os.path.isabs(filepath):
         filepath = os.path.join(os.getcwd(), filepath)
     if not os.path.isfile(filepath):
-        console.print(f"[red]File not found: {filepath}[/]")
+        print_with_console_highlighting(console_literal(f"File not found: {filepath}", "red"))
+        return
+    # tokenize.open decodes as the interpreter will (PEP 263), so this refuses only a script the interpreter cannot decode.
+    if read_text_or_print_error(filepath, tokenize.open) is None:
         return
     try:
-        with open(filepath, "r") as f:
-            code = f.read()
-        console.print(f"[dim]Running {filepath}...[/]")
+        print_with_console_highlighting(console_literal(f"Running {filepath}...", "dim"))
         result = subprocess.run(
             [sys.executable, filepath],
-            capture_output=True, text=True, timeout=3600,
+            capture_output=True, text=True, errors="backslashreplace", timeout=3600,
         )
         if result.stdout:
-            console.print(result.stdout)
+            print_with_console_highlighting(console_literal(result.stdout, ""))
         if result.stderr:
-            console.print(f"[red]{result.stderr}[/]")
+            print_with_console_highlighting(console_literal(result.stderr, "red"))
         if result.returncode == 0:
             console.print(f"[green]Script finished (exit code 0)[/]")
         else:
@@ -1923,7 +2166,7 @@ def run_script(agent, args: str):
     except subprocess.TimeoutExpired:
         console.print("[red]Script timed out (3600s limit).[/]")
     except OSError as e:
-        console.print(f"[red]Error running script: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Error running script: {e}", "red"))
 
 
 def change_directory(args: str):
@@ -1937,9 +2180,9 @@ def change_directory(args: str):
         dirpath = os.path.join(os.getcwd(), dirpath)
     try:
         os.chdir(dirpath)
-        console.print(f"[green]Changed to {os.getcwd()}[/]")
+        print_with_console_highlighting(console_literal(f"Changed to {os.getcwd()}", "green"))
     except OSError as e:
-        console.print(f"[red]Error: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Error: {e}", "red"))
 
 def _get_compression_config(agent):
     """Get compression config from agent, or print a warning and return None."""
@@ -1972,7 +2215,7 @@ def cmd_compression_stats(agent):
     table.add_column("Setting", style="bold")
     table.add_column("Value", style="cyan")
     table.add_row("enabled", str(config.enabled))
-    table.add_row("compression_model", str(getattr(comp_model, "model_id", "same as main")) if comp_model else "same as main")
+    table.add_row("compression_model", console_literal(str(getattr(comp_model, "model_id", "same as main")) if comp_model else "same as main", ""))
     table.add_row("preserve_error_steps", str(config.preserve_error_steps))
     table.add_row("preserve_final_answer_steps", str(config.preserve_final_answer_steps))
     table.add_row("keep_recent_steps", str(config.keep_recent_steps))
@@ -2125,8 +2368,10 @@ def cmd_compress(agent, args: str):
         old_threshold = compressor.config.max_uncompressed_steps
         compressor.config.max_uncompressed_steps = 0  # Force trigger
         original_len = len(agent.memory.steps)
-        agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
-        compressor.config.max_uncompressed_steps = old_threshold
+        try:
+            agent.memory.steps, agent.memory.knowledge = compressor.compress(agent.memory.steps, agent.memory.knowledge)
+        finally:
+            compressor.config.max_uncompressed_steps = old_threshold
         new_len = len(agent.memory.steps)
         if new_len < original_len:
             console.print(f"[green]Compression done: {original_len} steps → {new_len} steps.[/]")
@@ -2241,7 +2486,7 @@ def cmd_compression_model(agent, args: str):
     if not args:
         comp_model = config.compression_model
         current = getattr(comp_model, "model_id", "same as main") if comp_model else "same as main"
-        console.print(f"[cyan]Current compression model: {current}[/]")
+        print_with_console_highlighting(console_literal(f"Current compression model: {current}", "cyan"))
         console.print("[dim]Usage: /compression-model <model_id>[/]")
         return
 
@@ -2254,9 +2499,9 @@ def cmd_compression_model(agent, args: str):
         new_model = copy.copy(main_model)
         new_model.model_id = args
         config.compression_model = new_model
-        console.print(f"[green]Compression model set to {args}[/]")
+        print_with_console_highlighting(console_literal(f"Compression model set to {args}", "green"))
     except Exception as e:
-        console.print(f"[red]Failed to set compression model: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to set compression model: {e}", "red"))
 
 
 def cmd_model(agent, args: str):
@@ -2266,16 +2511,16 @@ def cmd_model(agent, args: str):
     old_model = agent.model
     old_id = getattr(old_model, "model_id", "?")
     if not args:
-        console.print(f"[cyan]Current model: {old_id} ({type(old_model).__name__})[/]")
+        print_with_console_highlighting(console_literal(f"Current model: {old_id} ({type(old_model).__name__})", "cyan"))
         console.print("[dim]Usage: /model <model_id>[/]")
         return None
     try:
         new_model = build_model(override_model_id=args)
     except SystemExit:  # build_model's fail() already printed the reason
-        console.print(f"[red]Model unchanged: {old_id}[/]")
+        print_with_console_highlighting(console_literal(f"Model unchanged: {old_id}", "red"))
         return None
     except Exception as e:
-        console.print(f"[red]Failed to switch model, keeping {old_id}: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to switch model, keeping {old_id}: {e}", "red"))
         return None
     agent.model = new_model
     agent.stream_outputs = hasattr(new_model, "generate_stream")
@@ -2285,7 +2530,7 @@ def cmd_model(agent, args: str):
     monitor = getattr(agent, "monitor", None)
     if monitor is not None:
         monitor.tracked_model = new_model
-    console.print(f"[green]Model switched: {old_id} -> {new_model.model_id}[/]")
+    print_with_console_highlighting(console_literal(f"Model switched: {old_id} -> {new_model.model_id}", "green"))
     return new_model
 
 
@@ -2331,9 +2576,9 @@ def cmd_session_save(agent, session_stats: dict, args: str):
         count = save_session(filename, agent, session_stats)
         knowledge = getattr(agent.memory, "knowledge", "")
         knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
-        console.print(f"[green]Session saved to {filename} ({count} steps{knowledge_info}).[/]")
+        print_with_console_highlighting(console_literal(f"Session saved to {filename} ({count} steps{knowledge_info}).", "green"))
     except Exception as e:
-        console.print(f"[red]Failed to save session: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to save session: {e}", "red"))
 
 
 def cmd_session_load(agent, args: str) -> dict | None:
@@ -2352,19 +2597,19 @@ def cmd_session_load(agent, args: str) -> dict | None:
             filename = filename + ".json"
         else:
             if not os.path.splitext(filename)[1]:
-                console.print(f"[red]File not found: {filename} (also tried {filename}.json)[/]")
+                print_with_console_highlighting(console_literal(f"File not found: {filename} (also tried {filename}.json)", "red"))
             else:
-                console.print(f"[red]File not found: {filename}[/]")
+                print_with_console_highlighting(console_literal(f"File not found: {filename}", "red"))
             return None
     try:
         stats = load_session(filename, agent)
         step_count = len(agent.memory.steps)
         knowledge = getattr(agent.memory, "knowledge", "")
         knowledge_info = f", knowledge: {len(knowledge):,} chars" if knowledge else ""
-        console.print(f"[green]Session loaded from {filename} ({step_count} steps{knowledge_info}).[/]")
+        print_with_console_highlighting(console_literal(f"Session loaded from {filename} ({step_count} steps{knowledge_info}).", "green"))
         return stats
     except Exception as e:
-        console.print(f"[red]Failed to load session: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to load session: {e}", "red"))
         return None
 
 
@@ -2429,11 +2674,10 @@ def cmd_save_step(agent, args: str):
         lines.append(str(step))
 
     try:
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        console.print(f"[green]Step {step_num} saved to {filename}[/]")
+        replace_file_with_text(filename, "\n".join(lines) + "\n", errors="backslashreplace")
+        print_with_console_highlighting(console_literal(f"Step {step_num} saved to {filename}", "green"))
     except OSError as e:
-        console.print(f"[red]Failed to write {filename}: {e}[/]")
+        print_with_console_highlighting(console_literal(f"Failed to write {filename}: {e}", "red"))
 
 
 def _print_step_detail(step):
@@ -2675,7 +2919,8 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
                 cycle_agent.logger.level = LogLevel.INFO
             else:
                 cycle_agent.logger.level = LogLevel.ERROR
-            result = cycle_agent.run(task_text, reset=False)
+            with message_poller_lines_held():
+                result = cycle_agent.run(task_text, reset=False)
             _spinner.stop()
             elapsed = time.time() - start_time
 
@@ -2745,6 +2990,18 @@ def _shutdown_mcp(agent):
             pass
 
 
+def _shutdown_members():
+    """Stops the live agents that this process's agent started with start_agent and prints one line for each; nothing with messages off."""
+    if _message_settings is None:
+        return
+    try:
+        lines = stop_live_members(_message_settings)
+    except OSError as error:
+        lines = [f"Could not stop the agents started by {_message_settings.agent_name}: {error}"]
+    for line in lines:
+        console.print(console_literal(line, "cyan"), soft_wrap=True)
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -2754,23 +3011,30 @@ The above should be treated as information only. What the user is asking (what y
 
 
 def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _auto_approve_source, _verbose
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
     try_load_dotenv()
     _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+    _message_settings = load_message_settings_or_fail()
     if not _auto_approve and approval_key_source() is None:
         fail(f"Cannot ask for approval: no terminal to read a key from. {_NO_TERMINAL_ADVICE}")
     check_required_env()
     model = build_model()
     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
     check_model_connectivity(model)
+    if _message_settings is not None:
+        print_message_settings(_message_settings)
     instructions = None
     if not skip_instructions:
         console.print("[dim]Loading agent instructions...[/]")
         instructions = load_agent_instructions()
+    start_message_poller()
+    agent.steering_source = run_steering_source(agent, None)
+    task = task_with_queued_messages(prepend_instructions(task, instructions))
     _spinner.start()
     try:
-        result = agent.run(prepend_instructions(task, instructions))
+        with message_poller_lines_held():
+            result = agent.run(task)
         _spinner.stop()
         console.print(Markdown(str(result)))
     except Exception as e:
@@ -2786,13 +3050,298 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
             manager.shutdown()
         _shutdown_gui(agent)
         _shutdown_mcp(agent)
+        _shutdown_members()
+
+
+LISTEN_TASK_HEADING = (
+    "You run without a user: nobody reads your final answer and nobody can be asked a question. "
+    "Send every reply and every result with send_message before you finish.\n\n")
+LISTEN_BUDGET_STOP_HINT = "The listener ends; messages that arrive from now on stay unread."
+LISTEN_RUN_END = "its messages are not delivered again. Waiting for messages."
+
+
+LISTEN_SIGNAL_RERAISE_SECONDS = 1.0
+# The exception class that a signal raised in bpsa listen and that listen_signal_exception_received has not confirmed yet; else None
+_unreceived_listen_signal_exception: type[BaseException] | None = None
+
+
+# True while the main thread of bpsa listen is inside listen_reset_interruptible
+_is_listen_reset_interruptible = False
+
+
+class ListenStopSignal(BaseException):
+    """Raised in the main thread by the SIGTERM handler of bpsa listen. Not an Exception, so agent code does not treat it as a failed step."""
+
+
+class ListenResetSignal(BaseException):
+    """Raised in the main thread of bpsa listen, inside listen_reset_interruptible, while a reset request is pending. Not an Exception, as ListenStopSignal."""
+
+
+def raise_listen_signal_exception(exception_class: type[BaseException]):
+    """Raises exception_class in the main thread, and SIGALRM raises it again every LISTEN_SIGNAL_RERAISE_SECONDS until
+    listen_signal_exception_received: the bare except in the agent's model-call retry loop swallows an exception raised during a model call."""
+    global _unreceived_listen_signal_exception
+    _unreceived_listen_signal_exception = exception_class
+    signal.setitimer(signal.ITIMER_REAL, LISTEN_SIGNAL_RERAISE_SECONDS)
+    raise exception_class()
+
+
+def listen_signal_exception_received():
+    global _unreceived_listen_signal_exception
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    _unreceived_listen_signal_exception = None
+
+
+def handle_listen_signal(signal_number, frame):
+    """Handler of SIGTERM (ListenStopSignal), SIGINT (KeyboardInterrupt), SIGUSR1 (ListenResetSignal for a pending reset request) and SIGALRM
+    (the unreceived exception again). SIGINT and SIGUSR1 raise nothing while another exception is unreceived; ListenResetSignal only inside listen_reset_interruptible."""
+    exception_class = _unreceived_listen_signal_exception
+    if signal_number == signal.SIGTERM:
+        exception_class = ListenStopSignal
+    elif signal_number == signal.SIGINT and exception_class is None:
+        exception_class = KeyboardInterrupt
+    elif signal_number == signal.SIGUSR1 and exception_class is None and _message_poller is not None and _message_poller.has_pending_reset():
+        exception_class = ListenResetSignal
+    if exception_class is ListenResetSignal and not _is_listen_reset_interruptible:
+        if _unreceived_listen_signal_exception is ListenResetSignal:
+            listen_signal_exception_received()
+        return
+    if exception_class is not None:
+        raise_listen_signal_exception(exception_class)
+
+
+def request_listen_reset():
+    """The poller thread calls it after it recorded a reset request: SIGUSR1 to the main thread, which leaves its wait or its run."""
+    signal.pthread_kill(threading.main_thread().ident, signal.SIGUSR1)
+
+
+@contextlib.contextmanager
+def listen_reset_interruptible():
+    """Context in which a pending reset request raises ListenResetSignal in the main thread: at entry for a request that is already
+    pending, later through handle_listen_signal."""
+    global _is_listen_reset_interruptible
+    _is_listen_reset_interruptible = True
+    try:
+        if _message_poller.has_pending_reset():
+            raise ListenResetSignal()
+        yield
+    finally:
+        _is_listen_reset_interruptible = False
+        listen_signal_exception_received()
+
+
+def confirm_listen_resets():
+    """Call it in bpsa listen once the agent is replaced: takes the pending reset requests (MessagePoller.take_pending_resets), sends
+    reset_done_text to the sender of each and prints one line per request."""
+    pending_resets, discarded_message_count = _message_poller.take_pending_resets()
+    agent_name = _message_settings.agent_name
+    for pending in pending_resets:
+        line = (f"Reset {pending.reset.message_id} from {pending.reset.sender} in folder {pending.folder.label}: conversation and Python variables "
+                f"cleared, {discarded_messages_phrase(discarded_message_count, len(pending_resets))}")
+        try:
+            file_name = write_message(pending.folder.path, agent_name, pending.reset.sender,
+                                      reset_done_text(agent_name, pending.reset, discarded_message_count, len(pending_resets)))
+            line += f", confirmed with {file_name}"
+        except (ValueError, OSError) as error:
+            line += f"; the confirmation could not be sent ({str(error) or type(error).__name__})"
+        print_listen_line(f"{line}. Waiting for messages.")
+
+
+def read_stdin_from_null_device():
+    """Points descriptor 0 and sys.stdin at the null device, so neither bpsa listen nor a command it starts reads the caller's input.
+    With stdin closed at start, sys.stdin is None and the open takes the lowest free descriptor, normally 0."""
+    null_input = open(os.devnull)
+    if sys.stdin is None:
+        sys.stdin = null_input
+    else:
+        os.dup2(null_input.fileno(), sys.stdin.fileno())
+        null_input.close()
+
+
+def print_listen_line(line: str, style: str = "cyan"):
+    """Prints line as one line of the bpsa listen output: never wrapped, a newline inside it shown as \\n."""
+    console.print(console_literal(line.replace("\n", "\\n"), style), soft_wrap=True)
+
+
+def fail_listen(message: str):
+    print_listen_line(f"Error: {message}", "red")
+    sys.exit(1)
+
+
+_recorded_listen_state: tuple[str, int] | None = None  # the state and run number that record_listen_state wrote last
+_printed_listen_status_failures: set[tuple[str, str]] = set()  # (folder label, reason) of the status file writes that failed
+
+
+def record_listen_state(state: str, run_number: int, session_stats: dict | None, detail: str = ""):
+    """bpsa listen calls it at each change of state (bp_messages.AGENT_STATES): write_agent_status writes it, with the runs and tokens of
+    session_stats, for the status command. The same state and run number again writes nothing; a write that failed prints one line per folder and reason."""
+    global _recorded_listen_state
+    if _message_settings is None or _recorded_listen_state == (state, run_number):
+        return
+    _recorded_listen_state = (state, run_number)
+    totals = session_stats or new_session_stats()
+    failures = write_agent_status(_message_settings, state, run_number, totals["turns"], totals["total_input_tokens"], totals["total_output_tokens"], detail)
+    for failure in failures.items():
+        if failure not in _printed_listen_status_failures:
+            _printed_listen_status_failures.add(failure)
+            print_listen_line(f"Message folder {failure[0]}: the status file could not be written ({failure[1]}); the status command shows this agent's state as unknown.", "yellow")
+
+
+def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_stats: dict):
+    """One run of bpsa listen, with the accounting and the turn summary of a run_repl turn. A failure, SIGINT, a reset request or the step
+    limit prints one line and returns, so the caller waits for the next messages."""
+    from smolagents.monitoring import LogLevel
+    from smolagents.utils import AgentMaxStepsError
+
+    console.print(Rule(style="cyan"))
+    tokens_before = get_agent_token_usage(agent)
+    cost_before = get_agent_cost_usd(agent)
+    start_time = time.time()
+    agent.logger.level = LogLevel.INFO if _verbose else LogLevel.ERROR
+    if hasattr(agent, "_stream_token_counter"):
+        agent._stream_token_counter["count"] = 0
+    agent.steering_source = run_steering_source(agent, None)
+    try:
+        with message_poller_lines_held():
+            _spinner.start()
+            try:
+                with listen_reset_interruptible():
+                    result = agent.run(task_text, reset=False)
+            finally:
+                listen_signal_exception_received()
+                _spinner.stop()
+                record_shown_messages_as_read(agent)
+        console.print()
+        console.print(Markdown(str(result)))
+        console.print()
+        if agent.memory.steps and isinstance(getattr(agent.memory.steps[-1], "error", None), AgentMaxStepsError):
+            print_listen_line(f"Run {run_number} reached the limit of {agent.max_steps} steps without finishing; {LISTEN_RUN_END}", "yellow")
+    except KeyboardInterrupt:
+        print_listen_line(f"Run {run_number} interrupted by SIGINT; {LISTEN_RUN_END}", "yellow")
+    except ListenResetSignal:
+        print_listen_line(f"Run {run_number} ended by a reset request; its messages are not delivered again.", "yellow")
+    except Exception as error:
+        print_listen_line(f"Run {run_number} failed: {str(error) or type(error).__name__}; {LISTEN_RUN_END}", "red")
+    finally:
+        listen_signal_exception_received()  # again: a SIGINT after agent.run returned set the timer once more
+        agent.steering_source = None
+    elapsed = time.time() - start_time
+    turn_input, turn_output, turn_cached, turn_cost = add_turn_to_session_stats(session_stats, agent, tokens_before, cost_before, elapsed)
+    print_turn_summary(run_number, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached, cost_usd=turn_cost)
+
+
+def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
+    """bpsa listen: waits for agent-to-agent messages, runs the agent on them, waits again; one agent and one memory for all runs, until
+    a reset request replaces the agent. It reads no input and writes no file under HOME. SIGTERM, or SIGINT while no run is in progress, ends it with status 0."""
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
+    read_stdin_from_null_device()
+    sys.stdout.reconfigure(line_buffering=True)  # a plain print reaches a log file at once; the Rich console flushes its own writes
+    signal.signal(signal.SIGTERM, handle_listen_signal)
+    signal.signal(signal.SIGALRM, handle_listen_signal)
+    signal.signal(signal.SIGUSR1, handle_listen_signal)
+    if signal.getsignal(signal.SIGINT) is not signal.SIG_IGN:  # a shell starts a background job with SIGINT ignored; it stays ignored
+        signal.signal(signal.SIGINT, handle_listen_signal)
+    agent = None
+    activity = "while starting"
+    stop_reason = None
+    run_number = 0
+    session_stats = None
+    try:
+        try_load_dotenv()
+        _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
+        _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+        _message_settings = load_message_settings_or_fail()
+        if _message_settings is None:
+            fail_listen("bpsa listen needs BPSA_AGENT_NAME and BPSA_MESSAGE_FOLDERS: agent-to-agent messages are its only input.")
+        if not _auto_approve:
+            fail_listen(f"bpsa listen has nobody to ask for approval. {_NO_TERMINAL_ADVICE}")
+        record_listen_state("starting", 0, None)
+        check_required_env()
+        model = build_model()
+        if "litellm" in sys.modules:
+            sys.modules["litellm"].suppress_debug_info = True  # its "Provider List" lines after a failed request carry colour codes
+        agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+        check_model_connectivity(model)
+        context_length = resolve_context_length(model)
+        apply_context_length(agent, context_length)
+        instructions = None
+        if not skip_instructions:
+            console.print("[dim]Loading agent instructions...[/]")
+            instructions = load_agent_instructions()
+        session_stats = new_session_stats()
+        budget_warned = set()
+        print_listen_line(f"{LISTENER_READY_LINE_PREFIX}{message_settings_text(_message_settings)}.", "green")
+        start_message_poller(request_listen_reset)
+        is_context_new = True
+        is_context_reset = False
+        while True:
+            if _message_poller.has_pending_reset():
+                # As /clear: a new agent has no conversation and no Python variables. session_stats and budget_warned stay, so the budget counts on.
+                activity = "during a reset"
+                record_listen_state("resetting", 0, session_stats)
+                replaced_agent, agent = agent, None
+                _shutdown_browser(replaced_agent)
+                _shutdown_gui(replaced_agent)
+                _shutdown_mcp(replaced_agent)
+                rotate_session_id(model)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                apply_context_length(agent, context_length)
+                confirm_listen_resets()
+                is_context_new = is_context_reset = True
+                continue
+            activity = "while waiting for messages"
+            record_listen_state("idle", 0, session_stats)
+            try:
+                with listen_reset_interruptible():
+                    _message_poller.messages_waiting.wait()
+            except ListenResetSignal:
+                continue
+            activity = f"during run {run_number + 1}"
+            message_text = take_queued_message_text()
+            if not message_text:
+                continue
+            run_number += 1
+            members_line = live_members_line(_message_settings, lambda line: print_listen_line(line, "yellow")) if is_context_reset else ""
+            task_text = LISTEN_TASK_HEADING + (f"{members_line}\n\n" if members_line else "") + message_text
+            if is_context_new:
+                task_text = prepend_instructions(task_text, instructions)
+            is_context_new = is_context_reset = False
+            record_listen_state("busy", run_number, session_stats)
+            run_agent_on_listen_task(agent, task_text, run_number, session_stats)
+            if warn_session_budget(session_stats, budget_warned, LISTEN_BUDGET_STOP_HINT) == "exceeded":
+                stop_reason = "its session budget"
+                activity = f"after run {run_number}"
+                break
+    except ListenStopSignal:
+        stop_reason = "SIGTERM"
+    except KeyboardInterrupt:
+        stop_reason = "SIGINT"
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+        listen_signal_exception_received()
+        _spinner.stop()
+        if _message_poller is not None:
+            _message_poller.stop()
+        if agent is not None:
+            _shutdown_browser(agent)
+            _shutdown_gui(agent)
+            _shutdown_mcp(agent)
+        _shutdown_members()
+        record_listen_state("ended", 0, session_stats, f"stopped by {stop_reason or 'an error'} {activity}")
+    not_delivered_again = "; the messages of that run are not delivered again, except those that wait_for_messages printed in the code step in progress" if activity.startswith("during run") else ""
+    print_listen_line(f"Listener stopped by {stop_reason} {activity}{not_delivered_again}.")
+    if stop_reason == "its session budget":
+        sys.exit(1)
 
 
 def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    global _auto_approve, _auto_approve_source, _verbose
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
     try_load_dotenv()
     _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
     _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+    _message_settings = load_message_settings_or_fail()
     check_required_env()
 
     model = build_model()
@@ -2809,6 +3358,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
     dictation_transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default=None)
     print_banner(model_id, server_model, tool_count, dictation_transcriber=dictation_transcriber,
                  round_trip_seconds=round_trip_seconds, context_length=context_length)
+    if _message_settings is not None:
+        print_message_settings(_message_settings)
+    start_message_poller()
 
     instructions = None
     if not skip_instructions:
@@ -2867,7 +3419,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                         break
                 _voice_prompt_active = True
                 try:
-                    return session.prompt(prompt_str, pre_run=_setup_voice_before_render)
+                    with message_lines_above_prompt():
+                        return session.prompt(prompt_str, pre_run=_setup_voice_before_render)
                 finally:
                     _voice_prompt_active = False
             except EOFError:
@@ -2906,14 +3459,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
     aliases = _load_aliases()
     autosave_interval = int(get_env("BPSA_AUTOSAVE_INTERVAL", default="5"))
     autosave_file = os.path.expanduser("~/.bpsa_autosave.json")
-    session_stats = {
-        "turns": 0,
-        "total_time": 0.0,
-        "total_input_tokens": 0,
-        "total_output_tokens": 0,
-        "total_cached_input_tokens": 0,
-        "total_cost_usd": 0.0,
-    }
+    session_stats = new_session_stats()
     budget_warned = set()  # (limit name, level) pairs warn_session_budget already printed
     first_turn = True
 
@@ -2924,6 +3470,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             _shutdown_browser(agent)
             _shutdown_gui(agent)
             _shutdown_mcp(agent)
+            _shutdown_members()
             console.print("[dim]Goodbye![/]")
             break
 
@@ -2967,301 +3514,301 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             continue
 
         # Handle slash commands
-        if text.startswith("/"):
-            cmd_parts = text.split(maxsplit=1)
-            cmd = cmd_parts[0].lower()
-            cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+        try:
+            if text.startswith("/"):
+                cmd_parts = text.split(maxsplit=1)
+                cmd = cmd_parts[0].lower()
+                cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
 
-            if cmd == "/exit":
-                if session_stats["turns"] > 0:
-                    console.print()
-                    print_stats(session_stats, agent)
-                _shutdown_voice()
-                _shutdown_browser(agent)
-                _shutdown_gui(agent)
-                _shutdown_mcp(agent)
-                console.print("[dim]Goodbye![/]")
-                break
-            elif cmd == "/help":
-                print_help()
-                continue
-            elif cmd == "/alias":
-                args = cmd_args.strip()
-                if not args:
-                    if aliases:
-                        for name, value in sorted(aliases.items()):
-                            console.print(f"  [cyan]{name}[/] = {value}")
-                    else:
-                        console.print("[dim]No aliases defined. Usage: /alias <name> <value>[/]")
-                elif args.startswith("-d "):
-                    alias_name = args[3:].strip()
-                    if alias_name in aliases:
-                        del aliases[alias_name]
-                        _save_aliases(aliases)
-                        console.print(f"[cyan]Alias '{alias_name}' deleted.[/]")
-                    else:
-                        console.print(f"[yellow]Alias '{alias_name}' not found.[/]")
-                else:
-                    parts = args.split(None, 1)
-                    if len(parts) < 2:
-                        console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
-                    else:
-                        aliases[parts[0]] = parts[1]
-                        _save_aliases(aliases)
-                        console.print(f"[cyan]{parts[0]}[/] = {parts[1]}")
-                continue
-            elif cmd == "/redo":
-                if last_prompt is None:
-                    console.print("[yellow]No previous prompt to redo.[/]")
+                if cmd == "/exit":
+                    if session_stats["turns"] > 0:
+                        console.print()
+                        print_stats(session_stats, agent)
+                    _shutdown_voice()
+                    _shutdown_browser(agent)
+                    _shutdown_gui(agent)
+                    _shutdown_mcp(agent)
+                    _shutdown_members()
+                    console.print("[dim]Goodbye![/]")
+                    break
+                elif cmd == "/help":
+                    print_help()
                     continue
-                # Undo the steps from the last turn, then re-run
-                cmd_undo(agent, "")
-                text = last_prompt
-                # Fall through to agent run below
-            elif cmd == "/clear":
-                _shutdown_browser(agent)
-                _shutdown_gui(agent)
-                _shutdown_mcp(agent)
-                rotate_session_id(model)  # new conversation -> new OpenRouter session id
-                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
-                apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
-                session_stats = {
-                    "turns": 0,
-                    "total_time": 0.0,
-                    "total_input_tokens": 0,
-                    "total_output_tokens": 0,
-                    "total_cached_input_tokens": 0,
-                    "total_cost_usd": 0.0,
-                }
-                budget_warned = set()
-                last_answer = None
-                first_turn = True
-                console.clear()
-                _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
-                print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
-                             round_trip_seconds=round_trip_seconds, context_length=context_length)
-                continue
-            elif cmd == "/show-tools":
-                print_tools(agent)
-                continue
-            elif cmd == "/verbose":
-                verbose = not verbose
-                _verbose = verbose
-                console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
-                continue
-            elif cmd == "/save":
-                save_answer(last_answer, cmd_args)
-                continue
-            elif cmd == "/show-stats":
-                print_stats(session_stats, agent)
-                continue
-            elif cmd == "/show-config":
-                cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
-                                image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers,
-                                session_stats=session_stats)
-                continue
-            elif cmd == "/run-prompt":
-                file_content = load_file_as_prompt(cmd_args)
-                if file_content:
-                    text = file_content
-                    # Fall through to agent run
-                else:
-                    continue
-            elif cmd == "/set-max-steps":
-                change_steps(agent, cmd_args)
-                continue
-            elif cmd == "/run-py":
-                run_script(agent, cmd_args)
-                continue
-            elif cmd == "/cd":
-                change_directory(cmd_args)
-                continue
-            elif cmd == "/pwd":
-                console.print(f"[cyan]{os.getcwd()}[/]")
-                continue
-            elif cmd == "/instructions-load":
-                console.print("[dim]Loading agent instructions...[/]")
-                instructions = load_agent_instructions()
-                if instructions:
-                    first_turn = True
-                    console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
-                else:
-                    console.print("[yellow]No instruction files found.[/]")
-                continue
-            elif cmd == "/plan":
-                arg = cmd_args.strip().lower()
-                if arg == "":
-                    interval = getattr(agent, "planning_interval", None)
-                    status = f"on (every {interval} steps)" if interval else "off"
-                    console.print(f"[cyan]Planning: {status}[/]")
-                elif arg == "on":
-                    agent.planning_interval = 22
-                    console.print("[cyan]Planning: on (every 22 steps)[/]")
-                elif arg == "off":
-                    agent.planning_interval = None
-                    console.print("[cyan]Planning: off[/]")
-                else:
-                    try:
-                        n = int(arg)
-                        if n < 1:
-                            raise ValueError
-                        agent.planning_interval = n
-                        console.print(f"[cyan]Planning: on (every {n} steps)[/]")
-                    except ValueError:
-                        console.print("[yellow]Usage: /plan [on|off|N][/]")
-                continue
-            elif cmd == "/show-compression-stats":
-                cmd_compression_stats(agent)
-                continue
-            elif cmd == "/show-memory-stats":
-                cmd_memory_stats(agent)
-                continue
-            elif cmd == "/compress":
-                cmd_compress(agent, cmd_args)
-                continue
-            elif cmd == "/compression":
-                cmd_compression_toggle(agent, cmd_args)
-                continue
-            elif cmd == "/compression-keep-recent-steps":
-                cmd_compression_keep_recent(agent, cmd_args)
-                continue
-            elif cmd == "/compression-max-uncompressed-steps":
-                cmd_compression_max_uncompressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-keep-compressed-steps":
-                cmd_compression_keep_compressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-max-compressed-steps":
-                cmd_compression_max_compressed(agent, cmd_args)
-                continue
-            elif cmd == "/compression-set-high":
-                cmd_compression_set_high(agent)
-                continue
-            elif cmd == "/compression-set-ultra":
-                cmd_compression_set_ultra(agent)
-                continue
-            elif cmd == "/compression-set-medium":
-                cmd_compression_set_normal(agent)
-                continue
-            elif cmd == "/compression-set-low":
-                cmd_compression_set_low(agent)
-                continue
-            elif cmd == "/compression-model":
-                cmd_compression_model(agent, cmd_args)
-                continue
-            elif cmd == "/model":
-                new_model = cmd_model(agent, cmd_args)
-                if new_model is not None:
-                    model = new_model  # /clear and /repeat build agents from this
-                    model_id = new_model.model_id  # banner
-                    round_trip_seconds = None  # measured for the old model only
-                    context_length = resolve_context_length(new_model)
-                    apply_context_length(agent, context_length)
-                continue
-            elif cmd == "/save-step":
-                cmd_save_step(agent, cmd_args)
-                continue
-            elif cmd == "/show-step":
-                cmd_show_step(agent, cmd_args)
-                continue
-            elif cmd == "/show-steps":
-                cmd_show_steps(agent)
-                continue
-            elif cmd == "/show-knowledge":
-                cmd_show_knowledge(agent)
-                continue
-            elif cmd == "/undo-steps":
-                cmd_undo(agent, cmd_args)
-                continue
-            elif cmd == "/repeat":
-                parts = cmd_args.strip().split(None, 1)
-                if len(parts) < 2:
-                    console.print("[yellow]Usage: /repeat <N> <prompt>[/]")
-                    continue
-                try:
-                    repeat_n = int(parts[0])
-                    if repeat_n < 1:
-                        raise ValueError
-                except ValueError:
-                    console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
-                    continue
-                if session_budget_blocks_turn(session_stats):
-                    continue
-                cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
-                continue
-            elif cmd == "/repeat-prompt":
-                parts = cmd_args.strip().split(None, 1)
-                if len(parts) < 2:
-                    console.print("[yellow]Usage: /repeat-prompt <N> <path>[/]")
-                    continue
-                try:
-                    repeat_n = int(parts[0])
-                    if repeat_n < 1:
-                        raise ValueError
-                except ValueError:
-                    console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
-                    continue
-                file_content = load_file_as_prompt(parts[1])
-                if file_content is None or session_budget_blocks_turn(session_stats):
-                    continue
-                cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
-                continue
-            elif cmd == "/session-save":
-                cmd_session_save(agent, session_stats, cmd_args)
-                continue
-            elif cmd == "/session-load":
-                result = cmd_session_load(agent, cmd_args)
-                if result is not None:
-                    session_stats = result
-                    first_turn = False
-                    budget_warned = set()  # loaded totals count; warn again from what they are now
-                    warn_session_budget(session_stats, budget_warned)
-                continue
-            elif cmd == "/auto-approve":
-                arg = cmd_args.strip().lower()
-                if arg == "on":
-                    _auto_approve = True
-                elif arg == "off":
-                    _auto_approve = False
-                elif arg == "":
-                    _auto_approve = not _auto_approve
-                else:
-                    console.print("[yellow]Usage: /auto-approve [on|off][/]")
-                    continue
-                _auto_approve_source = "/auto-approve"
-                console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
-                continue
-            elif cmd == "/dictation":
-                arg = cmd_args.strip().lower()
-                if arg == "on":
-                    console.print("[cyan]Loading dictation support.[/]")
-                    if not _has_prompt_toolkit:
-                        console.print("[red]Dictation requires voicelistener. Install with: pip install voicelistener[/]")
-                    else:
-                        err = _voice_start()
-                        if err:
-                            console.print(f"[red]{err}[/]")
+                elif cmd == "/alias":
+                    args = cmd_args.strip()
+                    if not args:
+                        if aliases:
+                            for name, value in sorted(aliases.items()):
+                                print_with_console_highlighting(Text.assemble("  ", console_literal(name, "cyan"), " = ", console_literal(value, "")))
                         else:
-                            console.print("[cyan][mic] Dictation active[/]")
-                elif arg == "off":
-                    err = _voice_stop()
-                    if err:
-                        console.print(f"[yellow]{err}[/]")
+                            console.print("[dim]No aliases defined. Usage: /alias <name> <value>[/]")
+                    elif args.startswith("-d "):
+                        alias_name = args[3:].strip()
+                        if alias_name in aliases:
+                            remaining_aliases = {name: value for name, value in aliases.items() if name != alias_name}
+                            if _save_aliases(remaining_aliases):
+                                aliases = remaining_aliases
+                                print_with_console_highlighting(console_literal(f"Alias '{alias_name}' deleted.", "cyan"))
+                        else:
+                            print_with_console_highlighting(console_literal(f"Alias '{alias_name}' not found.", "yellow"))
                     else:
-                        console.print("[cyan]Dictation deactivated[/]")
-                elif arg == "":
-                    if _voice_listener is not None:
-                        transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default="(unknown)")
-                        model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
-                        console.print(f"[cyan]Dictation: on | transcriber: {transcriber} | model: {model}[/]")
+                        parts = args.split(None, 1)
+                        if len(parts) < 2:
+                            console.print("[yellow]Usage: /alias <name> <value> or /alias -d <name>[/]")
+                        else:
+                            changed_aliases = {**aliases, parts[0]: parts[1]}
+                            if _save_aliases(changed_aliases):
+                                aliases = changed_aliases
+                                print_with_console_highlighting(Text.assemble(console_literal(parts[0], "cyan"), " = ", console_literal(parts[1], "")))
+                    continue
+                elif cmd == "/redo":
+                    if last_prompt is None:
+                        console.print("[yellow]No previous prompt to redo.[/]")
+                        continue
+                    # Undo the steps from the last turn, then re-run
+                    cmd_undo(agent, "")
+                    text = last_prompt
+                    # Fall through to agent run below
+                elif cmd == "/clear":
+                    _shutdown_browser(agent)
+                    _shutdown_gui(agent)
+                    _shutdown_mcp(agent)
+                    rotate_session_id(model)  # new conversation -> new OpenRouter session id
+                    agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                    apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
+                    session_stats = new_session_stats()
+                    budget_warned = set()
+                    last_answer = None
+                    first_turn = True
+                    console.clear()
+                    _dt = get_env("BPSA_DICTATION_TRANSCRIBER", default="").strip() if _voice_listener is not None else None
+                    print_banner(model_id, server_model, count_tools(agent), dictation_transcriber=_dt or None,
+                                 round_trip_seconds=round_trip_seconds, context_length=context_length)
+                    continue
+                elif cmd == "/show-tools":
+                    print_tools(agent)
+                    continue
+                elif cmd == "/verbose":
+                    verbose = not verbose
+                    _verbose = verbose
+                    console.print(f"[cyan]Verbose mode: {'on' if verbose else 'off (compact)'}[/]")
+                    continue
+                elif cmd == "/save":
+                    save_answer(last_answer, cmd_args)
+                    continue
+                elif cmd == "/show-stats":
+                    print_stats(session_stats, agent)
+                    continue
+                elif cmd == "/show-config":
+                    cmd_show_config(agent, browser_enabled=browser_enabled, gui_enabled=gui_enabled,
+                                    image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers,
+                                    session_stats=session_stats)
+                    continue
+                elif cmd == "/run-prompt":
+                    file_content = load_file_as_prompt(cmd_args)
+                    if file_content:
+                        text = file_content
+                        # Fall through to agent run
                     else:
-                        console.print("[dim]Dictation: off[/]")
+                        continue
+                elif cmd == "/set-max-steps":
+                    change_steps(agent, cmd_args)
+                    continue
+                elif cmd == "/run-py":
+                    run_script(agent, cmd_args)
+                    continue
+                elif cmd == "/cd":
+                    change_directory(cmd_args)
+                    continue
+                elif cmd == "/pwd":
+                    print_with_console_highlighting(console_literal(os.getcwd(), "cyan"))
+                    continue
+                elif cmd == "/instructions-load":
+                    console.print("[dim]Loading agent instructions...[/]")
+                    instructions = load_agent_instructions()
+                    if instructions:
+                        first_turn = True
+                        console.print("[green]Instructions loaded. They will be included in the next prompt.[/]")
+                    else:
+                        console.print("[yellow]No instruction files found.[/]")
+                    continue
+                elif cmd == "/plan":
+                    arg = cmd_args.strip().lower()
+                    if arg == "":
+                        interval = getattr(agent, "planning_interval", None)
+                        status = f"on (every {interval} steps)" if interval else "off"
+                        console.print(f"[cyan]Planning: {status}[/]")
+                    elif arg == "on":
+                        agent.planning_interval = 22
+                        console.print("[cyan]Planning: on (every 22 steps)[/]")
+                    elif arg == "off":
+                        agent.planning_interval = None
+                        console.print("[cyan]Planning: off[/]")
+                    else:
+                        try:
+                            n = int(arg)
+                            if n < 1:
+                                raise ValueError
+                            agent.planning_interval = n
+                            console.print(f"[cyan]Planning: on (every {n} steps)[/]")
+                        except ValueError:
+                            console.print("[yellow]Usage: /plan [on|off|N][/]")
+                    continue
+                elif cmd == "/show-compression-stats":
+                    cmd_compression_stats(agent)
+                    continue
+                elif cmd == "/show-memory-stats":
+                    cmd_memory_stats(agent)
+                    continue
+                elif cmd == "/compress":
+                    cmd_compress(agent, cmd_args)
+                    continue
+                elif cmd == "/compression":
+                    cmd_compression_toggle(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-keep-recent-steps":
+                    cmd_compression_keep_recent(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-max-uncompressed-steps":
+                    cmd_compression_max_uncompressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-keep-compressed-steps":
+                    cmd_compression_keep_compressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-max-compressed-steps":
+                    cmd_compression_max_compressed(agent, cmd_args)
+                    continue
+                elif cmd == "/compression-set-high":
+                    cmd_compression_set_high(agent)
+                    continue
+                elif cmd == "/compression-set-ultra":
+                    cmd_compression_set_ultra(agent)
+                    continue
+                elif cmd == "/compression-set-medium":
+                    cmd_compression_set_normal(agent)
+                    continue
+                elif cmd == "/compression-set-low":
+                    cmd_compression_set_low(agent)
+                    continue
+                elif cmd == "/compression-model":
+                    cmd_compression_model(agent, cmd_args)
+                    continue
+                elif cmd == "/model":
+                    new_model = cmd_model(agent, cmd_args)
+                    if new_model is not None:
+                        model = new_model  # /clear and /repeat build agents from this
+                        model_id = new_model.model_id  # banner
+                        round_trip_seconds = None  # measured for the old model only
+                        context_length = resolve_context_length(new_model)
+                        apply_context_length(agent, context_length)
+                    continue
+                elif cmd == "/save-step":
+                    cmd_save_step(agent, cmd_args)
+                    continue
+                elif cmd == "/show-step":
+                    cmd_show_step(agent, cmd_args)
+                    continue
+                elif cmd == "/show-steps":
+                    cmd_show_steps(agent)
+                    continue
+                elif cmd == "/show-knowledge":
+                    cmd_show_knowledge(agent)
+                    continue
+                elif cmd == "/undo-steps":
+                    cmd_undo(agent, cmd_args)
+                    continue
+                elif cmd == "/repeat":
+                    parts = cmd_args.strip().split(None, 1)
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: /repeat <N> <prompt>[/]")
+                        continue
+                    try:
+                        repeat_n = int(parts[0])
+                        if repeat_n < 1:
+                            raise ValueError
+                    except ValueError:
+                        console.print("[red]N must be a positive integer. Usage: /repeat <N> <prompt>[/]")
+                        continue
+                    if session_budget_blocks_turn(session_stats):
+                        continue
+                    cmd_repeat(agent, model, repeat_n, parts[1], session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
+                    continue
+                elif cmd == "/repeat-prompt":
+                    parts = cmd_args.strip().split(None, 1)
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: /repeat-prompt <N> <path>[/]")
+                        continue
+                    try:
+                        repeat_n = int(parts[0])
+                        if repeat_n < 1:
+                            raise ValueError
+                    except ValueError:
+                        console.print("[red]N must be a positive integer. Usage: /repeat-prompt <N> <path>[/]")
+                        continue
+                    file_content = load_file_as_prompt(parts[1])
+                    if file_content is None or session_budget_blocks_turn(session_stats):
+                        continue
+                    cmd_repeat(agent, model, repeat_n, file_content, session_stats, verbose, instructions, first_turn, browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled)
+                    continue
+                elif cmd == "/session-save":
+                    cmd_session_save(agent, session_stats, cmd_args)
+                    continue
+                elif cmd == "/session-load":
+                    result = cmd_session_load(agent, cmd_args)
+                    if result is not None:
+                        session_stats = result
+                        first_turn = False
+                        budget_warned = set()  # loaded totals count; warn again from what they are now
+                        warn_session_budget(session_stats, budget_warned)
+                    continue
+                elif cmd == "/auto-approve":
+                    arg = cmd_args.strip().lower()
+                    if arg == "on":
+                        _auto_approve = True
+                    elif arg == "off":
+                        _auto_approve = False
+                    elif arg == "":
+                        _auto_approve = not _auto_approve
+                    else:
+                        console.print("[yellow]Usage: /auto-approve [on|off][/]")
+                        continue
+                    _auto_approve_source = "/auto-approve"
+                    console.print(f"[cyan]Auto-approve: {'on' if _auto_approve else 'off'}[/]")
+                    continue
+                elif cmd == "/dictation":
+                    arg = cmd_args.strip().lower()
+                    if arg == "on":
+                        console.print("[cyan]Loading dictation support.[/]")
+                        if not _has_prompt_toolkit:
+                            console.print("[red]Dictation requires voicelistener. Install with: pip install voicelistener[/]")
+                        else:
+                            err = _voice_start()
+                            if err:
+                                console.print(f"[red]{err}[/]")
+                            else:
+                                console.print("[cyan][mic] Dictation active[/]")
+                    elif arg == "off":
+                        err = _voice_stop()
+                        if err:
+                            console.print(f"[yellow]{err}[/]")
+                        else:
+                            console.print("[cyan]Dictation deactivated[/]")
+                    elif arg == "":
+                        if _voice_listener is not None:
+                            transcriber = get_env("BPSA_DICTATION_TRANSCRIBER", default="(unknown)")
+                            model = get_env("BPSA_DICTATION_MODEL", default=BPSA_DEFAULT_DICTATION_MODEL)
+                            console.print(f"[cyan]Dictation: on | transcriber: {transcriber} | model: {model}[/]")
+                        else:
+                            console.print("[dim]Dictation: off[/]")
+                    else:
+                        console.print("[yellow]Usage: /dictation [on|off][/]")
+                    continue
                 else:
-                    console.print("[yellow]Usage: /dictation [on|off][/]")
-                continue
-            else:
-                console.print(f"[yellow]Unknown command: {cmd}. Type /help for available commands.[/]")
-                continue
+                    print_with_console_highlighting(console_literal(f"Unknown command: {cmd}. Type /help for available commands.", "yellow"))
+                    continue
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Interrupted.[/]")
+            continue
 
         if session_budget_blocks_turn(session_stats):
             continue
@@ -3296,31 +3843,22 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                 )
                 task_text = task_text + "\n" + shell_context
                 pending_shell_outputs.clear()
-            listener = start_steering_listener(agent)  # before the spinner, so no Rich Live starts
-            _spinner.start()
-            try:
-                result = agent.run(task_text, reset=False)
-            finally:
-                undelivered = stop_steering_listener(listener)
-                print_undelivered_steering(undelivered)
+            task_text = task_with_queued_messages(task_text)
+            with message_poller_lines_held():
+                listener = start_steering_listener(agent)  # before the spinner, so no Rich Live starts
+                _spinner.start()
+                try:
+                    result = agent.run(task_text, reset=False)
+                finally:
+                    undelivered = stop_steering_listener(listener)
+                    agent.steering_source = None
+                    print_undelivered_steering(undelivered)
+                    record_shown_messages_as_read(agent)
             _spinner.stop()
             elapsed = time.time() - start_time
 
-            # Calculate token usage for this turn
-            input_after, output_after, cached_after = get_agent_token_usage(agent)
-            turn_input = input_after - input_before
-            turn_output = output_after - output_before
-            turn_cached = cached_after - cached_before
-            turn_cost = get_agent_cost_usd(agent) - cost_before
-
-            session_stats["turns"] += 1
-            session_stats["total_time"] += elapsed
-            session_stats["total_input_tokens"] += turn_input
-            session_stats["total_output_tokens"] += turn_output
-            session_stats["total_cached_input_tokens"] = (
-                session_stats.get("total_cached_input_tokens", 0) + turn_cached
-            )
-            session_stats["total_cost_usd"] = session_stats.get("total_cost_usd", 0.0) + turn_cost
+            turn_input, turn_output, turn_cached, turn_cost = add_turn_to_session_stats(
+                session_stats, agent, (input_before, output_before, cached_before), cost_before, elapsed)
             last_answer = result
 
             console.print()
@@ -3339,9 +3877,9 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                 try:
                     from smolagents.bp_session import save_session
                     save_session(autosave_file, agent, session_stats)
-                    console.print(f"[dim]Auto-saved session to {autosave_file}[/]")
-                except Exception:
-                    pass
+                    print_with_console_highlighting(console_literal(f"Auto-saved session to {autosave_file}", "dim"))
+                except Exception as e:
+                    print_with_console_highlighting(console_literal(f"Auto-save failed: {autosave_file}: {str(e) or type(e).__name__}", "yellow"))
 
         except KeyboardInterrupt:
             _spinner.stop()
@@ -3420,6 +3958,7 @@ def main():
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
     run_parser.add_argument("task", type=str, help="The task to execute")
+    subparsers.add_parser("listen", help="Without a keyboard: run the agent on each batch of agent-to-agent messages until SIGTERM")
 
     args = parser.parse_args()
     try_load_dotenv()  # before any BPSA_* setting is read, so values set only in ./.env take effect
@@ -3434,6 +3973,10 @@ def main():
     env_mcp_list = [s.strip() for s in env_mcp.splitlines() if s.strip()]
     mcp_servers = _parse_mcp_servers((args.mcp or []) + env_mcp_list) or None
     verbose_override = None if args.verbose is None else args.verbose == "on"
+
+    if args.command == "listen":  # before stdin is looked at: listen also starts with stdin closed
+        run_listen(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=verbose_override)
+        return
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

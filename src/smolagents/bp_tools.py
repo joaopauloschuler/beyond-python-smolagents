@@ -8,6 +8,7 @@
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
 from .models import ChatMessage, MessageRole
+from .utils import MAX_LENGTH_TRUNCATE_CONTENT
 import difflib
 import os
 import shutil
@@ -3257,3 +3258,285 @@ class GetToolDescriptionsTool(Tool):
                 available = ", ".join(sorted(self._tool_docs.keys()))
                 results.append(f"Tool '{name}' not found. Available tools: {available}")
         return "\n\n".join(results)
+
+
+class SendMessageTool(Tool):
+    """Writes an agent-to-agent message from this process's agent name into one of its message folders (bp_messages.write_message)."""
+
+    name = "send_message"
+    description_template = (
+        "Sends a text message to another agent by writing it as a file in one of your message folders. "
+        "The message goes out under your own agent name. "
+        "`to` is the name of one agent, or 'all' for every agent that reads that folder; you cannot send to yourself. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        "`text` holds at most {max_text_characters:,} characters and every reader gets all of it in its context, "
+        "so keep it short: write long results to a file and send the file's path. "
+        "Returns one line naming the message file written, or one line starting with 'Error:' when nothing was sent."
+    )
+    inputs = {
+        "to": {"type": "string", "description": "An agent name, or 'all'."},
+        "text": {"type": "string", "description": "The message text."},
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder to write to; required only when you have several folders.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        # Imported here: `python -m smolagents.bp_messages` warns when the package import chain already loaded it.
+        from smolagents.bp_messages import MAX_MESSAGE_TEXT_CHARACTERS
+
+        self.description = self.description_template.format(max_text_characters=MAX_MESSAGE_TEXT_CHARACTERS)
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, to: str, text: str, folder: str | None = None) -> str:
+        from smolagents.bp_messages import MAX_MESSAGE_TEXT_CHARACTERS, check_message_target, message_folder_of_label, write_message
+
+        if not isinstance(text, str):
+            return f"Error: text must be a string, not {type(text).__name__}; nothing was sent."
+        try:
+            check_message_target(to)
+        except ValueError as error:
+            return f"Error: {error} Nothing was sent."
+        if to == self._settings.agent_name:
+            return f"Error: {to} is your own agent name; you cannot send a message to yourself. Nothing was sent."
+        try:
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} Nothing was sent."
+        if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
+            return (f"Error: the text has {len(text):,} characters, above the limit of {MAX_MESSAGE_TEXT_CHARACTERS:,}; "
+                    f"write it to a file and send the file's path instead. Nothing was sent.")
+        try:
+            file_name = write_message(message_folder.path, self._settings.agent_name, to, text)
+        except (ValueError, OSError) as error:
+            return f"Error: could not write the message in folder {message_folder.label}: {error}. Nothing was sent."
+        return f"Sent {file_name} in folder {message_folder.label}."
+
+
+class StartAgentTool(Tool):
+    """Starts group members of this process's agent: `bpsa listen` processes on one of its message folders (bp_messages.start_members)."""
+
+    name = "start_agent"
+    description = (
+        "Starts one new agent as a separate background process that reads one of your message folders, or `count` new agents at the same time. "
+        "When you need several agents, start them all with one call, such as start_agent(count=3): together they take about as long as one, "
+        "while one call for each takes that long every time. "
+        "The tool chooses each new agent's name (your own name, '-' and a number) and waits until every new agent listens or has failed, "
+        "which takes up to a few minutes. "
+        "The new agent knows nothing until it receives a message: send it its instructions with send_message to the returned name. "
+        "It keeps running, and answers every message addressed to it or to 'all' in that folder, until you stop it with stop_agent "
+        "or your own process ends. It cannot start agents itself. "
+        "Every started agent makes its own model calls, which cost money: start only as many as the work needs, "
+        "and no more than your limit allows. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        "`working_directory` is the existing directory the new agents work in; left out, it is your current directory. "
+        "`count` is a whole number of at least 1; a call for more agents than your limit or the machine's available memory allows starts none. "
+        "Returns one line with the new agent's name, process id and log file, or one line starting with 'Error:' when no agent was started. "
+        "With `count` above 1 it returns a first line that names the agents started and those not started, then one such line per agent: "
+        "only the agents with a line 'Started agent' run."
+    )
+    inputs = {
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder the new agents read and write; required only when you have several folders.",
+            "nullable": True,
+        },
+        "working_directory": {
+            "type": "string",
+            "description": "Existing directory in which the new agents run; default: your current directory.",
+            "nullable": True,
+        },
+        "count": {
+            "type": "integer",
+            "description": "How many agents to start at the same time; default: 1.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, folder: str | None = None, working_directory: str | None = None, count: int | None = 1) -> str:
+        from smolagents.bp_messages import message_folder_of_label, start_members
+
+        if type(count) is not int or count < 1:  # type() refuses True
+            return f"Error: count must be a whole number of at least 1, not {ascii(count)[:40]}. No agent was started."
+        try:
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} No agent was started."
+        member_directory = os.path.abspath(os.getcwd() if working_directory is None else str(working_directory))
+        if not os.path.isdir(member_directory):
+            return f"Error: the working directory {ascii(member_directory)} does not exist or is not a directory. No agent was started."
+        try:
+            results = start_members(self._settings, message_folder, member_directory, count)
+        except ValueError as error:
+            return f"Error: {error} No agent was started."
+        except OSError as error:
+            return f"Error: {error}. No agent was started."
+        lines = []
+        for result in results:
+            if result.error is None:
+                lines.append(f"Started agent {result.name} (process {result.record.process_id}, log {result.record.log_path}). It listens in folder "
+                             f"{message_folder.label} and knows nothing yet: send it its instructions with send_message to {result.name}.")
+            else:
+                # A MemberStartError text ends with its own full stop; an OSError text has none.
+                reason = f"{result.error}{'.' if isinstance(result.error, OSError) else ''}"
+                lines.append(f"Error: {reason} No agent was started." if count == 1 else f"Error: agent {result.name} was not started: {reason}")
+        if count > 1:
+            started_names = [result.name for result in results if result.error is None]
+            failed_names = [result.name for result in results if result.error is not None]
+            lines.insert(0, f"Started {len(started_names)} of {count} agents{': ' if started_names else ''}{', '.join(started_names)}."
+                         + (f" Not started: {', '.join(failed_names)}." if failed_names else ""))
+        return "\n".join(lines)
+
+
+class StopAgentTool(Tool):
+    """Stops members that this process's agent started with start_agent (bp_messages.stop_members)."""
+
+    name = "stop_agent"
+    description = (
+        "Stops an agent that you started with start_agent: it asks the process to end and waits until it has ended. "
+        "`name` is the name that start_agent returned, or 'all' to stop every agent you started. "
+        "You cannot stop any other agent. A stopped agent loses its memory; a later start_agent creates a new agent with a new name. "
+        "Returns one line saying what was stopped, or one line starting with 'Error:'."
+    )
+    inputs = {"name": {"type": "string", "description": "Name of an agent you started, or 'all'."}}
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, name: str) -> str:
+        from smolagents.bp_messages import MESSAGE_TARGET_ALL, member_number, own_member_records, stop_live_members, stop_members
+
+        try:
+            if name == MESSAGE_TARGET_ALL:
+                return " ".join(stop_live_members(self._settings)) or "None of your agents is running; nothing was stopped."
+            if not isinstance(name, str) or member_number(self._settings.agent_name, name) is None:
+                return (f"Error: {ascii(name)} is not an agent that you started; their names are {self._settings.agent_name}-1, "
+                        f"{self._settings.agent_name}-2 and so on. Nothing was stopped.")
+            records = [record for record in own_member_records(self._settings) if record.name == name]
+            if not records:
+                return f"Error: your message folders hold no record of an agent {name}. Nothing was stopped."
+            return stop_members(records)[0]
+        except OSError as error:
+            return f"Error: {error}. Nothing was stopped."
+
+
+class ResetAgentTool(Tool):
+    """Writes a reset request from this process's agent name into one of its message folders (bp_messages.write_reset)."""
+
+    name = "reset_agent"
+    description = (
+        "Asks a running agent to forget everything and start afresh, without stopping its process: use it to give an agent that you started "
+        "a new, unrelated topic, or to get back an agent that is stuck or no longer answers. It is much faster than stop_agent followed by start_agent. "
+        "The agent leaves the task it is working on at once, even in the middle of a step, and clears its conversation and its Python variables; "
+        "it keeps its name, its folders and its files, and the agents that it started itself keep running. "
+        "Messages that it had not read yet are discarded, also your own earlier ones; a message that you send after the reset reaches its fresh context, "
+        "so you may send the new instructions right after this call, in full: the agent remembers nothing of what you told it before. "
+        "When it has cleared its context, the agent sends you a message that starts with 'Reset done:'; this takes up to its message check interval. "
+        "No such message usually means that no listening agent has that name; it may also still be replacing its context or have failed to send the message. "
+        "`name` is the name of one agent, or 'all' for every agent that listens in that folder except you; you cannot reset yourself. "
+        "Reset only agents that work for you. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        "Returns one line naming the reset request written, or one line starting with 'Error:' when nothing was requested."
+    )
+    inputs = {
+        "name": {"type": "string", "description": "Name of the agent to reset, or 'all'."},
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder to write the request to; required only when you have several folders.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, name: str, folder: str | None = None) -> str:
+        from smolagents.bp_messages import check_message_target, message_folder_of_label, write_reset
+
+        try:
+            check_message_target(name)
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} Nothing was requested."
+        try:
+            file_name = write_reset(message_folder.path, self._settings.agent_name, name)
+        except ValueError as error:
+            return f"Error: {error} Nothing was requested."
+        except OSError as error:
+            return f"Error: could not write the reset request in folder {message_folder.label}: {error}. Nothing was requested."
+        return f"Reset requested with {file_name} in folder {message_folder.label}. A message that starts with 'Reset done:' follows from each agent that reset."
+
+
+class CodeStepEndedForMessages(Exception):
+    """WaitForMessagesTool raises it to end the code step: messages wait that it cannot print there, and they are delivered after the code step."""
+
+
+class WaitForMessagesTool(Tool):
+    """Waits for agent-to-agent messages to this process's agent and prints them into the execution log of the code step that called it."""
+
+    name = "wait_for_messages"
+    description_template = (
+        "Waits until at least one new message from another agent has arrived for you, or until `timeout_seconds` have passed. "
+        "Use it instead of time.sleep whenever you wait for a reply; it returns as soon as a message is there. "
+        "The tool itself prints the messages into the execution log of your code step, as '=== message' blocks, so you need no print, "
+        "and it returns the number of messages it printed; these messages are not shown to you a second time, unless the code step was interrupted. "
+        "It returns 0 only when no message arrived within `timeout_seconds`; it then prints one line saying so. "
+        "So when you expect several replies, call it again until you have them all or it returns 0. "
+        "When a message has arrived that the tool cannot print, it does not return: it ends your code step by raising an exception, "
+        "and the lines after the call do not run. This happens when the first {log_characters:,} characters of the execution log have no room "
+        "for the message, and for every message where a code step has no execution log that the tool can print into (executor 'local'). "
+        "It is not a failure: the exception text says how many messages wait, and they reach you in full right after the code step. "
+        "Do not catch this exception and do not repeat the call; continue in your next code step. "
+        "`timeout_seconds` is a number above 0 and at most {max_seconds:g}; any other value raises an exception."
+    )
+    inputs = {"timeout_seconds": {"type": "number", "description": "The longest time to wait, in seconds."}}
+    output_type = "integer"
+    kept_log_start_characters = MAX_LENGTH_TRUNCATE_CONTENT // 2  # truncate_content always keeps this many characters from the start of an execution log
+
+    def __init__(self, message_poller_source):
+        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS
+
+        self.description = self.description_template.format(max_seconds=MAX_WAIT_FOR_MESSAGES_SECONDS, log_characters=self.kept_log_start_characters)
+        super().__init__()
+        self._message_poller_source = message_poller_source  # returns the bp_messages.MessagePoller of this process, None before it started
+
+    def forward(self, timeout_seconds: float) -> int:
+        import io
+        import sys
+
+        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS
+
+        # The exec executor collects the output of a code step in a StringIO; any other sys.stdout may be the terminal, so nothing is printed to it.
+        is_stdout_execution_log = isinstance(sys.stdout, io.StringIO)
+        log_file = sys.stdout if is_stdout_execution_log else io.StringIO()
+        is_number = isinstance(timeout_seconds, (int, float)) and not isinstance(timeout_seconds, bool)
+        if not (is_number and 0 < timeout_seconds <= MAX_WAIT_FOR_MESSAGES_SECONDS):  # false for NaN
+            raise ValueError(f"timeout_seconds must be a number above 0 and at most {MAX_WAIT_FOR_MESSAGES_SECONDS:g}. Nothing was waited for.")
+        message_poller = self._message_poller_source()
+        if message_poller is None:
+            raise RuntimeError("This process does not check its message folders yet. Nothing was waited for.")
+        message_poller.wait_for_new_messages(float(timeout_seconds))
+        # A later print of the code step can push the log over the cut; only its first kept_log_start_characters are certain to stay.
+        free_characters = self.kept_log_start_characters - len(log_file.getvalue()) if is_stdout_execution_log else 0
+        printed_count, unprinted_count = message_poller.write_new_messages(log_file, free_characters)
+        if unprinted_count:
+            raise CodeStepEndedForMessages(
+                f"Not a failure: {unprinted_count} {'more ' if printed_count else ''}message(s) arrived that wait_for_messages cannot print into this "
+                "code step's execution log. It ended this code step so that you receive them: they reach you in full right after this code step. "
+                "The lines after the wait_for_messages call did not run. Do not repeat the call for these messages.")
+        if not printed_count:
+            print(f"No message arrived within {timeout_seconds:g} seconds.", file=log_file)
+        return printed_count

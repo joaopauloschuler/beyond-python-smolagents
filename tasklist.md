@@ -597,3 +597,927 @@ is caused by the entries above.
       fresh process, `main()` for `bpsa run` (stopped before the model is
       built) with `BPSA_AUTO_APPROVE=on` only in `./.env` ended with
       auto-approve on, source `.env`.
+
+
+## Agent-to-agent messages through folders (branch `swarm`)
+
+Goal: one global leader (a person or another agent) exchanges messages with
+up to ten bpsa leaders, and each leader with up to nine bpsa members, through
+plain files. One folder serves the global leader and the leaders; one folder
+serves each group. A leader reads both.
+
+Conventions for T1 to T11:
+
+- With `BPSA_AGENT_NAME` unset, bpsa behaves exactly as before. All new
+  behaviour is behind the new settings.
+- No model call in any message routine. File names are built by code, never
+  by the model.
+- Message file name: `from_to_id.txt`. `id` is a zero-padded counter per
+  sender and per folder. `to` is an agent name or `all`. Agent names contain
+  no `_` and are never `all`.
+- Each task is verified by a real bpsa run in tmux with HOME redirected to a
+  scratch directory, then committed. pytest is not run.
+- Left to each problem, not part of these tasks: approval rules, a working
+  copy or branch per agent, how a run ends, a task board, heartbeats, several
+  machines.
+
+- [x] **T1. Message file routines.** New module
+      `src/smolagents/bp_messages.py`. Build and parse `from_to_id.txt`;
+      reject agent names that contain `_` or equal `all`. Write as `.tmp`,
+      then rename. The next id of a sender is its highest existing id plus
+      one. List the new messages for one reader (`to` equals its name or
+      `all`, sender is not itself) given the last id read per sender. Check:
+      two writer processes with 1,000 messages each and one reader; none
+      lost, none duplicated, none read half-written.
+      LANDED: `write_message`, `read_new_messages`, `next_message_id`,
+      `message_file_name`, `parse_message_file_name`, `check_agent_name`.
+      Agent names: 1 to 64 of `[a-z0-9-]`, not starting with `-`, not `all`.
+      Differs from the plan: `write_message` creates the final name with
+      `os.link` from the `.tmp` file (never overwrites; retries the next id)
+      instead of a rename, and holds an flock on `.<sender>.lock` in the
+      folder while it picks the id, because two targets give two names for
+      one id. An unreadable or undecodable file is delivered as a bracketed
+      line naming the file. Verified: 2 writers x 1,000 messages (up to 64 KB)
+      with a polling reader: 1,334 of 1,334 received, 0 lost, 0 duplicated,
+      0 bad checksums; the same with both writers named `gamma`: 2,000
+      distinct ids, 0 lost; invalid names, stray files, an undecodable file,
+      ids above 999999 and a sender restart behave as stated.
+- [x] **T2. Settings.** In `src/smolagents/bp_cli.py`: `BPSA_AGENT_NAME`,
+      `BPSA_MESSAGE_FOLDERS` (one per line, as `BPSA_MCP`),
+      `BPSA_MESSAGE_POLL_SECONDS` (default 60). Check: with none set, the
+      startup output and the tool list are identical to commit `81e64dc`.
+      LANDED: `load_message_settings()` in bp_messages.py returns
+      `MessageSettings(agent_name, folders, poll_seconds)` (folders: tuple of
+      `MessageFolder(label, path)`, label = last path component, path made
+      absolute) or None when `BPSA_AGENT_NAME` is unset or empty (the other
+      two are then not read); it raises `MessageSettingsError` with a one-line
+      reason. `message_folder_paths` is the one parser of
+      `BPSA_MESSAGE_FOLDERS`, also used by `default_message_folder`. Poll
+      seconds: finite float above 0; empty = 60. bp_cli.py:
+      `run_repl`/`run_one_shot` store it in `_message_settings` after
+      `resolve_auto_approve` (`load_message_settings_or_fail`, error through
+      `fail`, exit 1); `print_message_settings` prints one `Messages:` line
+      after the banner (REPL) or after the connectivity check (`run`).
+      `/show-config`: `Agent name` row always (`(not set)` when off), plus one
+      `Message folder <label>` row per folder and `Message poll seconds` when
+      on. Documented in docs/CLI.md, the module docstring and the
+      missing-config help. Verified: REPL start-up and `/show-tools` with the
+      feature off equal 81e64dc except the round-trip time; on via env and via
+      `./.env`; 23 invalid cases give one `Error:` line, exit 1, no traceback;
+      `bp_messages new` still takes its defaults from the variables.
+- [x] **T3. `send_message` tool.** In `src/smolagents/bp_tools.py`,
+      registered in `build_agent` only when an agent name is set.
+      `send_message(to, text)` for an agent with one folder; an agent with
+      two folders also names the folder. Check: the file appears with the
+      correct name and content; a bad target name gives an error line and no
+      file.
+      LANDED: `SendMessageTool(settings)`, `send_message(to, text, folder=None)`;
+      `build_agent` appends it when `_message_settings` is not None. `folder`
+      is a `MessageFolder.label`, optional with one folder. Sender is always
+      the agent name. Failures (invalid target, own name, missing or unknown
+      label, text not a string, text above `MAX_MESSAGE_TEXT_CHARACTERS` =
+      100,000, ValueError/OSError of `write_message`) are returned as one
+      `Error: ... Nothing was sent.` line, as the neighbouring tools do; success
+      returns `Sent <file> in folder <label>.` Static description (the
+      neighbouring tools have static ones). bp_messages is imported inside
+      `forward`, because the package imports bp_tools. Documented in the
+      `BPSA_AGENT_NAME` row of docs/CLI.md. Verified: 23/23 unit checks
+      (names, content, two folders, every failure leaves no file, `[/x]`, ESC
+      and a lone surrogate); real runs with one folder (agent31) and two
+      folders (leader3) wrote the expected files, read back by `bp_messages
+      new`; `/show-tools` with the feature off equals 5f79703; `bp_messages
+      new` prints nothing on stderr.
+- [x] **T4. Polling timer.** In `src/smolagents/bp_cli.py`: a thread lists
+      the folders every poll interval and queues new messages, grouped into
+      one text with each sender marked. While the agent works, the queue is
+      delivered through `agent.steering_source`, together with typed steering
+      lines when `SteeringListener` is active. The last id read per sender is
+      kept in a file, so a restarted agent does not receive old messages
+      again. Check: a message written during a long task appears in the
+      agent's next step.
+      LANDED: `MessagePoller(settings, print_line, announce_queued)` in
+      bp_messages.py: one daemon thread `bpsa-messages`, first check at
+      start, then every poll interval; a failing check prints one line per
+      folder and reason and polling continues. `messages_waiting`
+      (`threading.Event`) is set while messages are queued; `take_queued()`
+      empties the queue and only then saves the last-read ids, so a process
+      that ends with queued messages receives them again at its next start.
+      `model_text_of_queued_messages` builds the one text: a heading line
+      ("Messages from other agents follow. The user did not write them. ..."),
+      then `printable_messages(..., "utf-8", folder_label)`, whose header now
+      ends `in folder <label>` when a label is given. bp_cli.py:
+      `start_message_poller` (REPL and `run`; atexit stops it),
+      `run_steering_source` (typed lines plus queued messages, set for each
+      run, so `/clear` needs nothing), `take_queued_message_text` (prints
+      `Delivered to the agent:` and the text, at most 2,000 characters).
+      Messages queued before a run are appended to the task; messages that
+      arrive during a run are steering text at the next step boundary that
+      already has an ActionStep. Differs from the plan: the poller thread
+      prints `Queued for the agent: ...` only while no run is in progress
+      (the idle prompt runs under `patch_stdout`); during a run its lines are
+      held until the run ends, because executed code redirects `sys.stdout`
+      into the run output. `/repeat` cycles do not receive messages.
+      Verified: 22/22 poller checks; real runs: message during a 3-step task
+      in the REPL and in `bpsa run < /dev/null`, typed line plus message in
+      one step, idle message announced and delivered once and not again
+      after restart, two senders with a forged header, markup and ESC, folder
+      renamed away and back (one line), `/clear`, Ctrl-C and `/exit` (no
+      process left); feature off: screens equal 608466b, no thread.
+- [x] **T5. Mode without a keyboard.** New subcommand `bpsa listen` in
+      `main`. Loop: wait for queued messages, run the agent with them, wait
+      again. Output goes to a log file. SIGTERM ends it cleanly. It requires
+      auto-approve on. It must not write the shared `~/.bpsa_autosave.json`;
+      each agent saves under its own name or not at all. Check: an idle
+      process makes no model call for five minutes, then answers a message
+      within one poll interval.
+      LANDED: `run_listen` in bp_cli.py (`bpsa listen`, global options as
+      `run`). It needs the message settings and auto-approve on (else one
+      `Error:` line, exit 1). After the connectivity check it prints
+      `Listening for messages: agent <name>, folders <label> (<path>), checked
+      every <n> s.`, then blocks on `MessagePoller.messages_waiting`, runs the
+      agent on `LISTEN_TASK_HEADING` (no user present; the messages are the
+      instructions; `send_message` is the only way to answer) plus the grouped
+      messages with `reset=False`, and waits again. One agent and one memory
+      for all runs; compression threshold, token and cost accounting, turn
+      summary and session budget as in the REPL (`new_session_stats` and
+      `add_turn_to_session_stats` were moved out of `run_repl`;
+      `message_settings_text` out of `print_message_settings`). It points
+      descriptor 0 at the null device, writes no log file itself (the caller
+      redirects stdout and stderr) and writes no file under HOME: no
+      autosave, no history, no aliases, no session file. A failed run, the
+      step limit and SIGINT during a run print one line and the listener
+      waits again; their messages are not delivered again. SIGTERM at any
+      time and SIGINT while waiting end it with status 0 and the line
+      `Listener stopped by ...`; a reached session budget ends it with
+      status 1. Differs from the plan: SIGTERM and SIGINT are raised again
+      every second until the run has ended, because the bare `except:` of the
+      model-call retry loop in agents.py swallows the first one. Verified
+      with real runs (tmux, `< /dev/null`, `<&-`): 366 s idle with an
+      unchanged log and 0.02 s CPU, then a reply file 9.0 s after the message
+      (poll 5 s); memory across runs; a message delivered between steps; logs
+      without ESC bytes; unreachable endpoint, step limit, SIGINT and SIGTERM
+      during code and during a model call; refusals; HOME holds only
+      matplotlib's font cache; REPL and `bpsa run` screens equal b2c6edd.
+- [x] **T6. `start_agent` tool.** In `src/smolagents/bp_tools.py`. Starts one
+      `bpsa listen` process with its name and group folder set. The tool
+      assigns the name (for example `agent31` under `leader3`) and refuses
+      above `BPSA_MAX_GROUP_MEMBERS` (default 9). It writes the process id
+      and the log path into the group folder. Check: a leader starts two
+      members; both answer a message to `all`.
+      LANDED: `start_agent(folder?, working_directory?)` (`StartAgentTool`)
+      calls `bp_messages.start_member`: one `bpsa listen` child in its own
+      session, stdin from the null device, named `<own name>-<k>`, k = one
+      above the highest k that has a record (a name is never used twice),
+      with one folder, `BPSA_AUTO_APPROVE=on`, the parent's poll seconds,
+      `BPSA_MAX_GROUP_MEMBERS=0`, without `BPSA_TMUX`, and the package folder
+      first in `PYTHONPATH`. Log `<name>.log` and record
+      `.<name>.agent.json` (process id, process start ticks, log path, start
+      time, working directory; `replace_file_with_text`) in the group
+      folder; records are never deleted. It waits up to
+      `MEMBER_START_TIMEOUT_SECONDS` = 120 for the line
+      `Listening for messages: agent <name>, `; a child that ends, a timeout
+      or an interrupt stops the child and gives one `Error:` line with the
+      last 6 log lines through `visible_encodable_text`. Live = `/proc/<id>/stat`
+      exists, is no zombie and has the recorded start ticks (Linux only).
+      `BPSA_MAX_GROUP_MEMBERS` (whole number, default 9) is
+      `MessageSettings.max_group_members`, shown in `/show-config`, in the
+      `Messages:`/`Listening for messages:` line (`may start N agents`), in
+      docs/CLI.md and the help texts; with 0 neither tool is registered.
+      `message_folder_of_label` now resolves `folder` for `send_message` and
+      `start_agent`. Added beyond the plan, so that no member is left
+      running: `stop_agent(name)` (`all` = every own live member; SIGTERM,
+      up to `MEMBER_STOP_TIMEOUT_SECONDS` = 20, then SIGKILL; only names
+      `<own name>-<k>` with a record in the own folders), and
+      `_shutdown_members` at `/exit`, end of input, end of `bpsa run` and end
+      of `bpsa listen`, one line per member. A parent that is killed leaves
+      its members running; `/clear` does not stop them. Verified with real
+      runs: tool object (start, record, log, limit 1, stop, next name,
+      failing starts, foreign names, stale records with a missing process id
+      and with the id of a `sleep`: not signalled); `leader1` with folders
+      `leaders` and `group1` started `leader1-1` and `leader1-2` on a message
+      from `boss`, both answered its message to `all`, `boss` received the
+      report; a member lists `send_message` only; SIGTERM to the leader ended
+      both members (three pids gone); Ctrl-C at a REPL leader left its
+      member running and stopped a member that was still starting, `/exit`
+      stopped the member; `bpsa run` stopped its member; feature off:
+      `/show-tools` equals 76abe1b.
+- [x] **T7. Commands for the global leader.**
+      `python -m smolagents.bp_messages` with `send`, `new` (messages since
+      the caller's last read) and `wait` (block until one arrives or a time
+      limit passes). Check: `wait` returns within one second of a file
+      appearing.
+      LANDED: `load_last_read_ids`/`save_last_read_ids` keep a reader's
+      last-read ids in `.<reader>.read.json` in the folder (saved through
+      `replace_file_with_text`); a missing file is empty, a corrupt or
+      wrongly typed one is empty with one stderr line, an unreadable one is
+      an error. `receive_new_messages` loads, reads, saves (for T4). CLI:
+      `send --to T [TEXT|-]`, `new [--peek]`, `wait [--timeout S] [--peek]`
+      (polls every 0.5 s, default 300 s, exit 3 on timeout with nothing
+      printed); errors are one stderr line with exit 1. `--folder`/`--name`
+      default to `BPSA_MESSAGE_FOLDERS` (only when it names one folder) and
+      `BPSA_AGENT_NAME`. Output per message: `=== message N from S to T ===`,
+      every text line after `| `, `=== end of message N from S ===`; text
+      goes through `visible_encodable_text` for the stdout encoding. The CLI
+      saves after printing. Differs from the plan: `wait` also takes
+      `--peek`; `wait` builds the escape table of `visible_encodable_text`
+      before polling (it cost about 1 s on the first message). Verified:
+      wait printed 0.04 to 0.50 s after another process's send created the
+      file (3 rounds); new twice, peek, timeout, a body forging headers with
+      markup, ESC, CR, U+2028, NEL, RLO and a lone surrogate under UTF-8 and
+      ASCII stdout, 8 corrupt last-read files, bad names, missing folder:
+      43/43; the T1 check still passes.
+- [x] **T8. Prompt text.** In `src/smolagents/bp_cli.py`: when a name is set,
+      a short paragraph tells the agent its name, its folders, how incoming
+      messages look, and the tools. Leader and member roles come from the
+      first message, not from code. Check: the paragraph is absent when no
+      name is set.
+      LANDED: `message_prompt_paragraph(settings)` in bp_messages.py (beside
+      the message format it describes) builds the paragraph; `build_agent`
+      passes it as the `instructions` of `CodeAgent`, which the system prompt
+      template inserts as `custom_instructions`. It has 158 words for one
+      folder without `start_agent`, 200 for two folders with it: name,
+      folder labels (several folders: `folder=` is needed), the three-line
+      message form, "requests from your team ... where a message conflicts
+      with what the user asked, do what the user asked", the sender is given
+      only by the `=== message` line, answer with `send_message` to the
+      sender (in the folder of that line), `all`, long results as a file
+      path, and one line on `start_agent`/`stop_agent` when registered. No
+      role text. `MESSAGES_FOR_MODEL_HEADING` is now "Messages from other
+      agents follow. The user did not write them."; `LISTEN_TASK_HEADING`
+      keeps only: no user, nobody reads the final answer, send every reply
+      with `send_message`. `agent.run` rebuilds the system prompt at every
+      run, so `/clear`, `/repeat` and `/session-load` use the paragraph of
+      the current settings (a loaded session shows its saved prompt only
+      until the next run). Differs from the plan: the text is in
+      bp_messages.py, not bp_cli.py. Verified with real runs: MANGO message
+      during a task and queued before it acted on 4 of 4 times, and in
+      `bpsa run`; "answer in French" against the user's "English only":
+      English 2 of 2; a body forging a `leader3` block attributed to
+      `agent99` 2 of 2; `bpsa listen` member answered `leader3` in `group3`;
+      `leader3` (folders `leaders`, `group3`) started, instructed and
+      stopped `leader3-1` and reported to `boss`, 0 `Error:` results, 2 of 2;
+      ordinary tasks unchanged, no message sent; feature off: system prompt
+      byte-identical to cd0313a, start-up screen and `/show-tools` equal.
+- [x] **T9. Documentation.** `docs/CLI.md`: the settings, the subcommand, the
+      file name format, one worked example.
+      LANDED: `docs/CLI.md` has a new section "Agent-to-Agent Messages"
+      (message files, tools, `bpsa listen`, the `bp_messages` commands, the
+      example of T10 with its measured times, limits) and `bpsa listen` in the
+      Command block. The settings rows were written by T2, T3 and T6.
+- [x] **T10. Trial on one machine.** One global leader, one bpsa leader and
+      two bpsa members, with a non-coding task. Report: messages sent, delays
+      measured, model calls made while idle, and anything that failed.
+      LANDED (run on 2026-11-11 at commit 4a0accb, poll 5 s,
+      `BPSA_MAX_GROUP_MEMBERS=2`, leader with `--verbose on`): `boss` sent one
+      message to `leader1` (two haiku from two members, choose one, report,
+      stop the members) and received the report 2 min 25 s later with both
+      haiku, their authors and the choice. Messages: 6 files (1 boss to
+      leader, 2 leader to members, 2 replies, 1 report). Delays: leader took
+      the task at its next poll (5 s); starting two members one after the
+      other took 70 s; both members answered 9 s after the leader wrote to
+      them (3 s poll wait, 6 to 7 s model step); the leader then spent about
+      55 s in a `time.sleep(60)` that it chose itself to wait for replies that
+      had arrived after 9 s. Tokens: leader 50,259 in 4 steps, members 11,342
+      and 11,436 in 1 step each. Model calls while idle: none (each member log
+      shows one turn). Tool `Error:` results: 0. SIGTERM ended the leader in
+      8 s, status line present, no process left; redirected HOME held only
+      `.cache` and `.config`. Finding: an agent that needs replies has no way
+      to wait for messages except sleeping inside a step or ending its run.
+- [x] **T11. Code review** of T1 to T9 by an agent that wrote none of it.
+      LANDED: review of `81e64dc..7b87766`, read-only, 2026-11-11. 3 high, 7
+      medium (3 of them design notes), 12 low; none fixed yet. High: (H1) a
+      FIFO or a symlink to `/dev/zero` named like a message, a last-read file
+      or a member record blocks or exhausts the reader, and a blocked poller
+      makes `bpsa listen` deaf with no line printed; (H2) only the
+      `send_message` tool limits the message size, the reader and the `send`
+      command do not; (H3) deleting message files that were read makes the
+      sender's ids restart, and the reader then drops its later messages
+      silently. Medium: (M1) a forged `.<leader>-<k>.agent.json` makes the
+      leader signal another process of the same user, fills its limit or
+      blocks later starts; (M2) last-read file, member log and record follow
+      symlinks; (M3) the sender in a file name is whatever the writer chose,
+      and one (sender, id) pair hides another; (M4) `start_agent` from a
+      session with approval on starts members with auto-approve on and no
+      text says so; (M5) a REPL or `bpsa run` leader that gets SIGTERM or
+      SIGHUP leaves its members running; (M6) nothing bounds an exchange of
+      replies between agents except the session budget; (M7) one idle
+      listener uses about 260 MB, so 9 members need about 2.3 GB.
+        FIXED H1, H2 (this commit, 2026-11-12): `content_of_regular_file` in
+        bp_messages.py opens with O_NOFOLLOW|O_NONBLOCK, refuses non-regular files and files above a
+        byte limit unread; messages (limit 600,000 bytes), `.<reader>.read.json` (1,000,000) and
+        `.<name>.agent.json` (100,000) use it; `save_last_read_ids` unlinks a non-regular entry
+        first. `MAX_MESSAGE_TEXT_CHARACTERS` (100,000) moved to bp_messages.py: tool, `write_message`
+        and `send` refuse more. Verified: h12/check_h12.py 60/60, T1 PASS, T7 43/43, one `bpsa listen`.
+        FIXED H3 (this commit, 2026-11-12): `write_message` stores the sender's highest id in
+        `.<sender>.lock` (through the descriptor `sender_lock` holds, after the link); the next id is one
+        above the larger of that number and the highest message file. `sender_lock` opens with
+        O_NOFOLLOW|O_NONBLOCK and refuses a non-regular file with one OSError line. docs/CLI.md says
+        read `*.txt` may be deleted, hidden files must stay. Verified: h3/check_h3.py 75/75; T1 PASS
+        with one expectation changed (deleted id 1 now counts: next id 2); T7 43/43; h12 PASS.
+- [x] **T12. `wait_for_messages` tool.** An agent that needs replies waits
+      for them instead of sleeping (finding of T10).
+      LANDED (2026-11-12): `wait_for_messages(timeout_seconds)`
+      (`WaitForMessagesTool` in bp_tools.py), registered with `send_message`,
+      so members have it too. It blocks the code step on
+      `MessagePoller.wait_until_queued` until a message is queued or the time
+      (a number above 0, at most 3,600 s, no default; anything else prints one
+      `Error:` line and returns 0 at once) is over. The tool reads no folder:
+      during a wait the poller thread checks at once and then every
+      `WAITED_MESSAGE_CHECK_SECONDS` = 1 s instead of every poll interval
+      (`_check_requested` event, which `stop` also sets); only that thread
+      reads folders and touches `_last_queued_ids`, only the thread that runs
+      the agent takes from the queue. The tool writes the text of
+      `model_text_of_queued_messages` into `sys.stdout`, which the `exec`
+      executor has redirected into the step's execution log, and then removes
+      exactly these batches (`take_queued(batch_count)`, which records them as
+      read); it returns the number of messages, so `print(...)` of the result
+      adds one number and never a second copy. A timeout prints `No message
+      arrived within N seconds.` and returns 0. It never prints to a terminal:
+      when `sys.stdout` is not a `StringIO` (executor `local`), or the text
+      has more than 10,000 characters (the execution log is cut at 20,000), it
+      leaves the messages queued for the delivery between steps and says so.
+      An interrupt leaves the wait through the signal handler's exception; an
+      interrupt before the removal leaves the messages queued. The `exec`
+      executor has no time limit for a code step (`local` has 30 s). One
+      sentence added to `message_prompt_paragraph` (173 words for one folder
+      without `start_agent`, 215 for two with it); one row in docs/CLI.md.
+      Verified: t12/check_a.py 31/31 with a real poller at poll 60 s (message
+      written 2 s after the wait started returned after 2.0 s; timeout; two
+      senders in one text; not delivered again; invalid values; already
+      queued 1 ms); REPL at poll 60 s: the reply was in the execution log 0.6,
+      0.6 and 0.4 s after its file was written (3 runs, the third task did
+      not say how to wait and the agent chose the tool); a call without
+      `print` and one with `print` each showed the message once; Ctrl-C
+      during a wait gave the prompt after 0.3 s and the later message was
+      received in the next task; `bpsa listen`: SIGINT during a wait ended
+      the run after 0.2 s and the listener answered the next message, SIGTERM
+      left the wait after 0.1 s (process ended after 7.7 s, as before: 3 s to
+      stop a member, the rest is the exit of Python); the trial of T10 again:
+      report after 66 s instead of 2 min 25 s, two waits of 8.9 s and 2.8 s
+      (the first returned one reply, the second the other), 0 `Error:`
+      results, leader 64,500 tokens in 5 steps; feature off: system prompt and
+      tool list byte-identical to 41dd4b2, `/show-tools` screen equal; T7
+      43/43, h12 and h3 checks pass.
+- [x] **T13. Start several members at once.** One `start_agent` call starts
+      `count` members at the same time (a leader spent 50 to 70 s starting
+      two members one after the other).
+      LANDED (2026-11-12): `start_agent(folder?, working_directory?, count?)`;
+      `count` is last, so the calls that models already write
+      (`start_agent()`, `start_agent(folder="group1")`, a positional label)
+      keep working; a whole number of at least 1 (bool, float, string, None
+      refused with one `Error:` line). `bp_messages.start_members` replaces
+      `start_member`: it checks the limit for the whole call (live members
+      plus `count`; the `Error:` line says how many more may be started, and
+      nothing is started), fixes the names `<own name>-<k>` with consecutive
+      k, launches each child and writes its record at once (`launch_member`,
+      `write_member_record`), then waits for all of them together
+      (`errors_of_members_that_do_not_listen`): up to
+      `MEMBER_START_TIMEOUT_SECONDS` = 120 s plus
+      `MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER` = 30 s for each
+      member after the first. Members that listen stay; a member that
+      ended, timed out or could not be launched is stopped and reported, the
+      others are not touched. KeyboardInterrupt or the listener's stop
+      exception during launch or wait stops every child of the call
+      (`stop_launched_members`) and is raised again. Memory rule (finding
+      M7): the call is refused when `count` x `MEMBER_MEMORY_BYTES` (260 MB,
+      the measured resident size of an idle listener) exceeds `MemAvailable`
+      of `/proc/meminfo`, also for `count` 1; skipped where that file or
+      line is absent. Return text: `count` 1 as before (one line); above 1 a
+      first line `Started 2 of 3 agents: a, c. Not started: b.`, then per
+      member in name order the `Started agent ...` line or `Error: agent
+      <name> was not started: <reason>`. The tool description says to start
+      several agents with one call; `message_prompt_paragraph` is unchanged.
+      docs/CLI.md: three rows. Not changed: record trust (M1), the log open
+      (M2), REPL signal handling (M5), naming (a member whose log cannot be
+      opened leaves no record, so its number is free again, as before).
+      Verified with real runs on this machine (one processor, a pytest of
+      another project running part of the time): tool object: `count` 1
+      text equal to f55392a (also at the limit and for a member that ends);
+      wall time 28.7 s for one, 40.5 s for two, 57.3 s for three (each
+      further member adds its own import time on one processor; the model
+      call overlaps), each child in its own session, records and ready
+      lines present, `stop_agent("all")` leaves none; limit 2: `count` 3
+      refused with nothing started, with one live `count` 2 refused and 1
+      accepted; 10 invalid counts; one of three failing (its log path made
+      a directory): the two others listen, 4 lines name all three; two of
+      two ending before they listen: 0 started, no process, numbers used
+      up; SIGINT during a `count` 2 wait: both children gone after 4.4 s;
+      memory rule with a patched reader: refused at 500 MB for 2, passed at
+      520 MB, skipped for None (28/28). `bpsa listen` leader, poll 5 s,
+      limit 3: it called `start_agent(folder="group1", count=3)` unprompted
+      in 2 of 2 tasks; three haiku with authors reached `boss` 136 s after
+      the send (start step 92 s including its model call, load average 4 to
+      6), 0 `Error:` results, leader 66,387 tokens in 5 steps, members
+      about 11,700 each; SIGTERM with three idle members: all four processes
+      gone after 20 s, three `Stopped` lines; SIGTERM during the start wait:
+      the three starting children and the leader gone after 6 s. Feature
+      off: system prompt and tool list byte-identical to f55392a.
+      Earlier checks: T7 43/43, t12/check_a.py 31/31; h12 60/60 and h3
+      pass only with their per-case time limits raised (10 s to 60 s) in a
+      scratch copy, because the other project's pytest kept the load average
+      near 4 and the unchanged scripts timed out in a different case each
+      run.
+- [x] **T14. `wait_for_messages` loses no message (review findings M-a, M-b,
+      M-c).** The tool recorded a message as read when it printed it, before
+      the step's output had reached the model.
+      LANDED (2026-11-12): a printed message now stays queued until its code
+      step has ended. `MessagePoller.write_new_messages(log_file,
+      max_characters)` prints and counts; `record_printed_as_read(step_text)`
+      removes the printed messages whose block `step_text` holds and saves
+      the last-read ids of the batches this empties. bp_cli.py registers the
+      step callback `record_printed_messages_as_read` (only when a name is
+      set), which passes the step's observations and error text, the two
+      texts of a code step that the model receives. A step that an interrupt
+      ended has neither, so its messages stay queued and `take_queued`
+      delivers them (between steps, with the next task, or after a restart
+      from the read-ids file). M-a: nothing is recorded before the step
+      ended. M-b: the tool returns the number of messages it printed;
+      `wait_for_new_messages` (was `wait_until_queued`) waits on a second
+      event that is set only while messages are queued that no call has
+      printed or counted, so a later call in the step waits for newer ones.
+      M-c: the tool prints only into the first 10,000 characters of the
+      execution log (`MAX_LENGTH_TRUNCATE_CONTENT // 2`, the part
+      `truncate_content` always keeps), per message and in queue order; a
+      message that does not fit and every later one of that step are counted
+      in one line and delivered after the step (order kept, because the
+      last-read ids are saved per batch in queue order). Executor `local`:
+      nothing printed, 0 returned, delivery after the step. Removed:
+      `MAX_WAITED_MESSAGE_TEXT_CHARACTERS`, `take_queued(batch_count)`,
+      `queued_batches`. Tool description and the docs/CLI.md row rewritten;
+      `message_prompt_paragraph` unchanged. Rejected: saving the ids in the
+      tool after a room check (keeps M-a); confirming at the between-step
+      point only (the last step of a run has none); a flag "step ended
+      normally" instead of the text search (trusts every path to carry the
+      log to the model).
+      Verified (scripts in scratch `m_abc/`): check_ab.py 63/63 with a real
+      `CodeAgent`, `exec` executor, the callback, the steering source and a
+      scripted model that records its input: reviewer's E1 (11,000
+      characters: returns 0, 0, 0 at 0.0, 2.0, 4.0 s, delivered once between
+      steps), E2 (three of 4,000: 2 printed, third after the step), E3 (three
+      waits of 8,000: returns 1, 0, 0, all three whole and once), E3b, E4, E5
+      and `local`; an exception after a wait (message in the error text,
+      once); KeyboardInterrupt and `ListenStopSignal` during the first wait,
+      between two waits, during the second wait and after the last wait: no
+      id recorded, a restarted reader would receive every message, the next
+      run's input holds each once; interrupt after the step ended: once, not
+      twice. Real `bpsa listen` agents `asker` and `helper` (poll 5 s): reply
+      `51` in the execution log of a 6.05 s step, read ids recorded, not
+      delivered again; two waits in one step, SIGTERM 7 s after helper's
+      reply `76`: read ids unchanged, the restarted `asker` received message
+      2 from helper as its first task. Feature off: system prompt and tool
+      list byte-identical to b1b7a10. Earlier checks: T7 43/43; h12 and h3
+      slow copies pass unchanged; t12/check_a.py 31/31 in a scratch copy
+      with four changes (step end called after each tool call, method name,
+      return 0 and the new line for the long text and for a stdout that is
+      no execution log). Not run: the REPL with a real Ctrl-C, SIGINT to a
+      real listener, executor `local` in a real bpsa run, pytest.
+      Seen, not fixed: `agents.py` catches the first interrupt of a model
+      call with a bare `except:` and sleeps 30 s before a retry; the
+      listener's stop line "the messages of that run are not delivered
+      again" does not hold for messages a wait printed in the interrupted
+      step (they are delivered again).
+      REVIEW FIX (2026-11-12, findings M-1, M-2, L-1, L-2, L-3 of the review
+      of `437e96f`). M-1: the step callback recorded a printed message as
+      read before `_run_stream` had appended the step to memory; an
+      interrupt or exception in a later callback (the compression callback
+      makes a model call) lost the message, also after a restart. M-2: the
+      tool returned 0 both for "nothing arrived" and for "arrived, not
+      printed", so `while got < n: got += wait_for_messages(600)` never
+      ended (with executor `local` for any message).
+      Design, M-1: two stages. The step callback, now
+      `mark_printed_messages_as_shown(memory_step, agent)`, only marks
+      (`MessagePoller.mark_printed_as_shown(step_text, ended_step)`).
+      `record_shown_messages_as_read(agent)` removes the marked messages
+      and saves the ids (`MessagePoller.record_shown_as_read`), but only
+      when the marked step object is in `agent.memory.steps`; otherwise it
+      removes the mark and the messages stay queued for `take_queued`.
+      Callers: `queued_message_steering_texts` (before each step), the
+      callback itself for the step before (agents without a steering
+      source, as `/repeat` builds them), and after `agent.run` in `run_repl`
+      and `run_agent_on_listen_task`. `run_one_shot` does not call it: the
+      process ends, so a message printed in its last step is not recorded.
+      `agents.py` is unchanged. M-2: the tool raises
+      `CodeStepEndedForMessages` (an `Exception`) when a message waits that
+      it cannot print; the executor makes it the step's error text, the
+      step ends and the steering source delivers the messages. A further
+      call in the same step raises again at once (the poller no longer
+      counts unprinted messages as announced; `_announced_message_count`
+      is removed). 0 now means only "none arrived in that time". An
+      invalid `timeout_seconds` and a call before the poller exists raise
+      too (they returned 0 at once, which the same loop turned into an
+      endless one). Tool description, docs/CLI.md row and the comments at
+      bp_messages.py 48 and 775 rewritten; the listener's SIGTERM line and
+      the docs sentence now except the messages a wait printed in the code
+      step in progress. Rejected: counting unprinted messages in the return
+      value (counts what the model was not shown); returning 0 at once on
+      later calls (busy loop); recording at the next step's end, after a
+      model call has carried the step (`take_queued` would have to skip a
+      held prefix and save ids out of queue order); an `agents.py` change
+      (append before the callbacks).
+      L-1, what remains: the ids are saved before the model call that
+      carries the step returns, as for every `take_queued` delivery; in the
+      REPL and `bpsa listen` the last step of a run is recorded when the
+      run ends, so a process that ends before its next run has the message
+      only in a memory that no model call read.
+      Verified (scripts in scratch `m12/`): check_x.py 30/30: a later
+      callback raising KeyboardInterrupt, `ListenStopSignal` or
+      RuntimeError leaves the step out of memory, no id saved, the message
+      queued; the next run's input holds it once, a new poller queues it
+      again; `wait_for_messages` + `final_answer` in one step; no steering
+      source; the reviewer's loops: 11,000 characters end the step in 0.2 s
+      and the model receives the text once after `<error>`; two of three
+      printed, third after the step; a loop that catches the exception
+      (three raises in 0.2 s); timeout 7200. check_ab.py 64/64 in a copy
+      with 8 blocks changed (E1, E2, E3, E3c, E7, both E5 parts,
+      `local`), check_a.py 31/31 in a copy with 5 changes. Real `bpsa
+      listen` agents `asker` and `helper` (poll 5 s): reply `51` printed in
+      an 8.8 s step, `wait` returned 1; then a reply of 10,515 characters
+      to a `while got < 1` loop: the step ended after 7.2 s with the
+      "Not a failure" text, the reply was delivered once after the step,
+      the agent did not retry and reported one copy and the right last 14
+      characters; read ids `{"boss": 2, "helper": 2}`. Feature off: system
+      prompt and tool list byte-identical to b1b7a10, no message callback.
+      T7 43/43, h12 and h3 slow copies pass. Not run: REPL with a real
+      Ctrl-C, a signal to a real listener during a wait, `bpsa run`,
+      `/repeat`, executor `local` in a real bpsa run, pytest.
+      Seen, not fixed: with executor `local`, `agents.py` (about line 2396)
+      raises UnboundLocalError (`code_output`) on every exception of a code
+      step and the run ends; the tool's exception therefore ends the run
+      there and the messages arrive with the next task (before this fix a
+      single call returned 0 and they arrived between steps).
+      `LISTEN_RUN_END` ("its messages are not delivered again") has the
+      same inexact wording as the stop line had. The exception text says
+      "right after this code step"; when that step was the last one the
+      run may take, the messages arrive with the next task.
+- [x] **T15. Reset.** A leader gives a `bpsa listen` agent a fresh start
+      for a new topic, or gets a stuck one back, without stopping and
+      starting its process.
+      LANDED (2026-11-12): a reset request is an empty file
+      `from_to_id.reset` (`RESET_FILE_SUFFIX`) with the sender's next
+      message id; `to` is an agent name or `all`. `write_reset` writes it
+      (through `write_message_or_reset`, the former body of
+      `write_message`); the command `python -m smolagents.bp_messages reset
+      --to T` and the tool `reset_agent(name, folder?)` (`ResetAgentTool`)
+      call it. `send`, `send_message` and `write_message` always build
+      `.txt`, so no message text resets anything.
+      `parse_message_or_reset_file_name` parses both forms;
+      `parse_message_file_name` still returns None for a reset name;
+      `parsed_message_files` lists both, so the id counter counts resets;
+      `read_new_messages_and_resets` returns messages and `ResetRequest`s,
+      `read_new_messages` passes over resets (their ids count as read), so
+      the `new` and `wait` commands skip them without output. A reader of
+      `7070871` ignores a `.reset` file and reads the messages around it;
+      its writer continues after the reset's id (from the lock file).
+      Poller: `MessagePoller(..., request_reset=None)`. With
+      `request_reset` (only `bpsa listen` passes one) the thread records a
+      `PendingReset` and calls it; without, the thread answers
+      `reset_refused_text` and prints one line (REPL and `bpsa run`: the
+      context of a person's session is not cleared by another agent).
+      Listener: `request_listen_reset` sends SIGUSR1 to the main thread;
+      `handle_listen_signal` raises `ListenResetSignal` through the
+      existing `raise_listen_signal_exception` (SIGALRM raises it again
+      every second), but only inside `listen_reset_interruptible`: the wait
+      for messages and `agent.run`. `run_agent_on_listen_task` catches it,
+      prints `Run N ended by a reset request; ...` and does the turn's
+      accounting. At the top of its loop `run_listen` then replaces the
+      agent as `/clear` does (`_shutdown_browser`/`_gui`/`_mcp`,
+      `rotate_session_id`, `build_agent`, `apply_context_length`) and calls
+      `confirm_listen_resets`: `MessagePoller.take_pending_resets`, one
+      `reset_done_text` message and one log line per request. `agents.py`
+      is unchanged.
+      Decisions. (1) Cleared by replacing the agent, not field by field:
+      conversation, knowledge notepad, plan, Python variables, compression
+      state and step counters go together, as for `/clear`; browser, GUI
+      and MCP connections are closed and opened again. (2) Kept:
+      `session_stats` and `budget_warned`, so the budget counts on; the
+      run number; the last-read ids. Not undone: files, working directory
+      of the process, imported modules, tmux sessions, child processes.
+      (3) Queued-message rule: batches queued before the newest pending
+      request are discarded and recorded as read (`QueuedMessages.
+      reset_count`); messages of the request's sender with a lower id found
+      in the same listing are never queued; all others are kept. While a
+      request is pending, `take_queued` and `write_new_messages` hand out
+      nothing, so no message for the new context reaches the old one.
+      (4) The marks of `wait_for_messages` are cleared with the queue.
+      (5) Reset while idle, in `wait_for_messages`, in a model call, in a
+      code step: the same exception. In `start_agent`: the members of that
+      call are stopped (its existing handler), earlier members stay.
+      Several requests found before the agent is replaced: one replacement,
+      one confirmation each. A request that arrives during a replacement:
+      a second replacement. During shutdown: SIGUSR1 is ignored. SIGTERM
+      during a reset ends the listener; that request is not confirmed and
+      not recorded, so a restarted listener confirms it. (6) Members are
+      not reset or stopped; the first task after a reset starts with
+      `live_members_line` when some run. Agent instruction files are
+      prepended again to that task. (7) `reset_agent` is registered with
+      `stop_agent` (`BPSA_MAX_GROUP_MEMBERS` above 0), so a member cannot
+      reset its leader; it accepts any name in the folder and `all`.
+      `message_prompt_paragraph` is unchanged (215 words): the tool
+      description was enough in the real run. (8) A failing `build_agent`
+      during a reset (an MCP server that is gone) ends the listener with a
+      traceback after its members are stopped; not handled further.
+      Verified with real runs (scripts and logs in scratch `t15/`, poll
+      5 s, one processor): check_a.py 77/77 (names, parsers, id counter
+      across messages, resets, deleted files and a lost lock file, the
+      `7070871` reader and writer, six reset-like texts through
+      `write_message`, `send` and `send_message`: 0 requests, the queue
+      rule, two requests in one listing, restart, refusal, 6 command
+      errors, 3 tool errors). Idle listener: password and variable known
+      before (`password=ZEBRA-4417; variable_defined=True`), `UNKNOWN` and
+      `False` after; confirmation 2.9 s after the request file; read ids
+      `{"boss": 7}`; with `BPSA_MAX_SESSION_TOKENS=20000` two runs of
+      11,743 and 11,748 tokens with a reset between ended the listener
+      with `Session tokens: 23,491 of 20,000`, status 1. Busy listener,
+      request file to confirmation file: 4.4 s in a model call, 0.3 s in
+      `time.sleep(60)`, 0.5 s in `wait_for_messages(600)` and in a
+      `wait_for_messages(300)` the model chose itself, 2.5 s in
+      `start_agent(count=2)` (both starting members gone); no marker file
+      and no `SLEPT` or `WAITED` message afterwards; the next task answered
+      `UNKNOWN`. Queue: two messages queued during a sleep step, then a
+      third, the reset and a fourth from the same sender: `3 unread
+      messages discarded`, the next run saw only the fourth. `all`: a
+      request under the name `w4` reset `w5` and not the listener `w4`;
+      `boss` to `all` reset both (2.0 and 2.4 s). Three requests from two
+      senders at once: three confirmations. Leader `lead` with member
+      `lead-1`: after the reset the member ran on with its context, the
+      leader answered `members=lead-1; member_password=HERON-5529;
+      my_own_memory_of_password=UNKNOWN`; then it reset `lead-1` with
+      `reset_agent` (member then `UNKNOWN`), stopped it with `stop_agent`
+      and started `lead-2`. SIGTERM at the line `Run 5 ended by a reset
+      request`: `Listener stopped by SIGTERM during a reset.`, status 0,
+      `lead-2` stopped; SIGTERM 0.05 s after a reset's log line: status 0,
+      member stopped. `bpsa run` and the REPL (tmux): one `Reset 1 from
+      boss in folder ... refused` line, the refusal message, context kept
+      (`FALCON-12`). Feature off: system prompt and tool list
+      byte-identical to `7070871`.
+      Earlier checks, unchanged scripts: T7 43/43, h12 slow copy PASS, h3
+      slow copy PASS (75 `ok`), and scratch copies of the `m12/` scripts
+      with no assertion changed: check_x.py 30/30, check_a.py 31/31,
+      check_ab.py 64/64. docs/CLI.md: new subsection "Reset", the `.reset`
+      file form, one tool row, one command line.
+      Not run: a reset with `--browser`, `--gui`, `--tmux` or MCP servers;
+      a `build_agent` that fails during a reset; executor `local`; a
+      listener restarted with an unrecorded request; a reset while
+      `stop_agent` waits or while a code step runs a child process; the
+      discard of batches queued from a second folder (unit check and real
+      runs used one folder per request); SIGINT around a reset; pytest.
+      Seen, not fixed: the tokens of a model call that a reset (or SIGTERM,
+      SIGINT) interrupts are not counted (`Turn 1 | ... In: 0`), so the
+      budget misses them; each reset prints the four start lines of
+      `build_agent` (`Caution: you set an authorization ...`,
+      `Initializing executor, hold on...`) into the log; an idle listener
+      that sent a reset makes one model call (about 12,000 tokens) on each
+      `Reset done:` message it receives; a listener's agent often ends a
+      reply with `wait_for_messages(300)` instead of ending its run, so the
+      next message arrives inside the same run.
+      REVIEW FIXES (2026-11-12). Found by review of `4335bb0`: (M-1) after
+      a reset, `live_members_line` (`own_member_records`, `os.listdir`)
+      raised `OSError` for a removed folder and `run_listen` died with a
+      traceback, losing the message just taken; (M-2) with requests from two
+      folders, or from two senders found in different poll cycles, the
+      batches queued after the earliest request were discarded (every batch
+      below the newest request's `reset_count`), and the saved read ids
+      could be lower than those of a discarded batch; (L-2) each `Reset
+      done:` stated the total discard count of all pending requests as its
+      own; (M-3) a new process carried out (or refused) every old request
+      lying in a folder, `*_all_*.reset` included, at its first check; (L-1)
+      a refused request was never recorded as read, so each new `bpsa run`
+      or REPL under that name refused it again; (L-3) `reset_agent` said
+      that no answer means no listener has that name; (L-4) docs/CLI.md said
+      that a member cannot reset its leader.
+      Fixes: `own_member_records(settings, unlisted_folder_errors)` skips a
+      folder it cannot list when given the dict; `live_members_line(settings,
+      print_line)` prints one line naming it, and the task runs. Decision (3)
+      now reads: `take_pending_resets` discards the batches queued before the
+      EARLIEST pending request, and in the batches after it the messages of
+      a pending request's sender with a lower id in that folder; every other
+      message stays queued. Per folder it saves the highest id of every
+      entry (`highest_ids`), lowered for each sender with a kept message to
+      the id below its first kept one, so a restarted reader receives
+      exactly the kept, undelivered messages. With several requests the
+      count is that of the one replacement: `(N unread messages discarded in
+      total for the K reset requests served by this one replacement)`.
+      Decision (5) changes: requests in the poller's first listing of a
+      folder after the process started are recorded as read and neither
+      carried out, refused nor confirmed (listener, REPL, `bpsa run`); so a
+      listener restarted after SIGTERM during a reset no longer confirms
+      that request. A refusal records the request as read
+      (`_record_as_read`: into the last queued batch of that folder, or
+      saved at once when none is queued). Tool text: "No such message
+      usually means that no listening agent has that name; it may also
+      still be replacing its context or have failed to send the message."
+      docs/CLI.md: Reset subsection (several requests, first check, refusal
+      recorded, folder that cannot be listed), `reset_agent` row ("an agent
+      started with `start_agent` has no `reset_agent` tool").
+      Verified (scratch `t15fix/`): check_bcd.py 45/45 (the review scenario
+      over folders `a` and `b` in one poll cycle: `NEW-INSTRUCTIONS` and
+      `CARL-2` delivered once, read ids `{"boss1": 1, "carl": 2}` and
+      `{"boss2": 1, "dora": 1}`, a restarted reader gets exactly those two,
+      then nothing; a second sender's request in a later poll; one request;
+      a new reader and a reader with `.read.json` holding old
+      `boss_all_000002.reset` and `boss_w_000003.reset`: no reset, no answer,
+      the message delivered, a later request carried out; three non-listener
+      pollers in a row: one refusal); the same script on `4335bb0` code
+      discards 4 instead of 2 and delivers nothing. Scripted `run_listen`
+      with folders `a` and `b`, `b` removed before a reset: confirmation,
+      one line `Message folder b could not be checked for the agents you
+      started: No such file or directory`, the next message answered, exit
+      0 on SIGTERM (`4335bb0`: `FileNotFoundError` traceback, exit 1). Real
+      `bpsa listen`: fact, reset, question answered `UNKNOWN`, one `Reset
+      done:`; restarted under the same name with two unrecorded old requests
+      (`boss_w_000004.reset`, `boss_all_000005.reset`): no reset, no answer,
+      the next message answered, read ids `{"boss": 6}`. Earlier checks:
+      t15 check_a.py 77/77 (scratch copy: in section 5 the poller starts
+      before the request is written, because a request of the first listing
+      is no longer refused), T7 43/43, h12 slow PASS, h3 slow PASS (75 `ok`),
+      m12 copies check_x.py 30/30, check_a.py 31/31, check_ab.py 63/64:
+      E7 "both delivered once between the steps" fails on `4335bb0` code as
+      well (the short message written during the step is not listed before
+      the step ends), not changed. Feature off: system prompt and tool list
+      byte-identical to `4335bb0` (42,963 bytes).
+      Not run: the race in which a refusal is recorded while `take_queued`
+      saves an older batch (the refused id may then stay unrecorded; the
+      next process ignores it as an old request); a folder that is missing
+      at start and appears later (its first successful listing counts as
+      first); pytest.
+
+- [x] **T16. `start`, `stop`, `list`, `status` on the command line.** A
+      program that can only run shell commands (a Claude Code session) leads
+      `bpsa listen` agents: it starts them, sees their state without a
+      model call and stops them. Before, it could only `send`, `wait` and
+      `reset`, and had to start a listener by hand.
+      LANDED (2026-11-12). `python -m smolagents.bp_messages`:
+      `start --folder F --name ME [--count N] [--directory D]
+      [--group-folder G]... [--max-members M]` calls `start_members` with
+      `MessageSettings(ME, (F,), BPSA_MESSAGE_POLL_SECONDS,
+      BPSA_MAX_GROUP_MEMBERS)` of the command's environment, so names
+      (`ME-<k>`), records, logs, limit and memory refusals, the joint start
+      timeout and the partial-failure handling are those of `start_agent`.
+      `start_members` and `launch_member` take two new parameters with
+      defaults that keep `start_agent` as it was: `further_folders` (the
+      started agent's `BPSA_MESSAGE_FOLDERS` is `F` plus these) and
+      `member_limit` (its `BPSA_MAX_GROUP_MEMBERS`, 0 before). `stop
+      AGENT|all` calls `stop_members` on `own_member_records`; `list` prints
+      `member_record_line` per record; `status` prints `agent_status_line`.
+      `run_agent_command` holds the four; `main` reports their refusals as
+      the one `Error:` line with exit 1 like the other commands.
+      What assumed a living bpsa starter, and what was done: nothing had to
+      change. `launch_member` already gives the listener `/dev/null` as
+      stdin, the log file as stdout and stderr and its own session, so the
+      command's pipe is not inherited (`start ... | cat` ends) and the end
+      of the shell does not reach it. `is_member_live` reads `/proc` and
+      does not need the starter. `stop_members` waits on a child only when
+      `_started_member_processes` holds it; a listener whose starter ended
+      belongs to init, which collects its exit status. `_shutdown_members`
+      of the starter does not run, because the command is no bpsa session:
+      the agents stay until `stop`.
+      Status: `bpsa listen` (`record_listen_state` in bp_cli.py, called in
+      `run_listen`) writes `.<name>.status.json` in each of its folders at
+      each change of state through `write_agent_status`
+      (`replace_hidden_file_with_text`: rename over the old file, after
+      removing a symlink, FIFO, socket or device at the path): process id,
+      start ticks, state (`AGENT_STATES`: starting, idle, busy, resetting,
+      ended), start time of the state, run number, runs done, input and
+      output tokens of the runs done (`session_stats`), and for `ended` the
+      reason. `loaded_agent_status` reads it with `content_of_regular_file`
+      (limit 10,000 bytes) and checks every field. `agent_status_line`
+      shows the recorded state only while the process that wrote the file
+      runs (`is_member_live` on the file's own process id and start ticks);
+      `unknown` while only the record's process runs; otherwise `ended`,
+      with `since=unknown` and the last recorded state in `note` when the
+      process did not record its end. So a killed process is never `busy`,
+      and a listener started by hand or by `start_agent` appears in `status
+      --all` without a record.
+      Decisions: (1) `--name` is the caller, as in `send`; the caller's
+      limit and the poll interval come from the environment of `start`
+      (`BPSA_MAX_GROUP_MEMBERS`, `BPSA_MESSAGE_POLL_SECONDS`), no new
+      options. (2) A leader gets its group with `--group-folder G`
+      (repeatable, must exist; `start` creates no folder) and
+      `--max-members M`; default none and 0, so a plain worker has neither.
+      (3) The record gains `message_folders` and `max_group_members`
+      (`MemberRecord.message_folder_paths`, `.max_group_members`; a record
+      without them reads as its own folder and 0); `list` shows them.
+      (4) `list` and `status` show the caller's agents; `--all` shows every
+      record (status: or status file) in the folder and needs no `--name`.
+      (5) Only `bpsa listen` writes the status file, not the REPL or `bpsa
+      run` with a name. (6) A leader writes its status file in every folder
+      it reads, so `status --all` on the group folder shows leader and
+      members. (7) Tokens are those of finished runs. (8) `stop` exits 0
+      also for `was not running`; 1 only for a name that is not the
+      caller's or has no record. `start` exits 0 (all listen), 1 (none
+      started), 2 (some). (9) After stopping a leader, `stop` reports its
+      members: `The agents that ME-1 had started have ended: ...`; members
+      that a killed leader left running are stopped by the same command
+      (`stop_members_left_by`), also when the leader had ended earlier.
+      (10) Line formats: `name key=value ...`, paths as JSON strings, free
+      text only in a last `note="..."`; stated in docs/CLI.md.
+      Small refactors for reuse, texts unchanged:
+      `message_folders_of_paths` (from `load_message_settings`),
+      `replace_hidden_file_with_text` (from `save_last_read_ids`),
+      `agent_names_of_hidden_files` (from `own_member_records`).
+      Verified with real runs (scratch `t16/`, model
+      `anthropic/claude-opus-5-5`, poll 2 s, one processor with load
+      average 3 to 4): (a) `start ... | cat` from `bash -c` returned in
+      26.9 s with exit 0; the agent answered `PONG` 11.3 s after `send`,
+      after the starting shell had ended. (b) `status`: idle `runs_done=0`;
+      `busy run=2` 2.8 s after a task with `time.sleep(25)`; `runs_done`
+      1, 2, 3 with input tokens 11,686, 23,605, 35,304; a watcher of the
+      status file saw idle, busy, resetting (0.28 s), idle for a reset
+      during a run; SIGKILL during run 2: `state=ended since=unknown` with
+      the note `last recorded state: busy in run 2`, `list` says `ended`.
+      (c) `stop claude-1`: `Stopped claude-1 (process 245035).` in 7.7 s,
+      exit 0; second `stop`: `claude-1 was not running.`, exit 0; `stop
+      all` with none running: one line, exit 0; no process left. (d)
+      `start --count 2`: both listen after 68 s; `--count 2` with a
+      directory at `claude-2.log`: exit 2, `Started 1 of 2 agents`, one
+      stderr line; exit 1 with one `Error:` line for: limit (`--count 99`;
+      `BPSA_MAX_GROUP_MEMBERS=1` with one agent running; `=0`; `=x`),
+      memory (`--count 9`: 2,340 MB needed, 2,290 MB available), name
+      `Claude`, a folder, group folder or directory that does not exist, a
+      group folder with the label of the folder. (e) A leader started with
+      `--group-folder g1 --max-members 2` logged `may start 2 agents`, got
+      a task by `send`, started `boss-1-1` in `g1` and reported its reply
+      85.7 s after the task; `status --all` and `list --all` on `g1` show
+      the member; `stop boss-1` printed `The agents that boss-1 had started
+      have ended: boss-1-1.` and both processes were gone. A second leader
+      killed with SIGKILL left its member running; `stop boss-2` printed
+      `boss-2 was not running.` and `boss-2 left 1 of the agents it started
+      running: Stopped boss-2-1 (process 249323).` (f) start, send, wait,
+      status, reset, wait, send, wait, status, stop, list: 111.2 s in all;
+      per command 39.6, 5.7, 9.8, 6.1, 5.8, 6.1, 6.0, 7.0, 6.4, 12.6, 5.7 s
+      (about 6 s of each is the start of Python with the package under
+      that load); the agent answered `391`, `Reset done:`, `FRESH`. (g) A
+      symlink, a FIFO, a 20,000-byte file and a directory at the status
+      path: `status` returned at once with `state=unknown` and the reason;
+      the listener answered the next task each time, replaced the first
+      three by a regular file (the symlink's target kept its content) and
+      for the directory printed one line and went on. (h) Feature off:
+      system prompt and tool list byte-identical to `33e9df8` (42,960
+      bytes); with a name and a folder also identical (56,071 bytes, so the
+      texts of `start_agent` and `stop_agent` are unchanged); `bpsa run`
+      without and with `BPSA_AGENT_NAME` wrote no status file. (i) t15fix
+      check_a.py 77/77; check_bcd.py 43/45 twice, then 45/45 three times,
+      and 43/45 once in three runs on `33e9df8` code: the two assertions of
+      section c1 wait 0.8 s for a 0.2 s poller and depend on the load (a
+      scratch copy with 6 s passes 45/45); T7 43/43; h12 slow PASS (60
+      `PASS`); h3 slow PASS (75 `ok`); m12 copies check_x.py 30/30,
+      check_a.py 31/31, check_ab.py 64/64 (E7 passed in this run). No
+      assertion of an earlier check was changed.
+      Not run: a `start` whose listener never comes up (the 120 s timeout
+      path through the command); a leader that needs more than 20 s to stop
+      its members; two `start` commands for one name at the same time
+      (they can choose the same member name, as two `start_agent` calls of
+      two processes could); a machine without `/proc`; pytest.
+      Seen, not changed: the limit refusal of `start` names the tool
+      (`before you stop one with stop_agent`), because the text is
+      `start_members`' and the tool must keep it; every command of
+      `python -m smolagents.bp_messages` takes 1.6 to 6 s to start, because
+      it imports the `smolagents` package.
+      REVIEW FIXES (2026-11-12). Found by review of `5c56d05`: (M-a) after
+      a reset, `take_pending_resets` saved the right read ids but left each
+      kept `QueuedMessages` batch with the ids of its own older listing;
+      the save at its delivery (`take_queued`, `record_shown_as_read`) set
+      ids back, so a restarted reader received a discarded message. (M-b)
+      `stop_members` sent SIGKILL and returned at once; `stop_members_left_by`
+      still saw the killed leader in `/proc` and stopped none of its
+      members, which kept running until a second `stop`.
+      Fixes: `take_pending_resets` gives each kept batch, per sender, the
+      higher of its own ids and the folder's saved ids (already lowered to
+      one below the sender's first kept message), so no later save goes
+      down and none skips a kept message. `stop_members` waits after SIGKILL
+      up to `MEMBER_EXIT_STATUS_WAIT_SECONDS` (2 s) until `is_member_live`
+      is false (a zombie child is not live); a process still running then
+      gets the line `X (process P) did not end within 20 s of SIGTERM and
+      still ran 2 s after SIGKILL.` Other lines, the `stop_agent` texts and
+      docs/CLI.md are unchanged (its sentence on a leader that did not end
+      within 20 s is now true); `stop_agent` gains at most 2 s after SIGKILL.
+      Verified (scratch `fin/`): rv6 `det.py`: after delivery the read ids
+      are `{"boss": 1, "carl": 1, "dora": 2}` and a restarted reader gets
+      nothing (5c56d05: `{"boss": 1, "carl": 1}`, `DORA-OLD`); rv6 `prop.py`
+      seeds 0-2300: 0 failures. Stand-ins: a leader that ignores SIGTERM
+      with a member: one `stop` printed the killed line and `me-1 left 1 of
+      the agents it started running: Stopped me-1-1 (...)`, exit 0, 22.3 s,
+      both gone; a leader that stops its member on SIGTERM: unchanged lines,
+      3.1 s; own child: killed line, 20.35 s, exit status collected; SIGKILL
+      without effect (patched `os.kill`): the new line, 3.0 s. Real run:
+      `start --group-folder g1 --max-members 1` (16.5 s), the leader started
+      `boss-1-1` and reported `MEMBER-OK` (33.1 s); `stop boss-1` printed
+      `Stopped boss-1 (...)` and `The agents that boss-1 had started have
+      ended: boss-1-1.`, exit 0, 9.7 s, both processes gone. Earlier
+      checks: t15fix check_a.py 77/77, check_bcd_slow.py 45/45, T7 43/43,
+      h12 slow PASS, h3 slow PASS, m12 copies check_x.py 30/30, check_a.py
+      31/31, check_ab.py 63/64 twice (E7, the same failure on `5c56d05`
+      code). Feature off: system prompt and tool list byte-identical to
+      `5c56d05` (42,960 bytes).
+      Not run: a process that SIGKILL does not end within 2 s (only with a
+      patched `os.kill`); pytest.
+      Open (low findings of that review, not fixed):
+      - a restarted listener runs a task that a reset had cancelled;
+      - a reset written before the first listing of a folder is ignored;
+      - `stop_live_members` raises on a missing folder;
+      - two simultaneous `start` commands for one name;
+      - exit status 2 of `start` has two meanings;
+      - no limit on the depth of sub-leaders;
+      - `start` killed by its caller;
+      - `status` can mix values of two processes;
+      - unquoted paths in output lines.

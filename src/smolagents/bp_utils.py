@@ -6,23 +6,33 @@
 # Licensed under the Apache License, Version 2.0
 
 import ast
+import errno
 import glob
+import io
 import os
 import re
 import secrets
 import shutil
+import stat
 import sys
 import time
 import unicodedata
+from contextlib import suppress
 from functools import cache
 from itertools import chain, islice
 from textwrap import dedent
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
 
 
 MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
 FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
 INCLUDEFILE_TAG = re.compile(r"<includefile>(.*?)</includefile>", re.DOTALL)
 FAILED_INCLUDE_TAG_TYPE = "failed_include"
+TEMPORARY_SAVE_FILE_SUFFIX = ".bpsa-save.tmp"
 # A filename quoted with one quote character may contain the other one.
 FILENAME_ATTRIBUTE = r"""\s+filename\s*=\s*(?P<quote>['"])(?P<filename>(?:(?!(?P=quote))[\s\S])*)(?P=quote)\s*"""
 SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:""" + FILENAME_ATTRIBUTE + r""")?>)"""
@@ -46,19 +56,33 @@ TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\
 TERMINAL_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in chain(range(0x00, 0x09), range(0x0b, 0x20), range(0x7f, 0xa0))}
 PRIVATE_USE_RANGES = (range(0xE000, 0xF900), range(0xF0000, 0xFFFFE), range(0x100000, 0x10FFFE))
 
+# Every .env load goes through load_dotenv_recording_names: a name loaded earlier looks like a process env var later.
 dotenv_loaded_names: set[str] = set()
+_reported_dotenv_failures: set[tuple[str, str]] = set()
 
 
-def load_dotenv_recording_names(env_path: str | None = None) -> set[str]:
+def load_dotenv_recording_names(env_path: str | None = None) -> set[str] | None:
     """load_dotenv that adds the names it set to dotenv_loaded_names and returns them; without env_path it searches
-    as load_dotenv does. All loads go through here because a name loaded earlier looks like a process env var later."""
+    as load_dotenv does. A failed load prints one stderr line naming the file and the reason and returns None."""
     from dotenv import dotenv_values, find_dotenv, load_dotenv
 
     env_path = env_path or find_dotenv()
     if not env_path:
         return set()
-    added_names = {k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ}
-    load_dotenv(env_path)
+    added_names: set[str] = set()
+    try:
+        added_names = {k for k, v in dotenv_values(env_path).items() if v is not None and k not in os.environ}
+        load_dotenv(env_path)
+    except (OSError, ValueError, MemoryError) as e:
+        # os.environ rejects a NUL in a value after load_dotenv set the names before it.
+        dotenv_loaded_names.update(name for name in added_names if name in os.environ)
+        # str(e) of a UnicodeDecodeError quotes a byte of the file, which may hold secrets.
+        reason = f"not valid {e.encoding}" if isinstance(e, UnicodeDecodeError) else str(e) or type(e).__name__
+        # bpsa loads ./.env twice when smolagents is imported with it as the current directory.
+        if (env_path, reason) not in _reported_dotenv_failures:
+            _reported_dotenv_failures.add((env_path, reason))
+            print(visible_encodable_text(f"Failed to load {env_path}: {reason}", sys.stderr.encoding), file=sys.stderr)
+        return None
     dotenv_loaded_names.update(added_names)
     return added_names
 
@@ -176,6 +200,116 @@ def holds_line_break(text: str) -> bool:
 def unencodable_as_backslash_escapes(text: str, encoding: str) -> str:
     """Returns text with each character encoding cannot represent, such as a lone surrogate in UTF-8, as a backslash escape."""
     return text.encode(encoding, "backslashreplace").decode(encoding)
+
+
+def process_umask() -> int:
+    """Returns the umask of this process. The system has no call that only reads it, so other threads see 0o077 for an instant."""
+    current_umask = os.umask(0o077)
+    os.umask(current_umask)
+    return current_umask
+
+
+def is_replaceable_by_rename(filepath: str, target_path: str) -> bool:
+    """Returns whether renaming a new file to target_path, the resolved filepath, has the effect of open(filepath, "w"): the target is absent with filepath no symlink,
+    or it is a writable regular file of this user with one hard link and no setuid or setgid bit; and the system resolves filepath to it."""
+    try:
+        if not os.path.lexists(target_path):
+            return not os.path.islink(filepath) and os.path.samefile(os.path.dirname(filepath) or os.curdir, os.path.dirname(target_path))
+        target_status = os.lstat(target_path)
+        return (
+            os.path.samestat(os.stat(filepath), target_status)
+            and stat.S_ISREG(target_status.st_mode)
+            and target_status.st_nlink == 1
+            and target_status.st_uid == os.geteuid()
+            and not target_status.st_mode & (stat.S_ISUID | stat.S_ISGID)
+            and os.access(target_path, os.W_OK)
+        )
+    except OSError:
+        return False
+
+
+def is_path_of_open_file(path: str, descriptor: int) -> bool:
+    """Returns whether path, without following a symlink at it, names the file that descriptor has open."""
+    try:
+        return os.path.samestat(os.lstat(path), os.fstat(descriptor))
+    except FileNotFoundError:
+        return False
+
+
+def open_locked_temporary_file(temporary_path: str, target_path: str) -> tuple[int, bool]:
+    """Returns a write descriptor holding the exclusive lock of the file at temporary_path, given the mode and group of target_path, and whether this call created that file.
+    Takes over a file a killed save left there. Raises OSError when it cannot open, lock or set up a regular file of this user with one hard link."""
+    while True:
+        is_created = False
+        try:
+            descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+            is_created = True
+        except FileExistsError:
+            try:
+                descriptor = os.open(temporary_path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except FileNotFoundError:
+                continue
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            # Another save that held the lock has renamed this file over its target: open the name again.
+            if not is_path_of_open_file(temporary_path, descriptor):
+                os.close(descriptor)
+                continue
+            temporary_status = os.fstat(descriptor)
+            if not stat.S_ISREG(temporary_status.st_mode) or temporary_status.st_nlink != 1 or temporary_status.st_uid != os.geteuid():
+                raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), temporary_path)
+            if os.path.exists(target_path):
+                target_status = os.stat(target_path)
+                if temporary_status.st_gid != target_status.st_gid:
+                    os.fchown(descriptor, -1, target_status.st_gid)
+                os.fchmod(descriptor, stat.S_IMODE(target_status.st_mode))
+            elif not is_created:
+                os.fchmod(descriptor, 0o666 & ~process_umask())
+            return descriptor, is_created
+        except BaseException:
+            if is_created and is_path_of_open_file(temporary_path, descriptor):
+                os.remove(temporary_path)
+            os.close(descriptor)
+            raise
+
+
+def bytes_of_text_file(text: str, encoding: str, errors: str) -> bytes:
+    """Returns the bytes that writing text to a file opened with open(..., "w", encoding=encoding, errors=errors) puts in the file."""
+    encoded_file = io.BytesIO()
+    with io.TextIOWrapper(encoded_file, encoding=encoding, errors=errors) as text_file:
+        text_file.write(text)
+        text_file.flush()
+        return encoded_file.getvalue()
+
+
+def replace_file_with_text(filepath: str, text: str, encoding: str = "utf-8", errors: str = "strict"):
+    """Writes text to filepath as open(filepath, "w", encoding=encoding, errors=errors) does. Where is_replaceable_by_rename holds and open_locked_temporary_file succeeds,
+    it renames that temporary file over the target, so a failed or interrupted write leaves the previous content; otherwise it writes in place, where such a write loses it."""
+    encoded_text = bytes_of_text_file(text, encoding, errors)
+    target_path = os.path.realpath(filepath)
+    temporary_path = target_path + TEMPORARY_SAVE_FILE_SUFFIX
+    temporary_descriptor = None
+    if fcntl is not None and is_replaceable_by_rename(filepath, target_path):
+        with suppress(OSError):
+            temporary_descriptor, is_temporary_file_created = open_locked_temporary_file(temporary_path, target_path)
+    if temporary_descriptor is None:
+        with open(filepath, "wb") as file:
+            file.write(encoded_text)
+        return
+    try:
+        os.ftruncate(temporary_descriptor, 0)
+        with open(temporary_descriptor, "wb", closefd=False) as temporary_file:
+            temporary_file.write(encoded_text)
+        os.replace(temporary_path, target_path)
+    except BaseException as error:
+        if is_temporary_file_created:
+            with suppress(OSError):
+                os.remove(temporary_path)
+        if isinstance(error, OSError) and error.filename is not None:
+            raise type(error)(error.errno, error.strerror, filepath) from None
+        raise
+    finally:
+        os.close(temporary_descriptor)
 
 
 def visible_encodable_text(text: str, encoding: str) -> str:
