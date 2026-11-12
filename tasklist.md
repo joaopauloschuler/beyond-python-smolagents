@@ -914,3 +914,47 @@ Conventions for T1 to T11:
         O_NOFOLLOW|O_NONBLOCK and refuses a non-regular file with one OSError line. docs/CLI.md says
         read `*.txt` may be deleted, hidden files must stay. Verified: h3/check_h3.py 75/75; T1 PASS
         with one expectation changed (deleted id 1 now counts: next id 2); T7 43/43; h12 PASS.
+- [x] **T12. `wait_for_messages` tool.** An agent that needs replies waits
+      for them instead of sleeping (finding of T10).
+      LANDED (2026-11-12): `wait_for_messages(timeout_seconds)`
+      (`WaitForMessagesTool` in bp_tools.py), registered with `send_message`,
+      so members have it too. It blocks the code step on
+      `MessagePoller.wait_until_queued` until a message is queued or the time
+      (a number above 0, at most 3,600 s, no default; anything else prints one
+      `Error:` line and returns 0 at once) is over. The tool reads no folder:
+      during a wait the poller thread checks at once and then every
+      `WAITED_MESSAGE_CHECK_SECONDS` = 1 s instead of every poll interval
+      (`_check_requested` event, which `stop` also sets); only that thread
+      reads folders and touches `_last_queued_ids`, only the thread that runs
+      the agent takes from the queue. The tool writes the text of
+      `model_text_of_queued_messages` into `sys.stdout`, which the `exec`
+      executor has redirected into the step's execution log, and then removes
+      exactly these batches (`take_queued(batch_count)`, which records them as
+      read); it returns the number of messages, so `print(...)` of the result
+      adds one number and never a second copy. A timeout prints `No message
+      arrived within N seconds.` and returns 0. It never prints to a terminal:
+      when `sys.stdout` is not a `StringIO` (executor `local`), or the text
+      has more than 10,000 characters (the execution log is cut at 20,000), it
+      leaves the messages queued for the delivery between steps and says so.
+      An interrupt leaves the wait through the signal handler's exception; an
+      interrupt before the removal leaves the messages queued. The `exec`
+      executor has no time limit for a code step (`local` has 30 s). One
+      sentence added to `message_prompt_paragraph` (173 words for one folder
+      without `start_agent`, 215 for two with it); one row in docs/CLI.md.
+      Verified: t12/check_a.py 31/31 with a real poller at poll 60 s (message
+      written 2 s after the wait started returned after 2.0 s; timeout; two
+      senders in one text; not delivered again; invalid values; already
+      queued 1 ms); REPL at poll 60 s: the reply was in the execution log 0.6,
+      0.6 and 0.4 s after its file was written (3 runs, the third task did
+      not say how to wait and the agent chose the tool); a call without
+      `print` and one with `print` each showed the message once; Ctrl-C
+      during a wait gave the prompt after 0.3 s and the later message was
+      received in the next task; `bpsa listen`: SIGINT during a wait ended
+      the run after 0.2 s and the listener answered the next message, SIGTERM
+      left the wait after 0.1 s (process ended after 7.7 s, as before: 3 s to
+      stop a member, the rest is the exit of Python); the trial of T10 again:
+      report after 66 s instead of 2 min 25 s, two waits of 8.9 s and 2.8 s
+      (the first returned one reply, the second the other), 0 `Error:`
+      results, leader 64,500 tokens in 5 steps; feature off: system prompt and
+      tool list byte-identical to 41dd4b2, `/show-tools` screen equal; T7
+      43/43, h12 and h3 checks pass.

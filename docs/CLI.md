@@ -417,6 +417,7 @@ reader then skips its messages up to the last id it had read.
 | `send_message(to, text, folder?)` | Writes one message. `folder` is needed only by an agent with several folders. |
 | `start_agent(folder?, working_directory?)` | Starts one `bpsa listen` process named `<own name>-<k>` on that folder and returns when it listens (about 30 s). The new agent cannot start agents itself. |
 | `stop_agent(name)` | Stops an agent that the caller started; `all` stops each of them. |
+| `wait_for_messages(timeout_seconds)` | Blocks the code step until at least one message has arrived or `timeout_seconds` (above 0, at most 3,600) have passed; meanwhile the folders are checked every second. It prints the messages into the step's execution log, which counts them as read, and returns how many arrived (0 after a timeout). |
 | Incoming messages | Checked every `BPSA_MESSAGE_POLL_SECONDS` without a model call. They reach the model between two steps of a run, or with the next task when the agent is idle. A message counts as read when it is handed to a run. |
 
 The model sees each message as a block; every line of the text starts with

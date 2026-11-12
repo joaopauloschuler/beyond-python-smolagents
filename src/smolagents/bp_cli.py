@@ -806,8 +806,9 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         tools.append(GitHubCopilotCoder(model_id=copilot_model_id))
 
     if _message_settings is not None:
-        from smolagents.bp_tools import SendMessageTool
+        from smolagents.bp_tools import SendMessageTool, WaitForMessagesTool
         tools.append(SendMessageTool(_message_settings))
+        tools.append(WaitForMessagesTool(lambda: _message_poller))
         if _message_settings.max_group_members > 0:
             from smolagents.bp_tools import StartAgentTool, StopAgentTool
             tools.append(StartAgentTool(_message_settings))

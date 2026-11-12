@@ -3402,3 +3402,60 @@ class StopAgentTool(Tool):
             return stop_members(records)[0]
         except OSError as error:
             return f"Error: {error}. Nothing was stopped."
+
+
+class WaitForMessagesTool(Tool):
+    """Waits for agent-to-agent messages to this process's agent and prints them into the execution log of the code step that called it."""
+
+    name = "wait_for_messages"
+    description_template = (
+        "Waits until at least one message from another agent has arrived for you, or until `timeout_seconds` have passed. "
+        "Use it instead of time.sleep whenever you wait for a reply; it returns as soon as a message is there. "
+        "The tool itself prints every message that arrived into the execution log of your code step, as '=== message' blocks, "
+        "so you need no print; these messages are not shown to you a second time. "
+        "When none arrived, it prints one line saying so; you may then call it again or go on without the reply. "
+        "It returns the number of messages that arrived (0 after a timeout), so when you expect several replies, "
+        "call it again until you have them all. "
+        "`timeout_seconds` is a number above 0 and at most {max_seconds:g}; any other value prints one line starting with 'Error:' and returns 0 at once."
+    )
+    inputs = {"timeout_seconds": {"type": "number", "description": "The longest time to wait, in seconds."}}
+    output_type = "integer"
+
+    def __init__(self, message_poller_source):
+        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS
+
+        self.description = self.description_template.format(max_seconds=MAX_WAIT_FOR_MESSAGES_SECONDS)
+        super().__init__()
+        self._message_poller_source = message_poller_source  # returns the bp_messages.MessagePoller of this process, None before it started
+
+    def forward(self, timeout_seconds: float) -> int:
+        import io
+        import sys
+
+        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS, MAX_WAITED_MESSAGE_TEXT_CHARACTERS, model_text_of_queued_messages
+
+        # The exec executor collects the output of a code step in a StringIO; any other sys.stdout may be the terminal, so nothing is printed to it.
+        is_stdout_execution_log = isinstance(sys.stdout, io.StringIO)
+        log_file = sys.stdout if is_stdout_execution_log else io.StringIO()
+        is_number = isinstance(timeout_seconds, (int, float)) and not isinstance(timeout_seconds, bool)
+        if not (is_number and 0 < timeout_seconds <= MAX_WAIT_FOR_MESSAGES_SECONDS):  # false for NaN
+            print(f"Error: timeout_seconds must be a number above 0 and at most {MAX_WAIT_FOR_MESSAGES_SECONDS:g}. Nothing was waited for.", file=log_file)
+            return 0
+        message_poller = self._message_poller_source()
+        if message_poller is None:
+            print("Error: this process does not check its message folders yet. Nothing was waited for.", file=log_file)
+            return 0
+        message_poller.wait_until_queued(float(timeout_seconds))
+        queued = message_poller.queued_batches()
+        message_count = sum(len(batch.messages) for batch in queued)
+        if not queued:
+            print(f"No message arrived within {timeout_seconds:g} seconds.", file=log_file)
+            return 0
+        message_text = model_text_of_queued_messages(queued)
+        if not is_stdout_execution_log or len(message_text) > MAX_WAITED_MESSAGE_TEXT_CHARACTERS:
+            print(f"{message_count} message(s) arrived. They are too long to print here: they reach you in full once this code step has ended.", file=log_file)
+            return message_count
+        # Printed first, removed from the queue second: an interrupt in between leaves the messages queued.
+        log_file.write(message_text)
+        message_poller.take_queued(len(queued))
+        return message_count
