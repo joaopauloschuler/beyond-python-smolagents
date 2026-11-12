@@ -754,8 +754,8 @@ def start_members(settings: MessageSettings, folder: MessageFolder, working_dire
 
 
 def stop_members(records: list[MemberRecord]) -> list[str]:
-    """Sends SIGTERM to every live member of records, waits up to MEMBER_STOP_TIMEOUT_SECONDS in all until they have ended, and sends
-    SIGKILL to those that have not. Returns one line per record. A record that is not live is not signalled."""
+    """Sends SIGTERM to every live member of records (no other), waits up to MEMBER_STOP_TIMEOUT_SECONDS in all until they have ended, sends
+    SIGKILL to those that have not and waits up to MEMBER_EXIT_STATUS_WAIT_SECONDS until they are gone. Returns one line per record."""
     lines = {}
     signalled_records = []
     for record in records:
@@ -770,12 +770,20 @@ def stop_members(records: list[MemberRecord]) -> list[str]:
     deadline = time.monotonic() + MEMBER_STOP_TIMEOUT_SECONDS
     while any(is_member_live(record) for record in signalled_records) and time.monotonic() < deadline:
         time.sleep(MEMBER_CHECK_SECONDS)
+    killed_records = [record for record in signalled_records if is_member_live(record)]
+    for record in killed_records:
+        with suppress(OSError):
+            os.kill(record.process_id, signal.SIGKILL)
+    deadline = time.monotonic() + MEMBER_EXIT_STATUS_WAIT_SECONDS
+    while any(is_member_live(record) for record in killed_records) and time.monotonic() < deadline:
+        time.sleep(MEMBER_CHECK_SECONDS)  # a zombie child is not live, so this also ends for a child of this process
     for record in signalled_records:
         lines[record.name] = f"Stopped {record.name} (process {record.process_id})."
-        if is_member_live(record):
-            with suppress(OSError):
-                os.kill(record.process_id, signal.SIGKILL)
+        if record in killed_records:
             lines[record.name] = f"{record.name} (process {record.process_id}) did not end within {MEMBER_STOP_TIMEOUT_SECONDS:g} s of SIGTERM and was killed."
+        if is_member_live(record):
+            lines[record.name] = (f"{record.name} (process {record.process_id}) did not end within {MEMBER_STOP_TIMEOUT_SECONDS:g} s of SIGTERM "
+                                  f"and still ran {MEMBER_EXIT_STATUS_WAIT_SECONDS:g} s after SIGKILL.")
     for record in records:
         process = _started_member_processes.get(record.name)
         if process is not None and process.pid == record.process_id:
@@ -1148,7 +1156,8 @@ class MessagePoller:
                 for message in batch.messages:
                     folder_read_ids = read_ids[batch.folder.path]
                     folder_read_ids[message.sender] = min(folder_read_ids[message.sender], message.message_id - 1)
-            self._queued = kept_batches
+            # a kept batch's own ids are of its listing, before the discard: its later save must not set a discarded id back to unread
+            self._queued = [batch._replace(last_read_ids=highest_ids(batch.last_read_ids, read_ids[batch.folder.path])) for batch in kept_batches]
             self._printed_message_count = self._shown_message_count = 0
             self._step_with_shown_messages = None
             self._set_waiting_events()

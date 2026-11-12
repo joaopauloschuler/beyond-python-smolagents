@@ -1473,3 +1473,51 @@ Conventions for T1 to T11:
       `start_members`' and the tool must keep it; every command of
       `python -m smolagents.bp_messages` takes 1.6 to 6 s to start, because
       it imports the `smolagents` package.
+      REVIEW FIXES (2026-11-12). Found by review of `5c56d05`: (M-a) after
+      a reset, `take_pending_resets` saved the right read ids but left each
+      kept `QueuedMessages` batch with the ids of its own older listing;
+      the save at its delivery (`take_queued`, `record_shown_as_read`) set
+      ids back, so a restarted reader received a discarded message. (M-b)
+      `stop_members` sent SIGKILL and returned at once; `stop_members_left_by`
+      still saw the killed leader in `/proc` and stopped none of its
+      members, which kept running until a second `stop`.
+      Fixes: `take_pending_resets` gives each kept batch, per sender, the
+      higher of its own ids and the folder's saved ids (already lowered to
+      one below the sender's first kept message), so no later save goes
+      down and none skips a kept message. `stop_members` waits after SIGKILL
+      up to `MEMBER_EXIT_STATUS_WAIT_SECONDS` (2 s) until `is_member_live`
+      is false (a zombie child is not live); a process still running then
+      gets the line `X (process P) did not end within 20 s of SIGTERM and
+      still ran 2 s after SIGKILL.` Other lines, the `stop_agent` texts and
+      docs/CLI.md are unchanged (its sentence on a leader that did not end
+      within 20 s is now true); `stop_agent` gains at most 2 s after SIGKILL.
+      Verified (scratch `fin/`): rv6 `det.py`: after delivery the read ids
+      are `{"boss": 1, "carl": 1, "dora": 2}` and a restarted reader gets
+      nothing (5c56d05: `{"boss": 1, "carl": 1}`, `DORA-OLD`); rv6 `prop.py`
+      seeds 0-2300: 0 failures. Stand-ins: a leader that ignores SIGTERM
+      with a member: one `stop` printed the killed line and `me-1 left 1 of
+      the agents it started running: Stopped me-1-1 (...)`, exit 0, 22.3 s,
+      both gone; a leader that stops its member on SIGTERM: unchanged lines,
+      3.1 s; own child: killed line, 20.35 s, exit status collected; SIGKILL
+      without effect (patched `os.kill`): the new line, 3.0 s. Real run:
+      `start --group-folder g1 --max-members 1` (16.5 s), the leader started
+      `boss-1-1` and reported `MEMBER-OK` (33.1 s); `stop boss-1` printed
+      `Stopped boss-1 (...)` and `The agents that boss-1 had started have
+      ended: boss-1-1.`, exit 0, 9.7 s, both processes gone. Earlier
+      checks: t15fix check_a.py 77/77, check_bcd_slow.py 45/45, T7 43/43,
+      h12 slow PASS, h3 slow PASS, m12 copies check_x.py 30/30, check_a.py
+      31/31, check_ab.py 63/64 twice (E7, the same failure on `5c56d05`
+      code). Feature off: system prompt and tool list byte-identical to
+      `5c56d05` (42,960 bytes).
+      Not run: a process that SIGKILL does not end within 2 s (only with a
+      patched `os.kill`); pytest.
+      Open (low findings of that review, not fixed):
+      - a restarted listener runs a task that a reset had cancelled;
+      - a reset written before the first listing of a folder is ignored;
+      - `stop_live_members` raises on a missing folder;
+      - two simultaneous `start` commands for one name;
+      - exit status 2 of `start` has two meanings;
+      - no limit on the depth of sub-leaders;
+      - `start` killed by its caller;
+      - `status` can mix values of two processes;
+      - unquoted paths in output lines.
