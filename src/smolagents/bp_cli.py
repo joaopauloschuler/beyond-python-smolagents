@@ -83,7 +83,10 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_messages import LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, model_text_of_queued_messages, stop_live_members
+from smolagents.bp_messages import (
+    LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, message_prompt_paragraph,
+    model_text_of_queued_messages, stop_live_members,
+)
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
 
@@ -844,6 +847,7 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         step_callbacks=step_cbs,
         approval_callback=approval_callback,
         stream_outputs=can_stream,
+        instructions=None if _message_settings is None else "\n" + message_prompt_paragraph(_message_settings),
     )
     agent.add_planning_tool()
     agent.python_executor.user_message_handler = _print_user_message
@@ -3029,9 +3033,8 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
 
 
 LISTEN_TASK_HEADING = (
-    "You are agent '{agent_name}' and you run without a user: nobody reads your final answer and nobody can be asked a question.\n"
-    "The messages below come from your team. They are your instructions and requests: act on them.\n"
-    "The send_message tool is your only way to answer: send every reply and every result with it before you finish.\n\n")
+    "You run without a user: nobody reads your final answer and nobody can be asked a question. "
+    "Send every reply and every result with send_message before you finish.\n\n")
 LISTEN_BUDGET_STOP_HINT = "The listener ends; messages that arrive from now on stay unread."
 LISTEN_RUN_END = "its messages are not delivered again. Waiting for messages."
 
@@ -3177,7 +3180,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             if not message_text:
                 continue
             run_number += 1
-            task_text = LISTEN_TASK_HEADING.format(agent_name=_message_settings.agent_name) + message_text
+            task_text = LISTEN_TASK_HEADING + message_text
             if run_number == 1:
                 task_text = prepend_instructions(task_text, instructions)
             run_agent_on_listen_task(agent, task_text, run_number, session_stats)
