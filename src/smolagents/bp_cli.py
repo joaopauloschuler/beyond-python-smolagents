@@ -73,7 +73,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
-from smolagents.bp_utils import dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool
+from rich.text import Span, Text
+from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, visible_control_characters, visible_encodable_text
 
 
 VERSION = "1.24-bp"
@@ -86,6 +87,11 @@ _auto_approve = False
 _auto_approve_source = "default"  # for /show-config: --auto-approve, env, .env, default or /auto-approve
 
 TRUNCATE_PREVIEW_LINES = 5
+TRUNCATE_PREVIEW_CHARACTERS = 4000  # holds the 5 preview lines at 800 characters each, and fits a 120x40 terminal
+PYTHON_LINE_BREAK = re.compile(r"\r\n?|\n")
+FULL_VIEW_PIECE_CHARACTERS = 65536
+FILE_WRITE_APPROVAL_TAG_TYPES = ("savetofile", "appendtofile", FAILED_INCLUDE_TAG_TYPE)
+WHITESPACE_PADDING = re.compile(r"\s{3,}")
 
 MODEL_CLASS_MAP = {
     "OpenAIServerModel": "OpenAIServerModel",
@@ -196,6 +202,18 @@ def _extract_thoughts(model_output: str) -> str:
     return ""
 
 
+def console_literal(text: str, style: str) -> Text:
+    """Returns text as one span of style: no markup or emoji, controls visible, and what the console cannot encode as backslash escapes."""
+    return Text.assemble((visible_encodable_text(text, console.encoding), style))
+
+
+def print_with_console_highlighting(line: Text) -> None:
+    """Prints line as console.print prints a string: the console highlighter's styles first, then line's spans over them."""
+    highlighted_line = console.render_str(line.plain, markup=False, emoji=False)
+    highlighted_line.copy_styles(line)
+    console.print(highlighted_line)
+
+
 def _compact_step_callback(step):
     """Step callback that prints a compact one-liner when verbose is off."""
     if _verbose:
@@ -228,27 +246,27 @@ def _compact_step_callback(step):
 
     # Build the status icon
     if has_error:
-        icon = "[red]✗[/]"
+        icon = console_literal("✗", "red")
     elif is_final:
-        icon = "[green]★[/]"
+        icon = console_literal("★", "green")
     else:
-        icon = "[green]✓[/]"
+        icon = console_literal("✓", "green")
 
     # Build the line
-    parts = [f"{icon} [bold]Step {step_num}[/]"]
+    parts = [Text.assemble(icon, " ", console_literal(f"Step {step_num}", "bold"))]
     if duration:
-        parts.append(f"[dim]{duration}[/]")
+        parts.append(console_literal(duration, "dim"))
     if tokens:
-        parts.append(f"[dim]{tokens}[/]")
+        parts.append(console_literal(tokens, "dim"))
     if is_final:
-        parts.append("[bold green]Final answer[/]")
+        parts.append(console_literal("Final answer", "bold green"))
     elif has_error:
         error_msg = str(step.error)[:60]
-        parts.append(f"[red]{error_msg}[/]")
+        parts.append(console_literal(error_msg, "red"))
     elif thoughts:
-        parts.append(f"[dim italic]{thoughts}[/]")
+        parts.append(console_literal(thoughts, "dim italic"))
 
-    console.print(" | ".join(parts))
+    print_with_console_highlighting(Text(" | ").join(parts))
 
 
 def _print_user_message(message: str):
@@ -1490,6 +1508,95 @@ def stop_steering_listener(listener) -> list[str]:
     return listener.drain()
 
 
+def print_literally(text: str) -> None:
+    """Prints text with no Rich markup or emoji code interpretation."""
+    console.print(text, markup=False, emoji=False)
+
+
+def is_lone_carriage_return(text: str, position: int) -> bool:
+    """Returns whether text[position] is a CR with a character after it other than LF: a line break to Python, displayed as one."""
+    return text[position] == "\r" and text[position + 1:position + 2] not in ("", "\n")
+
+
+def count_leading_characters_within_displayed_limit(text: str, max_displayed_characters: int) -> int:
+    """Returns how many leading characters of text fit in max_displayed_characters once escaped; an escape is never split."""
+    displayed_characters = 0
+    for position, character in enumerate(text[:max_displayed_characters]):
+        displayed_characters += len(visible_control_characters(character)) + is_lone_carriage_return(text, position)
+        if displayed_characters > max_displayed_characters:
+            return position
+    return min(len(text), max_displayed_characters)
+
+
+def marked_control_characters(text: str, start: int = 0, end: int | None = None) -> Text:
+    """Returns text[start:end] with visible_control_characters escapes in reverse video and a line break after each lone CR.
+    It is built from spans, so content can never be read as markup."""
+    end = len(text) if end is None else min(end, len(text))
+    parts, spans, position, displayed_length = [], [], start, 0
+    for run in display_escaped_run_pattern().finditer(text, start, end):
+        before_run = text[position:run.start()]
+        escapes = visible_control_characters(run.group()).replace("\\x0d", "\\x0d\n")
+        if text[run.end():run.end() + 1] in ("", "\n") and escapes.endswith("\n"):
+            escapes = escapes[:-1]
+        parts += before_run, escapes
+        run_start = displayed_length + len(before_run)
+        displayed_length = run_start + len(escapes)
+        spans.append(Span(run_start, displayed_length, "reverse"))
+        position = run.end()
+    parts.append(text[position:end])
+    return Text("".join(parts), spans=spans)
+
+
+def print_marked_control_characters(text: str) -> None:
+    """Prints text marked, in pieces, because Rich's memory grows with the number of styled runs in one print."""
+    for start in range(0, len(text), FULL_VIEW_PIECE_CHARACTERS):
+        console.print(marked_control_characters(text, start, start + FULL_VIEW_PIECE_CHARACTERS), end="")
+    console.print()
+
+
+def plural(count: int, singular_noun: str) -> str:
+    """Returns count with thousands separators and the noun in singular or plural form."""
+    return f"{count:,} {singular_noun}{'' if count == 1 else 's'}"
+
+
+def approval_preview(content: str) -> tuple[Text, str]:
+    """Returns the marked preview of content and a notice of what it hides, empty when nothing is hidden."""
+    shown_length = count_leading_characters_within_displayed_limit(content, TRUNCATE_PREVIEW_CHARACTERS)
+    for line_number, line_break in enumerate(PYTHON_LINE_BREAK.finditer(content, 0, shown_length), start=1):
+        if line_number == TRUNCATE_PREVIEW_LINES:
+            shown_length = line_break.end() - line_break.group().endswith("\n")
+            break
+    followed_by_newline = content[shown_length:shown_length + 1] == '\n'
+    cut_at_line_end = followed_by_newline or content[shown_length - 1:shown_length] == '\r'
+    hidden_start = shown_length + 1 if followed_by_newline else shown_length
+    preview = marked_control_characters(content[:shown_length])
+    hidden_characters = len(content) - hidden_start
+    if hidden_characters == 0:
+        return preview, ""
+    hidden_line_breaks = content.count('\n', hidden_start) + content.count('\r', hidden_start) - content.count('\r\n', hidden_start)
+    hidden_lines = hidden_line_breaks + (0 if content.endswith(('\n', '\r')) else 1) - (0 if cut_at_line_end else 1)
+    cut_description = "" if cut_at_line_end else "the line above is cut here; "
+    hidden_size = f"{plural(hidden_characters, 'character')}, {plural(hidden_lines, 'more line')}"
+    return preview, f"... ({cut_description}hidden: {hidden_size}, press 'f' to see full content)"
+
+
+def control_character_notice(content: str) -> str:
+    """Returns the notice that content holds real control or format characters, empty when it holds none."""
+    real_characters = count_display_escaped_characters(content)
+    if real_characters == 0:
+        return ""
+    notice = f"Note: the whole content holds {plural(real_characters, 'real control or format character')}, including any not shown. Those shown marked (in reverse video) are real characters, not typed text."
+    if console.color_system is None:
+        notice += " This output cannot show the marking, so here they look the same as typed text."
+    return notice
+
+
+def print_write_target(write_target: str) -> None:
+    """Prints the whole resolved path a file tag writes to, escaped; a run of 3 or more whitespace characters prints as its count, so padding cannot spread the path over rows."""
+    padding_counted = WHITESPACE_PADDING.sub(lambda padding: f"[{plural(len(padding.group()), 'whitespace character')}]", visible_control_characters(write_target))
+    console.print(Text.assemble(("Write target: ", "bold cyan"), console_literal(padding_counted, "bold")))
+
+
 def interactive_approval_callback(tag_type: str, content: str) -> bool:
     """Interactive approval callback for tag execution. Returns True if approved."""
     global _auto_approve
@@ -1506,16 +1613,27 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
     tag_label = tag_type.upper()
     console.print(f"\n[bold yellow]{'═' * 50}[/]")
     console.print(f"[bold yellow]  Approval required: {tag_label}[/]")
+    if tag_type == FAILED_INCLUDE_TAG_TYPE:
+        console.print("[bold red]  The include failed, so nothing will be written. (y) tells the model why; (n) tells it only that you rejected this.[/]")
     console.print(f"[bold yellow]{'═' * 50}[/]")
 
+    write_target = None
+    if tag_type in FILE_WRITE_APPROVAL_TAG_TYPES:
+        filename_line, _, content = content.partition("\n")
+        write_target = filename_line.removeprefix("filename=")
+
     # Show truncated preview
-    lines = content.split('\n')
-    preview = '\n'.join(lines[:TRUNCATE_PREVIEW_LINES])
+    preview, hidden_notice = approval_preview(content)
     console.print(preview)
-    truncated = len(lines) > TRUNCATE_PREVIEW_LINES
+    truncated = bool(hidden_notice)
     if truncated:
-        console.print(f"[dim]... ({len(lines) - TRUNCATE_PREVIEW_LINES} more lines, press 'f' to see full content)[/]")
+        console.print(f"[dim]{hidden_notice}[/]")
+    control_notice = control_character_notice(content)
+    if control_notice:
+        print_literally(control_notice)
     console.print(f"[bold yellow]{'─' * 50}[/]")
+    if write_target is not None:
+        print_write_target(write_target)
 
     # Prompt loop with single-key input
     while True:
@@ -1532,7 +1650,11 @@ def interactive_approval_callback(tag_type: str, content: str) -> bool:
             console.print(f"[yellow]Not approved: no key could be read from a terminal. {_NO_TERMINAL_ADVICE}[/]")
             return False
         if response == 'f' and truncated:
-            console.print(content)
+            print_marked_control_characters(content)
+            if control_notice:
+                print_literally(control_notice)
+            if write_target is not None:
+                print_write_target(write_target)
             continue
         if response in ('y',):
             if _steering_listener is not None:
@@ -1997,7 +2119,7 @@ def cmd_compress(agent, args: str):
             agent.memory.steps[target_idx] = compressed
             console.print(f"[green]Step {step_num} compressed successfully.[/]")
         except Exception as e:
-            console.print(f"[red]Compression failed: {e}[/]")
+            print_with_console_highlighting(console_literal(f"Compression failed: {e}", "red"))
     else:
         # Force compression of all eligible steps
         old_threshold = compressor.config.max_uncompressed_steps
@@ -2328,39 +2450,39 @@ def _print_step_detail(step):
         if step.token_usage:
             console.print(f"[bold]Tokens:[/] in={step.token_usage.input_tokens:,} out={step.token_usage.output_tokens:,}")
         if step.error:
-            console.print(f"[bold red]Error:[/] {step.error}")
+            print_with_console_highlighting(Text.assemble(console_literal("Error:", "bold red"), " ", console_literal(str(step.error), "")))
         # if step.is_final_answer:
         #    console.print("[bold green]Final answer[/]")
         if step.model_output:
             console.print(f"[bold]Model output:[/]")
-            console.print(str(step.model_output)[:2000])
+            print_with_console_highlighting(console_literal(str(step.model_output)[:2000], ""))
         # if step.code_action:
         #    console.print(f"[bold]Code action:[/]")
         #    console.print(step.code_action[:2000])
         if step.observations:
             console.print(f"[bold]Run output:[/]")
-            console.print(str(step.observations)[:2000])
+            print_with_console_highlighting(console_literal(str(step.observations)[:2000], ""))
         if step.user_message:
             console.print(f"[bold]User message:[/]")
-            console.print(step.user_message[:2000])
+            print_with_console_highlighting(console_literal(step.user_message[:2000], ""))
     elif isinstance(step, CompressedHistoryStep):
         console.print(f"[bold]Original steps compressed:[/] {step.original_step_count}")
         console.print(f"[bold]Step numbers:[/] {step.compressed_step_numbers}")
         if step.timing and step.timing.duration is not None:
             console.print(f"[bold]Compression duration:[/] {step.timing.duration:.1f}s")
         console.print(f"[bold]Summary:[/]")
-        console.print(step.summary[:3000])
+        print_with_console_highlighting(console_literal(step.summary[:3000], ""))
     elif isinstance(step, PlanningStep):
         console.print(f"[bold]Plan:[/]")
-        console.print(step.plan[:2000])
+        print_with_console_highlighting(console_literal(step.plan[:2000], ""))
     elif isinstance(step, TaskStep):
         console.print(f"[bold]Task:[/]")
-        console.print(step.task[:2000])
+        print_with_console_highlighting(console_literal(step.task[:2000], ""))
     elif isinstance(step, SystemPromptStep):
         console.print(f"[bold]System prompt:[/]")
-        console.print(step.system_prompt[:2000])
+        print_with_console_highlighting(console_literal(step.system_prompt[:2000], ""))
     else:
-        console.print(str(step)[:2000])
+        print_with_console_highlighting(console_literal(str(step)[:2000], ""))
     console.print()
 
 
@@ -2388,7 +2510,7 @@ def cmd_show_steps(agent):
         preview = content.replace("\n", " ").strip()
         if len(preview) > 80:
             preview = preview[:77] + "..."
-        table.add_row("0", "SystemPrompt", "[dim]no[/]", f"{chars:,} chars", preview)
+        table.add_row("0", "SystemPrompt", "[dim]no[/]", f"{chars:,} chars", console_literal(preview, ""))
 
     for i, step in enumerate(steps, 1):
         type_name = type(step).__name__
@@ -2423,7 +2545,7 @@ def cmd_show_steps(agent):
             preview = preview[:77] + "..."
 
         compressed = "[green]yes[/]" if isinstance(step, CompressedHistoryStep) else "[dim]no[/]"
-        table.add_row(label, type_name, compressed, f"{chars:,} chars", preview)
+        table.add_row(label, type_name, compressed, f"{chars:,} chars", console_literal(preview, ""))
 
     console.print(table)
     console.print()
@@ -2442,7 +2564,7 @@ def cmd_show_knowledge(agent):
     knowledge_tags = list_xml_tag_names(knowledge)
     sections_info = f"{len(knowledge_tags)} section(s): {', '.join(knowledge_tags)}" if knowledge_tags else "no sections"
     console.print(Rule(f"[bold]Knowledge[/] [dim]({len(knowledge):,} chars, {sections_info})[/]", style="blue"))
-    console.print(knowledge)
+    print_with_console_highlighting(console_literal(knowledge, ""))
     console.print()
 
 
@@ -2493,7 +2615,7 @@ def cmd_undo(agent, args: str):
         elif hasattr(step, "plan"):
             preview = step.plan.replace("\n", " ")[:60]
         if preview:
-            console.print(f"  [red]Removed:[/] {type_name} - {preview}...")
+            print_with_console_highlighting(Text.assemble("  ", console_literal("Removed:", "red"), f" {type_name} - ", console_literal(preview, ""), "..."))
         else:
             console.print(f"  [red]Removed:[/] {type_name}")
 
@@ -2570,7 +2692,7 @@ def cmd_repeat(agent, model, n, prompt_text, session_stats, verbose, instruction
         except Exception as e:
             _spinner.stop()
             errors += 1
-            console.print(f"\n[bold red]Cycle {i}/{n} error:[/] {e}")
+            print_with_console_highlighting(Text.assemble("\n", console_literal(f"Cycle {i}/{n} error:", "bold red"), " ", console_literal(str(e), "")))
 
     # Summary
     console.print(Rule(style="cyan"))
@@ -3232,7 +3354,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             elif is_clean_stop(agent, e):
                 console.print(f"\n[yellow]Stopped after step {agent.step_number - 1}; memory kept.[/]\n")
             else:
-                console.print(f"\n[bold red]Error:[/] {e}\n")
+                print_with_console_highlighting(Text.assemble("\n", console_literal("Error:", "bold red"), " ", console_literal(str(e), ""), "\n"))
 
 
 def is_clean_stop(agent, error: Exception) -> bool:
@@ -3244,12 +3366,20 @@ def is_clean_stop(agent, error: Exception) -> bool:
 def print_undelivered_steering(messages: list[str]) -> None:
     """Show steering lines the agent never reached (typed after its last step boundary)."""
     for text in messages:
-        console.print(f"[yellow]Not delivered (the agent finished first): {text}[/]")
+        print_with_console_highlighting(console_literal(f"Not delivered (the agent finished first): {text}", "yellow"))
+
+
+def escape_unencodable_stdout_characters() -> None:
+    """Makes sys.stdout write characters its encoding cannot represent, such as a lone surrogate, as backslash escapes."""
+    reconfigure_stdout = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure_stdout is not None:
+        reconfigure_stdout(errors="backslashreplace")
 
 
 def main():
     import argparse
 
+    escape_unencodable_stdout_characters()
     parser = argparse.ArgumentParser(
         prog="bpsa",
         description="Beyond Python SmolAgents - Interactive AI agent CLI",

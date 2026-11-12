@@ -22,6 +22,8 @@ import textwrap
 import time
 import warnings
 import re
+import secrets
+import stat
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -31,8 +33,27 @@ from logging import getLogger
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 from .bp_executors import LocalExecExecutor
-from .bp_tools import get_file_size, force_directories, remove_after_markers, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
-from .bp_utils import bp_parse_code_blobs, fix_nested_tags, strip_trailing_tags
+from .bp_tools import get_file_size, force_directories, PlanningTool, MoveActionStepToMemory, RetrieveActionStepFromMemory, SummarizeActionStep, UpdateKnowledge, GetToolDescriptionsTool
+from .bp_utils import (
+    FAILED_INCLUDE_TAG_TYPE,
+    INCLUDEFILE_TAG,
+    bp_parse_code_blobs,
+    end_output_at_real_stop,
+    hide_tag_brackets,
+    hide_tags_in_block_literals,
+    new_parsing_markers,
+    restore_tag_brackets,
+    escape_for_triple_quoted_string,
+    final_answer_string_body,
+    fix_nested_tags,
+    generated_include_tag_pattern,
+    holds_line_break,
+    readable_generated_include_tags,
+    strip_trailing_tags,
+    tag_with_filename_pattern,
+    visible_control_characters,
+    visible_encodable_text,
+)
 from .bp_utils import get_env_bool, is_valid_python_code
 from. utils import MAX_LENGTH_TRUNCATE_CONTENT
 
@@ -46,7 +67,13 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-STOP_SEQUENCES = ["</runcode>", "</code>", "Calling tools:", "</final_answer>"]
+STOP_SEQUENCES = ["</runcode>", "</final_answer>"]
+MAX_INCLUDED_FILE_BYTES = 10 * 1024 * 1024
+
+
+class IncludedFileError(Exception):
+    """The file named by an <includefile> tag could not be read; the message says why."""
+
 
 if TYPE_CHECKING:
     import PIL.Image
@@ -307,7 +334,13 @@ class MultiStepAgent(ABC):
         return_full_result (`bool`, default `False`): Whether to return the full [`RunResult`] object or just the final answer output from the agent run.
         compression_config ([`~bp_compression.CompressionConfig`], *optional*): Configuration for context compression.
             When provided, older memory steps will be compressed via LLM summarization to manage context window size.
+        approval_callback (`Callable[[str, str], bool]`, *optional*): Called with the tag type and content before a tag acts.
+            Returns whether the tag may act. Without it, every tag acts with no approval requested.
+            For a file tag, the first line of the content is `filename=` and the resolved path the write opens, with any newline in it as `\x0a`.
+            The tag type is `FAILED_INCLUDE_TAG_TYPE` when an `<includefile>` failed; the content then holds that line and the reason, and approving writes nothing.
     """
+
+    runs_model_written_code = False
 
     def __init__(
         self,
@@ -328,7 +361,9 @@ class MultiStepAgent(ABC):
         return_full_result: bool = False,
         logger: AgentLogger | None = None,
         compression_config: CompressionConfig | None = None,
+        approval_callback: Callable[[str, str], bool] | None = None,
     ):
+        self.approval_callback = approval_callback
         self.agent_name = self.__class__.__name__
         self.model = model
         self.prompt_templates = prompt_templates or EMPTY_PROMPT_TEMPLATES
@@ -1116,22 +1151,22 @@ You have been provided with these additional arguments, that you can access dire
             answer += "\n</summary_of_work>"
         return answer
     
-    def parse_tags(self, tag, txt):
+    def parse_tags(self, tag, txt, hidden_tag_bracket="<"):
         """
         Args:
             txt (str): Text containing <tag> tags
+            hidden_tag_bracket (str): What stands for "<" in txt; the default means nothing is hidden
             
         Returns:
             list: List of dictionaries with 'filename' and 'content' keys
         """
-        pattern = '<'+tag+r"""\s+filename=(['"])([^'"]*)\1>(.*?)</"""+tag+'>'
-        matches = re.findall(pattern, str(txt), flags=re.IGNORECASE |re.DOTALL)
+        matches = tag_with_filename_pattern(tag).findall(str(txt))
 
         results = []
         for quote, filename, content in matches:
             results.append({
-                'filename': filename,
-                'content': content  # Trim whitespace
+                'filename': restore_tag_brackets(filename, hidden_tag_bracket),
+                'content': restore_tag_brackets(content, hidden_tag_bracket)  # Trim whitespace
             })
 
         return results
@@ -1144,72 +1179,133 @@ You have been provided with these additional arguments, that you can access dire
         Returns:
             Text without the tag.
         """
-        pattern = r'<'+tag+r'\s+filename="([^"]+)">(.*?)</'+tag+r'>'
-        output = re.sub(pattern, "", txt, flags=re.IGNORECASE | re.DOTALL)
+        output = tag_with_filename_pattern(tag).sub("", txt)
         pattern2 = r'<'+tag+r'>(.*?)</'+tag+r'>'
         output = re.sub(pattern2, "", output, flags=re.IGNORECASE | re.DOTALL)
         return output
         
-    def save_files_from_text(self, txt):
-        files = self.parse_tags('savetofile', txt)
-        for file in files:
-              approval_content = f"filename={file['filename']}\n{file['content']}"
-              if not self._request_approval("savetofile", approval_content):
-                  raise AgentExecutionRejected("User rejected savetofile: " + file['filename'], self.logger)
-              force_directories(file['filename'])
-              with open(file['filename'], 'w') as f:
-                f.write(self.replace_include_files(file['content']))
-              msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['filename']))+" bytes."
-              self.logger.log(msg_str, LogLevel.INFO)
+    def _request_approval(self, tag_type: str, content: str) -> bool:
+        """Request user approval before executing a tag. Returns True if approved."""
+        if self.approval_callback is None:
+            return True
+        return self.approval_callback(tag_type, content)
+
+    def approve_and_write_tag_file(self, tag, files, position, mode, rest_of_output_status):
+        """Expands files[position], asks approval for that text and its symlink-resolved path, and writes it there as UTF-8, creating its directory; sets written_text and write_target.
+        A filename with a line break, or tag text as the model wrote it that UTF-8 cannot encode, is raised as a step error before approval and before any include is read; a failed include is shown for approval as FAILED_INCLUDE_TAG_TYPE, then raised; a file error, after approval."""
+        file = files[position]
+        def step_error(error, displayed_filename=file['filename']):
+            written_filenames = [earlier_file['filename'] for earlier_file in files[:position]]
+            skipped_filenames = [later_file['filename'] for later_file in files[position + 1:]]
+            literal_tag_advice = ""
+            if isinstance(error, IncludedFileError) and self.runs_model_written_code:
+                file_action = "write the file" if mode == 'w' else "append to the file"
+                literal_tag_advice = f"\nIf the <includefile> was meant as literal text in the file, {file_action} from <runcode> Python code, building the tag text in a string from parts such as '<include' + 'file>' so that it is not expanded."
+            return AgentExecutionError(
+                f"Could not write file '{displayed_filename}' from <{tag}>: {error}\n"
+                f"Already written from <{tag}> in this output: {written_filenames}. Not attempted: {skipped_filenames}.\n"
+                f"{rest_of_output_status} The code in this output did not run.{literal_tag_advice}",
+                self.logger,
+            )
+        if holds_line_break(file['filename']):
+            raise step_error(
+                "the filename cannot contain line breaks. Each line break in it is shown here as an escape.",
+                displayed_filename=visible_control_characters(file['filename']).replace("\n", "\\x0a"),
+            )
+        failed_include_error = None
+        try:
+            names_a_directory = os.path.basename(file['filename']) in ("", ".")
+            write_target = os.path.realpath(file['filename']) + (os.sep if names_a_directory else "")
+            file['content'].encode('utf-8')
+            written_text = self.replace_include_files(file['content'])
+        except (OSError, ValueError) as error:
+            raise step_error(error) from error
+        except IncludedFileError as error:
+            failed_include_error = error
+        approval_tag_type, approval_text = (FAILED_INCLUDE_TAG_TYPE, str(failed_include_error)) if failed_include_error else (tag, written_text)
+        one_line_write_target = write_target.replace("\n", "\\x0a")
+        if not self._request_approval(approval_tag_type, f"filename={one_line_write_target}\n{approval_text}"):
+            raise AgentExecutionRejected(f"User rejected {tag}: {file['filename']}", self.logger)
+        if failed_include_error:
+            raise step_error(failed_include_error) from failed_include_error
+        try:
+            force_directories(write_target)
+            with open(write_target, mode, encoding='utf-8') as f:
+                f.write(written_text)
+        except (OSError, ValueError) as error:
+            raise step_error(error) from error
+        file['written_text'] = written_text
+        file['write_target'] = write_target
+
+    def save_files_from_text(self, txt, hidden_tag_bracket="<"):
+        files = self.parse_tags('savetofile', txt, hidden_tag_bracket)
+        for position, file in enumerate(files):
+              self.approve_and_write_tag_file('savetofile', files, position, 'w', "No <appendtofile> tag in this output was processed.")
+              msg_str="Saved '"+file['filename']+"' with "+str(get_file_size(file['write_target']))+" bytes."
+              self.logger.log(visible_encodable_text(msg_str, self.logger.console.encoding), LogLevel.INFO, markup=False, emoji=False)
         return files
 
-    def append_files_from_text(self, txt):
-        files = self.parse_tags('appendtofile', txt)
-        for file in files:
-              approval_content = f"filename={file['filename']}\n{file['content']}"
-              if not self._request_approval("appendtofile", approval_content):
-                  raise AgentExecutionRejected("User rejected appendtofile: " + file['filename'], self.logger)
-              with open(file['filename'], 'a') as f:
-                f.write(self.replace_include_files(file['content']))
-              msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['filename']))+" bytes."
-              self.logger.log(msg_str, LogLevel.INFO)
+    def append_files_from_text(self, txt, hidden_tag_bracket="<"):
+        files = self.parse_tags('appendtofile', txt, hidden_tag_bracket)
+        for position, file in enumerate(files):
+              self.approve_and_write_tag_file('appendtofile', files, position, 'a', "Every <savetofile> tag in this output was written; do not repeat an <appendtofile> that was already written.")
+              msg_str="Appended '"+file['filename']+"'. Total size: "+str(get_file_size(file['write_target']))+" bytes."
+              self.logger.log(visible_encodable_text(msg_str, self.logger.console.encoding), LogLevel.INFO, markup=False, emoji=False)
         return files
                 
-    def replace_include_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<include>{file["filename"]}</include>', file["content"])
-        return txt
+    def included_file_content(self, filename):
+        """Returns the content of the file named by an <includefile> tag, or raises IncludedFileError."""
+        filename = filename.strip()
+        try:
+            file_status = os.stat(filename)
+            if not stat.S_ISREG(file_status.st_mode):
+                raise IncludedFileError(f"Could not read file {filename}: it is not a regular file")
+            if file_status.st_size > MAX_INCLUDED_FILE_BYTES:
+                raise IncludedFileError(f"Could not read file {filename}: its size of {file_status.st_size} bytes is over the limit of {MAX_INCLUDED_FILE_BYTES} bytes")
+            with open(filename, 'r', encoding='utf-8') as file:
+                txt = file.read()
+                self.logger.log("Included file "+visible_control_characters(filename)+".", LogLevel.INFO, markup=False, emoji=False)
+                return txt
+        except IncludedFileError:
+            raise
+        except FileNotFoundError as error:
+            raise IncludedFileError(f"File not found: {filename}") from error
+        except PermissionError as error:
+            raise IncludedFileError(f"Permission denied: {filename}") from error
+        except MemoryError as error:
+            raise IncludedFileError(f"Could not read file {filename}: not enough memory to load it") from error
+        except Exception as error:
+            raise IncludedFileError(f"Could not read file {filename}: {str(error)}") from error
 
-    def replace_append_tags(self, txt, files):
-        for file in files:
-            txt = txt.replace(f'<append>{file["filename"]}</append>', file["content"])
-        return txt
-    
+    def read_included_file(self, filename):
+        """Returns the content of the file named by an <includefile> tag, or an [ERROR: ...] text."""
+        try:
+            return self.included_file_content(filename)
+        except IncludedFileError as error:
+            return f"[ERROR: {error}]"
+
     def replace_include_files(self, txt):
-        """
-        Args:
-            text (str): Text containing <includefile> tags
-            
-        Returns:
-            str: Text with tags replaced by file contents
-        """
-        def replace_with_file_content(match):
-            filename = match.group(1).strip()
-            try:
-                with open(filename, 'r', encoding='utf-8') as file:
-                    txt = file.read()
-                    self.logger.log("Included file "+filename+".", LogLevel.INFO)
-                    return txt
-            except FileNotFoundError:
-                return f"[ERROR: File not found: {filename}]"
-            except PermissionError:
-                return f"[ERROR: Permission denied: {filename}]"
-            except Exception as e:
-                return f"[ERROR: Could not read file {filename}: {str(e)}]"
-        pattern = r'<includefile>(.*?)</includefile>'
-        result = re.sub(pattern, replace_with_file_content, txt, flags=re.DOTALL)
-        return result
-    
+        """Returns txt with each <includefile> tag replaced by that file's content; raises IncludedFileError if one cannot be read."""
+        return INCLUDEFILE_TAG.sub(lambda match: self.included_file_content(match.group(1)), txt)
+
+    def expand_include_tags(self, code_action, saved_files, appended_files, include_tag_token):
+        """Expands every include tag in one scan, so inserted content is never scanned; a generated tag inserts escaped text."""
+        content_of_plain_tag = {f"<include>{file['filename']}</include>": file["written_text"] for file in saved_files}
+        for file in appended_files:
+            append_tag = f"<append>{file['filename']}</append>"
+            content_of_plain_tag[append_tag] = content_of_plain_tag.get(append_tag, "") + file["written_text"]
+        def expansion_of_plain_tag(plain_tag):
+            includefile_tag = INCLUDEFILE_TAG.fullmatch(plain_tag)
+            return self.read_included_file(includefile_tag.group(1)) if includefile_tag else content_of_plain_tag.get(plain_tag, plain_tag)
+        def inserted_text(tag):
+            if not tag.group("tag_name"):
+                return expansion_of_plain_tag(tag.group())
+            tag_name, target = tag.group("tag_name", "target")
+            return escape_for_triple_quoted_string(expansion_of_plain_tag(f"<{tag_name}>{target}</{tag_name}>"))
+        plain_tag_patterns = [INCLUDEFILE_TAG.pattern, *map(re.escape, content_of_plain_tag)]
+        any_include_tag = "|".join([generated_include_tag_pattern(include_tag_token), *plain_tag_patterns])
+        return re.sub(any_include_tag, inserted_text, code_action, flags=re.DOTALL)
+
     def set_system_prompt(self, new_system_prompt):
         self.prompt_templates['system_prompt'] = new_system_prompt
         # removed in v1.18: self.system_prompt = self.initialize_system_prompt()
@@ -1655,10 +1751,13 @@ class ToolCallingAgent(MultiStepAgent):
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
         model_output = str(memory_step.model_output)
-        self.save_files_from_text(model_output)
-        model_output = self.remove_tags('savetofile', model_output)
-        self.append_files_from_text(model_output)
-        model_output = self.remove_tags('appendtofile', model_output)
+        if self.approval_callback is None:
+            self.refuse_file_tags(model_output, memory_step)
+        else:
+            self.save_files_from_text(model_output)
+            model_output = self.remove_tags('savetofile', model_output)
+            self.append_files_from_text(model_output)
+            model_output = self.remove_tags('appendtofile', model_output)
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
             try:
@@ -1693,6 +1792,16 @@ class ToolCallingAgent(MultiStepAgent):
             output=final_answer,
             is_final_answer=got_final_answer,
         )
+
+    def refuse_file_tags(self, model_output: str, memory_step: ActionStep) -> None:
+        """Logs a warning for each file tag in model_output and adds it to the step's observations; opens no file.
+        It raises nothing, because a tag quoted in prose must not stop the tool calls of that reply."""
+        for tag in ('savetofile', 'appendtofile'):
+            for file in self.parse_tags(tag, model_output):
+                warning = f"Warning: Refused <{tag}> for file '{visible_control_characters(file['filename'])}': file tags are not available on this agent without an approval callback. No file was written or read."
+                self.logger.log(warning, style="bold yellow", level=LogLevel.INFO, markup=False, emoji=False)
+                memory_step.observations = (memory_step.observations or "") + warning + "\n"
+            model_output = self.remove_tags(tag, model_output)
 
     def process_tool_calls(
         self, chat_message: ChatMessage, memory_step: ActionStep
@@ -1860,6 +1969,8 @@ class CodeAgent(MultiStepAgent):
         **kwargs: Additional keyword arguments.
     """
 
+    runs_model_written_code = True
+
     def __init__(
         self,
         tools: list[Tool],
@@ -1874,10 +1985,8 @@ class CodeAgent(MultiStepAgent):
         stream_outputs: bool = False,
         use_structured_outputs_internally: bool = False,
         code_block_tags: str | tuple[str, str] | None = None,
-        approval_callback: Callable[[str, str], bool] | None = None,
         **kwargs,
     ):
-        self.approval_callback = approval_callback
         self.additional_authorized_imports = additional_authorized_imports if additional_authorized_imports else []
         self.authorized_imports = sorted(set(BASE_BUILTIN_MODULES) | set(self.additional_authorized_imports))
         self.max_print_outputs_length = max_print_outputs_length
@@ -1927,12 +2036,6 @@ class CodeAgent(MultiStepAgent):
     def _setup_tools(self, tools, add_base_tools):
         super()._setup_tools(tools, add_base_tools)
         self.tools.setdefault("send_to_user", SendToUserTool())
-
-    def _request_approval(self, tag_type: str, content: str) -> bool:
-        """Request user approval before executing a tag. Returns True if approved."""
-        if self.approval_callback is None:
-            return True
-        return self.approval_callback(tag_type, content)
 
     def __enter__(self):
         return self
@@ -2005,9 +2108,9 @@ class CodeAgent(MultiStepAgent):
         self._debug_save_context(input_messages)
         ### Generate model output ###
         memory_step.model_input_messages = input_messages
-        stop_sequences = STOP_SEQUENCES
-        if self.code_block_tags[1] not in self.code_block_tags[0]:
-            # If the closing tag is contained in the opening tag, adding it as a stop sequence would cut short any code generation
+        stop_sequences = list(STOP_SEQUENCES)
+        if self.code_block_tags[1] != "</code>" and self.code_block_tags[1] not in self.code_block_tags[0]:
+            # </code> stays out: providers stop at any occurrence, including inside saved HTML. A closing tag contained in its opening tag would cut every block short.
             stop_sequences.append(self.code_block_tags[1])
         try:
             additional_args: dict[str, Any] = {}
@@ -2022,7 +2125,7 @@ class CodeAgent(MultiStepAgent):
                     if self.stream_outputs:
                         output_stream = self.model.generate_stream(
                             self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
+                            stop_sequences = stop_sequences,
                             **additional_args,
                         )
                         output_text = ""
@@ -2055,7 +2158,7 @@ class CodeAgent(MultiStepAgent):
                     else:
                         chat_message: ChatMessage = self.model(
                             self.posepend_last_message(input_messages),
-                            stop_sequences = STOP_SEQUENCES,
+                            stop_sequences = stop_sequences,
                             **additional_args,
                         )
                         memory_step.model_output_message = chat_message
@@ -2087,18 +2190,14 @@ class CodeAgent(MultiStepAgent):
         str_len = 0
         str_len_str = '0'
         saved_files = []
+        include_tag_token = secrets.token_hex(16)
+        code_block_open, code_block_close, hidden_tag_bracket = new_parsing_markers(str(model_output))
 
         if model_output is None and output_truncated:
             model_output = ''  # reasoning used the whole output budget; still tell the model below
         if model_output is not None:
             model_output = re.sub(r'`<(/?(runcode|freewill|savetofile|observations|plans|final_answer))>`', r'`\1`', str(model_output)) # remove escaped tags
-            model_output = remove_after_markers(model_output, STOP_SEQUENCES, True)
-            if ('<runcode>' in model_output) and not('</runcode>' in model_output):
-                model_output = model_output + '</runcode>'
-            if ('<code>' in model_output) and not('</code>' in model_output):
-                model_output = model_output + '</code>'
-            if ('<final_answer>' in model_output) and not('</final_answer>' in model_output):
-                model_output = model_output + '</final_answer>'
+            model_output = end_output_at_real_stop(model_output)
             memory_step.model_output_message = model_output
             str_len = len(model_output)
             str_len_str = str(str_len)
@@ -2108,12 +2207,13 @@ class CodeAgent(MultiStepAgent):
                 level=LogLevel.INFO,
             )
             # len1 = len(model_output)
-            saved_files = self.save_files_from_text(model_output)
+            model_output = hide_tags_in_block_literals(model_output, hidden_tag_bracket)
+            saved_files = self.save_files_from_text(model_output, hidden_tag_bracket)
             model_output = self.remove_tags('savetofile', model_output)
             # len2 = len(model_output)
-            appended_files = self.append_files_from_text(model_output)
+            appended_files = self.append_files_from_text(model_output, hidden_tag_bracket)
             model_output = self.remove_tags('appendtofile', model_output)
-            if is_valid_python_code(model_output) and not (output_truncated and not model_output.strip()):
+            if is_valid_python_code(model_output) and not ((output_truncated or saved_files or appended_files) and not model_output.strip()):
                 model_output = """```py
 """+model_output+"""
 ```<end_code>"""
@@ -2123,13 +2223,19 @@ class CodeAgent(MultiStepAgent):
             model_output_for_parsing = self.remove_tags('observations', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('runcode', model_output_for_parsing)
             model_output_for_parsing = fix_nested_tags('final_answer', model_output_for_parsing)
+            model_output_for_parsing = re.sub(r'<final_answer>(.*?)</final_answer>', lambda answer: '<runcode>final_answer("""'+hide_tag_brackets(final_answer_string_body(restore_tag_brackets(answer.group(1), hidden_tag_bracket), include_tag_token), hidden_tag_bracket)+'""")</runcode>', model_output_for_parsing, flags=re.DOTALL)
             model_output_for_parsing = model_output_for_parsing.replace('<final_answer>','<runcode>final_answer("""').replace('</final_answer>','""")</runcode>')
-            model_output_for_parsing = model_output_for_parsing.replace('<runcode>','```py').replace('</runcode>','```<end_code>')
-            #v1.19 compatibility
-            model_output_for_parsing = model_output_for_parsing.replace('<code>','```py').replace('</code>','```<end_code>')
+            # <code> is the v1.19 form. The first opening tag left is the real one; the others are text in the code.
+            real_opening_tag = re.search(r'<(?:runcode|code)>', model_output_for_parsing)
+            if real_opening_tag:
+                model_output_for_parsing = model_output_for_parsing[:real_opening_tag.start()] + code_block_open + model_output_for_parsing[real_opening_tag.end():]
+            # end_output_at_real_stop leaves the only real closing tag at the very end; an earlier one is text.
+            model_output_for_parsing = re.sub(r'</(?:runcode|code)>\Z', code_block_close, model_output_for_parsing)
+            model_output_for_parsing = restore_tag_brackets(model_output_for_parsing, hidden_tag_bracket)
             # this is for backward compatibility
             skip_next_approval = False
-            if not('```py' in model_output_for_parsing) and not('```<end_code>' in model_output_for_parsing):
+            code_block_markers = (code_block_open, code_block_close, '```py', '```<end_code>')
+            if not any(marker in model_output_for_parsing for marker in code_block_markers):
                 skip_next_approval = True  # system-generated reminders, no approval needed
                 if output_truncated:
                     model_output_for_parsing = model_output_for_parsing + """
@@ -2173,9 +2279,13 @@ will run in his device.
                 code_action = json.loads(model_output_for_parsing)["code"]
                 code_action = extract_code_from_text(code_action, self.code_block_tags) or code_action
             else:
-                code_action = bp_parse_code_blobs(model_output_for_parsing)
+                code_action = bp_parse_code_blobs(model_output_for_parsing, code_block_open, code_block_close)
+            if real_opening_tag:  # a markdown fence may hold the tag, and then the fence's code holds its marker
+                code_action = code_action.replace(code_block_open, real_opening_tag.group())
             code_action = fix_final_answer_code(code_action)
             code_action = strip_trailing_tags(code_action)  # drop stray tags left just before </runcode>
+            code_to_expand = code_action
+            code_action = readable_generated_include_tags(code_action, include_tag_token)
             # if (len(saved_files)==0):
             #     code_action = """# INFO: No file was saved in this step. If you need to save files, use the savetofile tag.
             # """+code_action
@@ -2250,15 +2360,14 @@ You can combine the above to be able to run very large portions of python code i
         # memory_step.tool_calls = [tool_call]
 
         ### Execute action ###
+        # Cut tags stay in generated form through the scan, so plain text cannot complete them into an include.
+        code_action = readable_generated_include_tags(self.expand_include_tags(code_to_expand, saved_files, appended_files, include_tag_token), include_tag_token)
         if skip_next_approval:
             # there is no need to request for approval
             pass
         elif not self._request_approval("runcode", code_action):
             raise AgentExecutionRejected("User rejected runcode execution.", self.logger)
-        self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=code_action, level=LogLevel.INFO)
-        code_action = self.replace_include_tags(code_action, saved_files)
-        code_action = self.replace_append_tags(code_action, appended_files)
-        code_action = self.replace_include_files(code_action)
+        self.logger.log_code(title="Executing code with "+str(len(code_action))+" chars:", content=visible_control_characters(code_action), level=LogLevel.INFO)
         
         # with open('tmp.py', "w") as text_file:
         #     text_file.write(code_action)

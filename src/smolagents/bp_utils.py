@@ -9,11 +9,42 @@ import ast
 import glob
 import os
 import re
+import secrets
 import shutil
 import sys
 import time
+import unicodedata
+from functools import cache
+from itertools import chain, islice
 from textwrap import dedent
 
+
+MARKDOWN_FENCE_AROUND_CODE = re.compile(r"\A```(?:python|py)\b\s*(.*?)\s*```\Z", re.DOTALL)
+FINAL_ANSWER_INCLUDE_TAG = re.compile(r"<(includefile|include|append)>(.*?)</\1>", re.DOTALL)
+INCLUDEFILE_TAG = re.compile(r"<includefile>(.*?)</includefile>", re.DOTALL)
+FAILED_INCLUDE_TAG_TYPE = "failed_include"
+# A filename quoted with one quote character may contain the other one.
+FILENAME_ATTRIBUTE = r"""\s+filename\s*=\s*(?P<quote>['"])(?P<filename>(?:(?!(?P=quote))[\s\S])*)(?P=quote)\s*"""
+SECTION_OPENING = r"""(?i:<(?P<section>savetofile|appendtofile|thoughts|plans|freewill|observations)(?:""" + FILENAME_ATTRIBUTE + r""")?>)"""
+# What the top level of a model output can hold: skipped sections (matching parse_tags), code blocks and bare stop markers.
+OUTSIDE_BLOCK_TAG = re.compile(
+    SECTION_OPENING +
+    r"|<(?P<code_block>runcode|code|final_answer)>"
+    r"|(?P<stray_stop></runcode>|</code>|</final_answer>|Calling tools:)"
+)
+PYTHON_STRING_OR_STOP = re.compile(
+    r"""\#(?:(?!</runcode>|</code>|</final_answer>)[^\n])*"""
+    r"""|(?<!\\)\"\"\"[^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*\"\"\""""
+    r"""|(?<!\\)\'\'\'[^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*\'\'\'"""
+    r"""|"[^"\\\n]*(?:\\.[^"\\\n]*)*\""""
+    r"""|'[^'\\\n]*(?:\\.[^'\\\n]*)*'"""
+    r"""|(?P<stop></runcode>|</code>|</final_answer>|Calling tools:)""",
+    re.DOTALL,
+)
+SECTION_OPENING_OR_PYTHON_STRING = re.compile(SECTION_OPENING + "|" + PYTHON_STRING_OR_STOP.pattern, re.DOTALL)
+TRIPLE_QUOTED_STRING_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\r": "\\r", "\0": "\\x00"})
+TERMINAL_CONTROL_ESCAPES = {code: f"\\x{code:02x}" for code in chain(range(0x00, 0x09), range(0x0b, 0x20), range(0x7f, 0xa0))}
+PRIVATE_USE_RANGES = (range(0xE000, 0xF900), range(0xF0000, 0xFFFFE), range(0x100000, 0x10FFFE))
 
 dotenv_loaded_names: set[str] = set()
 
@@ -120,6 +151,49 @@ def remove_files(file_filter):
   for file_path in txt_files:
     os.remove(file_path)
 
+@cache
+def terminal_display_escapes() -> dict[int, str]:
+    """The str.translate table of visible_control_characters. Scanning every code point takes about 0.1 s, so it runs once, on first use."""
+    format_character_escapes = {
+        code: f"\\u{code:04x}" if code <= 0xffff else f"\\U{code:08x}"
+        for code in range(sys.maxunicode + 1)
+        if unicodedata.category(chr(code)) in ("Cf", "Zl", "Zp")
+    }
+    return TERMINAL_CONTROL_ESCAPES | format_character_escapes
+
+
+def visible_control_characters(text: str) -> str:
+    """Returns text with C0, DEL and C1 controls (except newline and tab) as \\xNN and Unicode Cf, Zl and Zp characters as \\uXXXX or \\UXXXXXXXX, for display only.
+    It stops those characters hiding or reordering what is shown; it does not make text trustworthy: homoglyphs and other look-alikes pass through."""
+    return text.translate(terminal_display_escapes())
+
+
+def holds_line_break(text: str) -> bool:
+    """Returns whether text holds a character str.splitlines treats as a line break: LF, CR, VT, FF, FS, GS, RS, NEL, LS or PS."""
+    return "".join(text.splitlines()) != text
+
+
+def unencodable_as_backslash_escapes(text: str, encoding: str) -> str:
+    """Returns text with each character encoding cannot represent, such as a lone surrogate in UTF-8, as a backslash escape."""
+    return text.encode(encoding, "backslashreplace").decode(encoding)
+
+
+def visible_encodable_text(text: str, encoding: str) -> str:
+    """Returns visible_control_characters(text) with what encoding cannot represent as backslash escapes."""
+    return unencodable_as_backslash_escapes(visible_control_characters(text), encoding)
+
+
+@cache
+def display_escaped_run_pattern() -> re.Pattern:
+    """Matches a maximal run of the characters that visible_control_characters escapes."""
+    return re.compile("[" + "".join(re.escape(chr(code)) for code in terminal_display_escapes()) + "]+")
+
+
+def count_display_escaped_characters(text: str) -> int:
+    """Returns how many characters of text visible_control_characters escapes."""
+    return len(text) - len(text.translate(dict.fromkeys(terminal_display_escapes())))
+
+
 def is_valid_python_code(code_string):
     """Returns true if the string is a valid python code."""
     result = False
@@ -161,12 +235,143 @@ def fix_nested_tags(tagname, text):
 
     return result
 
+def tag_with_filename_pattern(tag):
+    """Returns the compiled pattern of a whole <tag filename="...">content</tag>, whose groups are quote, filename and content."""
+    return re.compile("<" + tag + FILENAME_ATTRIBUTE + r">(?P<content>.*?)</" + tag + ">", re.IGNORECASE | re.DOTALL)
+
+def end_of_block(text, start, block):
+    """Returns where the block opened before start ends: for code, the first stop marker outside strings and comments."""
+    if block == "final_answer":
+        answer_end = text.find("</final_answer>", start)
+        return len(text) if answer_end == -1 else answer_end
+    for token in PYTHON_STRING_OR_STOP.finditer(text, start):
+        if token.group("stop"):
+            return token.start()
+    return len(text)
+
+def end_of_closed_section(text, section_opening, unclosed_sections):
+    """Returns where the section opened by the section_opening match ends, or None, recording it in unclosed_sections
+    so that later openings of an unclosed section cost no search."""
+    section = section_opening.group("section").lower()
+    if section in unclosed_sections:
+        return None
+    section_end = re.compile(f"</{section}>", re.IGNORECASE).search(text, section_opening.end())
+    if section_end:
+        return section_end.end()
+    unclosed_sections.add(section)
+    return None
+
+def first_real_block_opening(text):
+    """Returns the match of the first code block's opening tag outside files and reasoning sections, or None,
+    and where the first bare stop marker before it is, or None."""
+    position = 0
+    stray_stop = None
+    unclosed_sections = set()
+    while tag := OUTSIDE_BLOCK_TAG.search(text, position):
+        position = tag.end()
+        if tag.group("stray_stop"):
+            stray_stop = tag.start() if stray_stop is None else stray_stop
+        elif tag.group("section"):
+            position = end_of_closed_section(text, tag, unclosed_sections) or position
+        else:
+            return tag, stray_stop
+    return None, stray_stop
+
+def end_output_at_real_stop(text):
+    """Returns text cut at its first real stop and with that block closed, ignoring markers in files, reasoning sections
+    and Python strings. A bare marker cuts too, unless a code block opens after it."""
+    opening, stray_stop = first_real_block_opening(text)
+    if opening:
+        block = opening.group("code_block")
+        return text[:end_of_block(text, opening.end(), block)] + f"</{block}>"
+    return text if stray_stop is None else text[:stray_stop]
+
+def new_parsing_markers(reply):
+    """Returns the stand-ins for <runcode>, </runcode> and a hidden "<" while reply is parsed: private-use characters, not valid
+    Python code, that reply does not contain. A reply holding nearly all of them gets longer random stand-ins absent from it."""
+    characters_in_reply = set(reply)
+    free_characters = (chr(code_point) for code_point in chain.from_iterable(PRIVATE_USE_RANGES) if chr(code_point) not in characters_in_reply)
+    markers = tuple(islice(free_characters, 3))
+    while len(markers) < 3 or any(marker in reply for marker in markers):
+        token = secrets.token_hex(16)
+        markers = (f"\ue000{token}", f"\ue001{token}", f"\ue002{token}")
+    return markers
+
+def hide_tag_brackets(text, hidden_tag_bracket):
+    """Returns text with every "<" replaced by hidden_tag_bracket, so that whole-text tag matching cannot see its tags."""
+    return text.replace("<", hidden_tag_bracket)
+
+def restore_tag_brackets(text, hidden_tag_bracket):
+    """Returns text with every hidden_tag_bracket back to "<"."""
+    return text.replace(hidden_tag_bracket, "<")
+
+def hide_python_string_tags(code, hidden_tag_bracket):
+    """Returns code with the tags hidden in its Python strings. Closed sections are skipped so that an apostrophe in
+    their text does not start a string that swallows their closing tag."""
+    parts = []
+    copied_up_to = 0
+    position = 0
+    unclosed_sections = set()
+    while token := SECTION_OPENING_OR_PYTHON_STRING.search(code, position):
+        position = token.end()
+        if token.group("section"):
+            position = end_of_closed_section(code, token, unclosed_sections) or position
+        elif token.group().startswith(('"', "'")):
+            parts += [code[copied_up_to:token.start()], hide_tag_brackets(token.group(), hidden_tag_bracket)]
+            copied_up_to = token.end()
+    return "".join(parts) + code[copied_up_to:]
+
+def hide_tags_in_block_literals(text, hidden_tag_bracket="<"):
+    """Returns the cut text with the tags hidden in its block's literal text: all of a final answer, or a code block's Python strings.
+    The default hides nothing."""
+    opening, _ = first_real_block_opening(text)
+    if opening is None:
+        return text
+    block = opening.group("code_block")
+    body_end = end_of_block(text, opening.end(), block)
+    body = text[opening.end():body_end]
+    hidden_body = hide_tag_brackets(body, hidden_tag_bracket) if block == "final_answer" else hide_python_string_tags(body, hidden_tag_bracket)
+    return text[:opening.end()] + hidden_body + text[body_end:]
+
+def escape_for_triple_quoted_string(text):
+    """Returns text that reads back unchanged inside a triple-double-quoted Python string, keeping its real newlines.
+    The word final_answer is hex-escaped because fix_final_answer_code renames it even inside strings."""
+    return text.translate(TRIPLE_QUOTED_STRING_ESCAPES).replace("final_answer", r"\x66inal_answer")
+
+def generated_include_tag_pattern(include_tag_token):
+    """Returns the pattern of a complete tag pair final_answer_string_body generates with include_tag_token, grouping tag_name and target.
+    A target holds no generated opening tag, so an opening tag cut from its closing tag cannot pair with a later one."""
+    any_generated_opening_tag = rf"<(?:includefile|include|append)_as_text {include_tag_token}>"
+    return rf"<(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>(?P<target>(?:(?!{any_generated_opening_tag}).)*?)</(?P=tag_name)_as_text {include_tag_token}>"
+
+def readable_generated_include_tags(code, include_tag_token):
+    """Returns code with each generated include tag, paired or cut from its pair, written back as the plain tag it stands for."""
+    return re.sub(rf"<(?P<slash>/?)(?P<tag_name>includefile|include|append)_as_text {include_tag_token}>", r"<\g<slash>\g<tag_name>>", code)
+
+def final_answer_string_body(answer_text, include_tag_token):
+    """Returns answer_text for pasting between triple quotes, with its include tags in the generated form.
+    include_tag_token is unknown to the model, so model text cannot produce that form."""
+    body_parts = []
+    copied_up_to = 0
+    for include_tag in FINAL_ANSWER_INCLUDE_TAG.finditer(answer_text):
+        tag_name, tag_content = include_tag.groups()
+        body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:include_tag.start()]))
+        body_parts.append(f"<{tag_name}_as_text {include_tag_token}>{tag_content}</{tag_name}_as_text {include_tag_token}>")
+        copied_up_to = include_tag.end()
+    body_parts.append(escape_for_triple_quoted_string(answer_text[copied_up_to:]))
+    return "".join(body_parts)
+
+def ends_with_include_tag(text):
+    """True when text ends with a complete <includefile>, <include> or <append> tag."""
+    return any(include_tag.end() == len(text) for include_tag in FINAL_ANSWER_INCLUDE_TAG.finditer(text))
+
 def strip_trailing_tags(code):
     """
     Removes any XML/HTML-like tags (e.g. </parameter>, </invoke>, <br>) that
     appear at the very end of a code block. Some models add stray tags just
     before closing </runcode>; this cleans the extracted code before execution.
     Only the tail of the text is touched, so tags inside strings stay intact.
+    A complete include tag at the end is code to expand, so stripping stops there.
     """
     if not code or not isinstance(code, str):
         return code
@@ -174,18 +379,20 @@ def strip_trailing_tags(code):
     result = code.rstrip()
     while True:
         match = pattern.search(result)
-        if not match:
+        if not match or ends_with_include_tag(result):
             break
         result = result[:match.start()].rstrip()
     return result
 
-def bp_parse_code_blobs(text: str) -> str:
+def bp_parse_code_blobs(text: str, code_block_open: str = "<runcode>", code_block_close: str = "</runcode>") -> str:
     """Extract code blocs from the LLM's output.
 
     If a valid code block is passed, it returns it directly.
 
     Args:
         text (`str`): LLM's output text to parse.
+        code_block_open (`str`): What marks the start of a tagged code block in text.
+        code_block_close (`str`): What marks the end of a tagged code block in text.
 
     Returns:
         `str`: Extracted code block.
@@ -193,10 +400,11 @@ def bp_parse_code_blobs(text: str) -> str:
     Raises:
         ValueError: If no valid code block is found in the text.
     """
-    pattern = r"```(?:py|python)\s*(.*?)```<end_code>"
+    pattern = code_block_open + "(.*?)" + code_block_close + r"|```(?:python|py)\b\s*(.*?)```<end_code>"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
-        return "\n\n".join(match.strip() for match in matches)
+        blocks = (tagged or fenced for tagged, fenced in matches)
+        return "\n\n".join(MARKDOWN_FENCE_AROUND_CODE.sub(r"\1", block.strip()) for block in blocks)
     # Maybe the LLM outputted a code blob directly
     try:
         ast.parse(text)
