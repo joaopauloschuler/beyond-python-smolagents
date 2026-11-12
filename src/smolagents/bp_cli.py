@@ -33,6 +33,7 @@ Environment variables:
     BPSA_AGENT_NAME     - Agent name for agent-to-agent messages: 1-64 of a-z, 0-9, '-'; unset/empty = messages off
     BPSA_MESSAGE_FOLDERS - Message folders, one path per line; each is named by its last path component (required with BPSA_AGENT_NAME)
     BPSA_MESSAGE_POLL_SECONDS - Seconds between message folder checks, a number above 0 (default: 60)
+    BPSA_MAX_GROUP_MEMBERS - Agents this agent may have running through its start_agent tool, a whole number (default: 9; 0 = no start_agent tool)
     BPSA_SYSTEM_PROMPT_FIRST - Place system prompt before memory steps (default: true; set to 0 to place it after)
     BPSA_SKIP_CONNECTIVITY_CHECK - Skip the startup request that verifies key, endpoint and model id (default: 0)
     BPSA_CONTEXT_LENGTH - Model context window in tokens; 0/unset = ask OpenRouter's GET /models, else unknown
@@ -82,7 +83,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
-from smolagents.bp_messages import MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, model_text_of_queued_messages
+from smolagents.bp_messages import LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, model_text_of_queued_messages, stop_live_members
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
 
@@ -336,7 +337,7 @@ def load_message_settings_or_fail() -> MessageSettings | None:
 
 def message_settings_text(settings: MessageSettings) -> str:
     folders = ", ".join(f"{folder.label} ({folder.path})" for folder in settings.folders)
-    return f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s"
+    return f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s, may start {settings.max_group_members} agents"
 
 
 def print_message_settings(settings: MessageSettings):
@@ -491,6 +492,7 @@ def check_required_env():
         console.print("  [bold]BPSA_AGENT_NAME[/]       Agent name for agent-to-agent messages (default: unset = messages off)")
         console.print("  [bold]BPSA_MESSAGE_FOLDERS[/]  Message folders, one path per line (required with BPSA_AGENT_NAME)")
         console.print("  [bold]BPSA_MESSAGE_POLL_SECONDS[/] Seconds between message folder checks (default: 60)")
+        console.print("  [bold]BPSA_MAX_GROUP_MEMBERS[/] Agents this agent may have running through start_agent (default: 9; 0 = none)")
         console.print("  [bold]BPSA_SKIP_CONNECTIVITY_CHECK[/] Skip the startup model request (default: 0)")
         console.print("  [bold]BPSA_CONTEXT_LENGTH[/]   Context window in tokens (default: 0 = ask OpenRouter)")
         console.print("  [bold]BPSA_MAX_SESSION_TOKENS[/] Session token budget, warn 80%, stop 100% (default: 0)")
@@ -803,6 +805,10 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
     if _message_settings is not None:
         from smolagents.bp_tools import SendMessageTool
         tools.append(SendMessageTool(_message_settings))
+        if _message_settings.max_group_members > 0:
+            from smolagents.bp_tools import StartAgentTool, StopAgentTool
+            tools.append(StartAgentTool(_message_settings))
+            tools.append(StopAgentTool(_message_settings))
 
     if mcp_servers:
         from smolagents import MCPClient
@@ -2059,6 +2065,8 @@ def cmd_show_config(agent, browser_enabled=False, gui_enabled=False, image_enabl
                           env_source("BPSA_MESSAGE_FOLDERS"))
         table.add_row("Message poll seconds", f"{_message_settings.poll_seconds:g}",
                       env_source("BPSA_MESSAGE_POLL_SECONDS") if (get_env("BPSA_MESSAGE_POLL_SECONDS") or "").strip() else "default")
+        table.add_row("Max group members", str(_message_settings.max_group_members),
+                      env_source("BPSA_MAX_GROUP_MEMBERS") if (get_env("BPSA_MAX_GROUP_MEMBERS") or "").strip() else "default")
     console.print(table)
     console.print("[dim]Sources: env = process environment, .env = loaded from ./.env at startup, "
                   "default = built in. The ~/.bpsa.yaml file named in docs/CLI.md is not read.[/]")
@@ -2957,6 +2965,18 @@ def _shutdown_mcp(agent):
             pass
 
 
+def _shutdown_members():
+    """Stops the live agents that this process's agent started with start_agent and prints one line for each; nothing with messages off."""
+    if _message_settings is None:
+        return
+    try:
+        lines = stop_live_members(_message_settings)
+    except OSError as error:
+        lines = [f"Could not stop the agents started by {_message_settings.agent_name}: {error}"]
+    for line in lines:
+        console.print(console_literal(line, "cyan"), soft_wrap=True)
+
+
 def prepend_instructions(task: str, instructions: str | None) -> str:
     if instructions:
         return instructions+"""
@@ -3005,6 +3025,7 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
             manager.shutdown()
         _shutdown_gui(agent)
         _shutdown_mcp(agent)
+        _shutdown_members()
 
 
 LISTEN_TASK_HEADING = (
@@ -3146,7 +3167,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             instructions = load_agent_instructions()
         session_stats = new_session_stats()
         budget_warned = set()
-        print_listen_line(f"Listening for messages: {message_settings_text(_message_settings)}.", "green")
+        print_listen_line(f"{LISTENER_READY_LINE_PREFIX}{message_settings_text(_message_settings)}.", "green")
         start_message_poller()
         while True:
             activity = "while waiting for messages"
@@ -3179,6 +3200,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             _shutdown_browser(agent)
             _shutdown_gui(agent)
             _shutdown_mcp(agent)
+        _shutdown_members()
     not_delivered_again = "; the messages of that run are not delivered again" if activity.startswith("during run") else ""
     print_listen_line(f"Listener stopped by {stop_reason} {activity}{not_delivered_again}.")
     if stop_reason == "its session budget":
@@ -3319,6 +3341,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             _shutdown_browser(agent)
             _shutdown_gui(agent)
             _shutdown_mcp(agent)
+            _shutdown_members()
             console.print("[dim]Goodbye![/]")
             break
 
@@ -3376,6 +3399,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                     _shutdown_browser(agent)
                     _shutdown_gui(agent)
                     _shutdown_mcp(agent)
+                    _shutdown_members()
                     console.print("[dim]Goodbye![/]")
                     break
                 elif cmd == "/help":

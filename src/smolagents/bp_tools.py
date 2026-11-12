@@ -3292,9 +3292,8 @@ class SendMessageTool(Tool):
 
     def forward(self, to: str, text: str, folder: str | None = None) -> str:
         # Imported here: `python -m smolagents.bp_messages` warns when the package import chain already loaded it.
-        from smolagents.bp_messages import check_message_target, write_message
+        from smolagents.bp_messages import check_message_target, message_folder_of_label, write_message
 
-        labels = ", ".join(message_folder.label for message_folder in self._settings.folders)
         if not isinstance(text, str):
             return f"Error: text must be a string, not {type(text).__name__}; nothing was sent."
         try:
@@ -3303,15 +3302,10 @@ class SendMessageTool(Tool):
             return f"Error: {error} Nothing was sent."
         if to == self._settings.agent_name:
             return f"Error: {to} is your own agent name; you cannot send a message to yourself. Nothing was sent."
-        if folder is None:
-            if len(self._settings.folders) != 1:
-                return f"Error: you have several message folders; name one with folder= ({labels}). Nothing was sent."
-            message_folder = self._settings.folders[0]
-        else:
-            matching_folders = [message_folder for message_folder in self._settings.folders if message_folder.label == folder]
-            if not matching_folders:
-                return f"Error: no message folder has the label {ascii(folder)}; your folders are: {labels}. Nothing was sent."
-            message_folder = matching_folders[0]
+        try:
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} Nothing was sent."
         if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
             return (f"Error: the text has {len(text):,} characters, above the limit of {MAX_MESSAGE_TEXT_CHARACTERS:,}; "
                     f"write it to a file and send the file's path instead. Nothing was sent.")
@@ -3320,3 +3314,91 @@ class SendMessageTool(Tool):
         except (ValueError, OSError) as error:
             return f"Error: could not write the message in folder {message_folder.label}: {error}. Nothing was sent."
         return f"Sent {file_name} in folder {message_folder.label}."
+
+
+class StartAgentTool(Tool):
+    """Starts one group member of this process's agent: a `bpsa listen` process on one of its message folders (bp_messages.start_member)."""
+
+    name = "start_agent"
+    description = (
+        "Starts one new agent as a separate background process that reads one of your message folders. "
+        "The tool chooses the new agent's name (your own name, '-' and a number) and waits until the agent listens, which takes up to a few minutes. "
+        "The new agent knows nothing until it receives a message: send it its instructions with send_message to the returned name. "
+        "It keeps running, and answers every message addressed to it or to 'all' in that folder, until you stop it with stop_agent "
+        "or your own process ends. It cannot start agents itself. "
+        "Every started agent makes its own model calls, which cost money: start only as many as the work needs, "
+        "and no more than your limit allows. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        "`working_directory` is the existing directory the new agent works in; left out, it is your current directory. "
+        "Returns one line with the new agent's name, process id and log file, or one line starting with 'Error:' when no agent was started."
+    )
+    inputs = {
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder the new agent reads and writes; required only when you have several folders.",
+            "nullable": True,
+        },
+        "working_directory": {
+            "type": "string",
+            "description": "Existing directory in which the new agent runs; default: your current directory.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, folder: str | None = None, working_directory: str | None = None) -> str:
+        from smolagents.bp_messages import message_folder_of_label, start_member
+
+        try:
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} No agent was started."
+        member_directory = os.path.abspath(os.getcwd() if working_directory is None else str(working_directory))
+        if not os.path.isdir(member_directory):
+            return f"Error: the working directory {ascii(member_directory)} does not exist or is not a directory. No agent was started."
+        try:
+            record = start_member(self._settings, message_folder, member_directory)
+        except ValueError as error:
+            return f"Error: {error} No agent was started."
+        except OSError as error:
+            return f"Error: {error}. No agent was started."
+        return (f"Started agent {record.name} (process {record.process_id}, log {record.log_path}). It listens in folder {message_folder.label} "
+                f"and knows nothing yet: send it its instructions with send_message to {record.name}.")
+
+
+class StopAgentTool(Tool):
+    """Stops members that this process's agent started with start_agent (bp_messages.stop_members)."""
+
+    name = "stop_agent"
+    description = (
+        "Stops an agent that you started with start_agent: it asks the process to end and waits until it has ended. "
+        "`name` is the name that start_agent returned, or 'all' to stop every agent you started. "
+        "You cannot stop any other agent. A stopped agent loses its memory; a later start_agent creates a new agent with a new name. "
+        "Returns one line saying what was stopped, or one line starting with 'Error:'."
+    )
+    inputs = {"name": {"type": "string", "description": "Name of an agent you started, or 'all'."}}
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, name: str) -> str:
+        from smolagents.bp_messages import MESSAGE_TARGET_ALL, member_number, own_member_records, stop_live_members, stop_members
+
+        try:
+            if name == MESSAGE_TARGET_ALL:
+                return " ".join(stop_live_members(self._settings)) or "None of your agents is running; nothing was stopped."
+            if not isinstance(name, str) or member_number(self._settings.agent_name, name) is None:
+                return (f"Error: {ascii(name)} is not an agent that you started; their names are {self._settings.agent_name}-1, "
+                        f"{self._settings.agent_name}-2 and so on. Nothing was stopped.")
+            records = [record for record in own_member_records(self._settings) if record.name == name]
+            if not records:
+                return f"Error: your message folders hold no record of an agent {name}. Nothing was stopped."
+            return stop_members(records)[0]
+        except OSError as error:
+            return f"Error: {error}. Nothing was stopped."

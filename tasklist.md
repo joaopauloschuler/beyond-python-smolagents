@@ -758,12 +758,49 @@ Conventions for T1 to T11:
       without ESC bytes; unreachable endpoint, step limit, SIGINT and SIGTERM
       during code and during a model call; refusals; HOME holds only
       matplotlib's font cache; REPL and `bpsa run` screens equal b2c6edd.
-- [ ] **T6. `start_agent` tool.** In `src/smolagents/bp_tools.py`. Starts one
+- [x] **T6. `start_agent` tool.** In `src/smolagents/bp_tools.py`. Starts one
       `bpsa listen` process with its name and group folder set. The tool
       assigns the name (for example `agent31` under `leader3`) and refuses
       above `BPSA_MAX_GROUP_MEMBERS` (default 9). It writes the process id
       and the log path into the group folder. Check: a leader starts two
       members; both answer a message to `all`.
+      LANDED: `start_agent(folder?, working_directory?)` (`StartAgentTool`)
+      calls `bp_messages.start_member`: one `bpsa listen` child in its own
+      session, stdin from the null device, named `<own name>-<k>`, k = one
+      above the highest k that has a record (a name is never used twice),
+      with one folder, `BPSA_AUTO_APPROVE=on`, the parent's poll seconds,
+      `BPSA_MAX_GROUP_MEMBERS=0`, without `BPSA_TMUX`, and the package folder
+      first in `PYTHONPATH`. Log `<name>.log` and record
+      `.<name>.agent.json` (process id, process start ticks, log path, start
+      time, working directory; `replace_file_with_text`) in the group
+      folder; records are never deleted. It waits up to
+      `MEMBER_START_TIMEOUT_SECONDS` = 120 for the line
+      `Listening for messages: agent <name>, `; a child that ends, a timeout
+      or an interrupt stops the child and gives one `Error:` line with the
+      last 6 log lines through `visible_encodable_text`. Live = `/proc/<id>/stat`
+      exists, is no zombie and has the recorded start ticks (Linux only).
+      `BPSA_MAX_GROUP_MEMBERS` (whole number, default 9) is
+      `MessageSettings.max_group_members`, shown in `/show-config`, in the
+      `Messages:`/`Listening for messages:` line (`may start N agents`), in
+      docs/CLI.md and the help texts; with 0 neither tool is registered.
+      `message_folder_of_label` now resolves `folder` for `send_message` and
+      `start_agent`. Added beyond the plan, so that no member is left
+      running: `stop_agent(name)` (`all` = every own live member; SIGTERM,
+      up to `MEMBER_STOP_TIMEOUT_SECONDS` = 20, then SIGKILL; only names
+      `<own name>-<k>` with a record in the own folders), and
+      `_shutdown_members` at `/exit`, end of input, end of `bpsa run` and end
+      of `bpsa listen`, one line per member. A parent that is killed leaves
+      its members running; `/clear` does not stop them. Verified with real
+      runs: tool object (start, record, log, limit 1, stop, next name,
+      failing starts, foreign names, stale records with a missing process id
+      and with the id of a `sleep`: not signalled); `leader1` with folders
+      `leaders` and `group1` started `leader1-1` and `leader1-2` on a message
+      from `boss`, both answered its message to `all`, `boss` received the
+      report; a member lists `send_message` only; SIGTERM to the leader ended
+      both members (three pids gone); Ctrl-C at a REPL leader left its
+      member running and stopped a member that was still starting, `/exit`
+      stopped the member; `bpsa run` stopped its member; feature off:
+      `/show-tools` equals 76abe1b.
 - [x] **T7. Commands for the global leader.**
       `python -m smolagents.bp_messages` with `send`, `new` (messages since
       the caller's last read) and `wait` (block until one arrives or a time
