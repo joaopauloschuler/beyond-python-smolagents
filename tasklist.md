@@ -902,3 +902,9 @@ Conventions for T1 to T11:
       SIGHUP leaves its members running; (M6) nothing bounds an exchange of
       replies between agents except the session budget; (M7) one idle
       listener uses about 260 MB, so 9 members need about 2.3 GB.
+        FIXED H1, H2 (this commit, 2026-11-12): `content_of_regular_file` in
+        bp_messages.py opens with O_NOFOLLOW|O_NONBLOCK, refuses non-regular files and files above a
+        byte limit unread; messages (limit 600,000 bytes), `.<reader>.read.json` (1,000,000) and
+        `.<name>.agent.json` (100,000) use it; `save_last_read_ids` unlinks a non-regular entry
+        first. `MAX_MESSAGE_TEXT_CHARACTERS` (100,000) moved to bp_messages.py: tool, `write_message`
+        and `send` refuse more. Verified: h12/check_h12.py 60/60, T1 PASS, T7 43/43, one `bpsa listen`.

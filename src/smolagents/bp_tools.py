@@ -3259,19 +3259,16 @@ class GetToolDescriptionsTool(Tool):
         return "\n\n".join(results)
 
 
-MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # every reader holds a message in its context
-
-
 class SendMessageTool(Tool):
     """Writes an agent-to-agent message from this process's agent name into one of its message folders (bp_messages.write_message)."""
 
     name = "send_message"
-    description = (
+    description_template = (
         "Sends a text message to another agent by writing it as a file in one of your message folders. "
         "The message goes out under your own agent name. "
         "`to` is the name of one agent, or 'all' for every agent that reads that folder; you cannot send to yourself. "
         "`folder` is the label of one of your message folders; leave it out when you have only one. "
-        f"`text` holds at most {MAX_MESSAGE_TEXT_CHARACTERS:,} characters and every reader gets all of it in its context, "
+        "`text` holds at most {max_text_characters:,} characters and every reader gets all of it in its context, "
         "so keep it short: write long results to a file and send the file's path. "
         "Returns one line naming the message file written, or one line starting with 'Error:' when nothing was sent."
     )
@@ -3287,12 +3284,15 @@ class SendMessageTool(Tool):
     output_type = "string"
 
     def __init__(self, settings):
+        # Imported here: `python -m smolagents.bp_messages` warns when the package import chain already loaded it.
+        from smolagents.bp_messages import MAX_MESSAGE_TEXT_CHARACTERS
+
+        self.description = self.description_template.format(max_text_characters=MAX_MESSAGE_TEXT_CHARACTERS)
         super().__init__()
         self._settings = settings  # bp_messages.MessageSettings
 
     def forward(self, to: str, text: str, folder: str | None = None) -> str:
-        # Imported here: `python -m smolagents.bp_messages` warns when the package import chain already loaded it.
-        from smolagents.bp_messages import check_message_target, message_folder_of_label, write_message
+        from smolagents.bp_messages import MAX_MESSAGE_TEXT_CHARACTERS, check_message_target, message_folder_of_label, write_message
 
         if not isinstance(text, str):
             return f"Error: text must be a string, not {type(text).__name__}; nothing was sent."

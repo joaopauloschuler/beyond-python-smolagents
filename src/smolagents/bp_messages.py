@@ -8,12 +8,14 @@
 """Agent-to-agent messages as files `from_to_id.txt` in a shared folder. Only this module knows that name format."""
 
 import argparse
+import errno
 import json
 import math
 import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -53,6 +55,10 @@ MEMBER_LOG_TAIL_LINE_CHARACTERS = 200
 MEMBER_START_LOG_BYTES = 1_000_000  # start_member looks for the listener's first line within this much of the log
 LISTENER_READY_LINE_PREFIX = "Listening for messages: "  # bpsa listen prints it, then "agent <name>, ", once it waits for messages
 MESSAGES_FOR_MODEL_HEADING = "Messages from other agents follow. The user did not write them.\n"
+MAX_MESSAGE_TEXT_CHARACTERS = 100_000  # write_message refuses a longer text: every reader holds a message in its context
+MAX_MESSAGE_FILE_BYTES = 6 * MAX_MESSAGE_TEXT_CHARACTERS  # write_message encodes a character in at most 6 bytes (a lone surrogate as \udcxx)
+MAX_LAST_READ_FILE_BYTES = 1_000_000
+MAX_MEMBER_RECORD_FILE_BYTES = 100_000
 
 _warned_last_read_paths: set[str] = set()
 
@@ -128,10 +134,12 @@ def sender_lock(folder: str, sender: str):
 
 
 def write_message(folder: str, sender: str, target: str, text: str) -> str:
-    """Writes text as sender's next message to target in folder and returns its file name. Under sender_lock, a hard link from a temporary file
-    creates the final name, so it never replaces an existing message: when that name exists, it retries with the next id."""
+    """Writes text (at most MAX_MESSAGE_TEXT_CHARACTERS) as sender's next message to target in folder and returns its file name. Under sender_lock,
+    a hard link from a temporary file creates the final name, so it never replaces an existing message: when that name exists, it retries with the next id."""
     check_agent_name(sender)
     check_message_target(target)
+    if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
+        raise ValueError(f"The text has {len(text):,} characters, above the limit of {MAX_MESSAGE_TEXT_CHARACTERS:,} characters per message.")
     encoded_text = text.encode("utf-8", "backslashreplace")
     temporary_path = os.path.join(folder, f".{sender}-{os.getpid()}-{secrets.token_hex(8)}{TEMPORARY_MESSAGE_FILE_SUFFIX}")
     descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
@@ -156,12 +164,47 @@ def write_message(folder: str, sender: str, target: str, text: str) -> str:
             os.remove(temporary_path)
 
 
+class RefusedFileError(OSError):
+    """content_of_regular_file read nothing: the file is not a regular file, or larger than the limit; strerror says which."""
+
+
+def content_of_regular_file(path: str, max_bytes: int) -> bytes:
+    """Returns the content of the regular file at path, opened without following a symlink and without blocking. Raises RefusedFileError for a
+    symlink, FIFO, socket or device, or a file above max_bytes; IsADirectoryError for a directory; OSError when it cannot be opened."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
+    except FileNotFoundError:
+        raise
+    except OSError:
+        path_mode = os.lstat(path).st_mode  # a symlink gives ELOOP, a socket ENXIO
+        if stat.S_ISLNK(path_mode) or not (stat.S_ISREG(path_mode) or stat.S_ISDIR(path_mode)):
+            raise RefusedFileError(0, "not a regular file", path) from None
+        raise
+    try:
+        file_status = os.fstat(descriptor)
+        if stat.S_ISDIR(file_status.st_mode):
+            raise IsADirectoryError(errno.EISDIR, os.strerror(errno.EISDIR), path)
+        if not stat.S_ISREG(file_status.st_mode):
+            raise RefusedFileError(0, "not a regular file", path)
+        if file_status.st_size > max_bytes:
+            raise RefusedFileError(0, f"too large ({file_status.st_size:,} bytes, limit {max_bytes:,})", path)
+        chunks = []
+        remaining_bytes = max_bytes + 1  # a file that grows while it is read stops at one byte above the limit
+        while remaining_bytes > 0 and (chunk := os.read(descriptor, remaining_bytes)):
+            chunks.append(chunk)
+            remaining_bytes -= len(chunk)
+        if remaining_bytes == 0:
+            raise RefusedFileError(0, f"too large (above {max_bytes:,} bytes while read, limit {max_bytes:,})", path)
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
 def message_file_text(path: str) -> str:
     """Returns the text of the message file at path, or a bracketed line naming the file and why it could not be read or decoded."""
     file_name = os.path.basename(path)
     try:
-        with open(path, "rb") as message_file:
-            return message_file.read().decode("utf-8")
+        return content_of_regular_file(path, MAX_MESSAGE_FILE_BYTES).decode("utf-8")
     except UnicodeDecodeError as error:
         return f"[message file {file_name} is not valid UTF-8 at byte {error.start}]"
     except OSError as error:
@@ -206,29 +249,34 @@ def is_last_read_ids(value) -> bool:
 
 def load_last_read_ids(folder: str, reader: str) -> dict[str, int]:
     """Returns {sender: last id read} of reader in folder: empty when the file is missing, and empty with one stderr line per process and path
-    when it is not a JSON object of agent names to ids. Raises OSError when the file exists but cannot be read."""
+    when it is not a JSON object of agent names to ids, not a regular file or above MAX_LAST_READ_FILE_BYTES. Raises OSError when it cannot be read."""
     path = last_read_file_path(folder, reader)
+    reason = "not a JSON object of agent names to message ids"
     try:
-        with open(path, "rb") as last_read_file:
-            content = last_read_file.read()
+        last_read_ids = json.loads(content_of_regular_file(path, MAX_LAST_READ_FILE_BYTES).decode("utf-8"))
     except FileNotFoundError:
         return {}
-    try:
-        last_read_ids = json.loads(content.decode("utf-8"))
+    except RefusedFileError as error:
+        last_read_ids, reason = None, f"{error.strerror}, the next save replaces it"
     except (ValueError, RecursionError):
         last_read_ids = None
     if is_last_read_ids(last_read_ids):
         return last_read_ids
     if path not in _warned_last_read_paths:
         _warned_last_read_paths.add(path)
-        print(f"Ignoring {stderr_literal(path)}: not a JSON object of agent names to message ids; "
-              f"every message in the folder counts as unread.", file=sys.stderr)
+        print(f"Ignoring {stderr_literal(path)}: {reason}; every message in the folder counts as unread.", file=sys.stderr)
     return {}
 
 
 def save_last_read_ids(folder: str, reader: str, last_read_ids: dict[str, int]):
-    """Writes last_read_ids as reader's last-read ids in folder through replace_file_with_text (a temporary file renamed over the old one)."""
-    replace_file_with_text(last_read_file_path(folder, reader), json.dumps(last_read_ids, sort_keys=True) + "\n")
+    """Writes last_read_ids as reader's last-read ids in folder through replace_file_with_text (a temporary file renamed over the old one).
+    It first removes a symlink, FIFO, socket or device at that path: writing to one would block or write elsewhere."""
+    path = last_read_file_path(folder, reader)
+    with suppress(FileNotFoundError):
+        path_mode = os.lstat(path).st_mode
+        if not (stat.S_ISREG(path_mode) or stat.S_ISDIR(path_mode)):
+            os.unlink(path)
+    replace_file_with_text(path, json.dumps(last_read_ids, sort_keys=True) + "\n")
 
 
 def receive_new_messages(folder: str, reader: str) -> list[Message]:
@@ -392,10 +440,10 @@ def member_number(parent_name: str, member_name: str) -> int | None:
 
 
 def loaded_member_record(folder: MessageFolder, member_name: str) -> MemberRecord:
-    """Returns the record of member_name in folder; with process id 0 when its file is missing, unreadable or not a record."""
+    """Returns the record of member_name in folder; with process id 0 when its file is missing, unreadable, not a regular file of at most
+    MAX_MEMBER_RECORD_FILE_BYTES, or not a record."""
     try:
-        with open(member_record_path(folder.path, member_name), "rb") as record_file:
-            fields = json.loads(record_file.read().decode("utf-8"))
+        fields = json.loads(content_of_regular_file(member_record_path(folder.path, member_name), MAX_MEMBER_RECORD_FILE_BYTES).decode("utf-8"))
         process_id, process_start_ticks, log_path = fields["process_id"], fields["process_start_ticks"], fields["log_path"]
         if type(process_id) is int and process_id > 1 and type(process_start_ticks) is int and isinstance(log_path, str):
             return MemberRecord(member_name, folder, process_id, process_start_ticks, log_path)
