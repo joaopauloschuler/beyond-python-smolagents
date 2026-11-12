@@ -883,4 +883,22 @@ Conventions for T1 to T11:
       8 s, status line present, no process left; redirected HOME held only
       `.cache` and `.config`. Finding: an agent that needs replies has no way
       to wait for messages except sleeping inside a step or ending its run.
-- [ ] **T11. Code review** of T1 to T9 by an agent that wrote none of it.
+- [x] **T11. Code review** of T1 to T9 by an agent that wrote none of it.
+      LANDED: review of `81e64dc..7b87766`, read-only, 2026-11-11. 3 high, 7
+      medium (3 of them design notes), 12 low; none fixed yet. High: (H1) a
+      FIFO or a symlink to `/dev/zero` named like a message, a last-read file
+      or a member record blocks or exhausts the reader, and a blocked poller
+      makes `bpsa listen` deaf with no line printed; (H2) only the
+      `send_message` tool limits the message size, the reader and the `send`
+      command do not; (H3) deleting message files that were read makes the
+      sender's ids restart, and the reader then drops its later messages
+      silently. Medium: (M1) a forged `.<leader>-<k>.agent.json` makes the
+      leader signal another process of the same user, fills its limit or
+      blocks later starts; (M2) last-read file, member log and record follow
+      symlinks; (M3) the sender in a file name is whatever the writer chose,
+      and one (sender, id) pair hides another; (M4) `start_agent` from a
+      session with approval on starts members with auto-approve on and no
+      text says so; (M5) a REPL or `bpsa run` leader that gets SIGTERM or
+      SIGHUP leaves its members running; (M6) nothing bounds an exchange of
+      replies between agents except the session budget; (M7) one idle
+      listener uses about 260 MB, so 9 members need about 2.3 GB.
