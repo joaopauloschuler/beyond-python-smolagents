@@ -1017,3 +1017,62 @@ Conventions for T1 to T11:
       scratch copy, because the other project's pytest kept the load average
       near 4 and the unchanged scripts timed out in a different case each
       run.
+- [x] **T14. `wait_for_messages` loses no message (review findings M-a, M-b,
+      M-c).** The tool recorded a message as read when it printed it, before
+      the step's output had reached the model.
+      LANDED (2026-11-12): a printed message now stays queued until its code
+      step has ended. `MessagePoller.write_new_messages(log_file,
+      max_characters)` prints and counts; `record_printed_as_read(step_text)`
+      removes the printed messages whose block `step_text` holds and saves
+      the last-read ids of the batches this empties. bp_cli.py registers the
+      step callback `record_printed_messages_as_read` (only when a name is
+      set), which passes the step's observations and error text, the two
+      texts of a code step that the model receives. A step that an interrupt
+      ended has neither, so its messages stay queued and `take_queued`
+      delivers them (between steps, with the next task, or after a restart
+      from the read-ids file). M-a: nothing is recorded before the step
+      ended. M-b: the tool returns the number of messages it printed;
+      `wait_for_new_messages` (was `wait_until_queued`) waits on a second
+      event that is set only while messages are queued that no call has
+      printed or counted, so a later call in the step waits for newer ones.
+      M-c: the tool prints only into the first 10,000 characters of the
+      execution log (`MAX_LENGTH_TRUNCATE_CONTENT // 2`, the part
+      `truncate_content` always keeps), per message and in queue order; a
+      message that does not fit and every later one of that step are counted
+      in one line and delivered after the step (order kept, because the
+      last-read ids are saved per batch in queue order). Executor `local`:
+      nothing printed, 0 returned, delivery after the step. Removed:
+      `MAX_WAITED_MESSAGE_TEXT_CHARACTERS`, `take_queued(batch_count)`,
+      `queued_batches`. Tool description and the docs/CLI.md row rewritten;
+      `message_prompt_paragraph` unchanged. Rejected: saving the ids in the
+      tool after a room check (keeps M-a); confirming at the between-step
+      point only (the last step of a run has none); a flag "step ended
+      normally" instead of the text search (trusts every path to carry the
+      log to the model).
+      Verified (scripts in scratch `m_abc/`): check_ab.py 63/63 with a real
+      `CodeAgent`, `exec` executor, the callback, the steering source and a
+      scripted model that records its input: reviewer's E1 (11,000
+      characters: returns 0, 0, 0 at 0.0, 2.0, 4.0 s, delivered once between
+      steps), E2 (three of 4,000: 2 printed, third after the step), E3 (three
+      waits of 8,000: returns 1, 0, 0, all three whole and once), E3b, E4, E5
+      and `local`; an exception after a wait (message in the error text,
+      once); KeyboardInterrupt and `ListenStopSignal` during the first wait,
+      between two waits, during the second wait and after the last wait: no
+      id recorded, a restarted reader would receive every message, the next
+      run's input holds each once; interrupt after the step ended: once, not
+      twice. Real `bpsa listen` agents `asker` and `helper` (poll 5 s): reply
+      `51` in the execution log of a 6.05 s step, read ids recorded, not
+      delivered again; two waits in one step, SIGTERM 7 s after helper's
+      reply `76`: read ids unchanged, the restarted `asker` received message
+      2 from helper as its first task. Feature off: system prompt and tool
+      list byte-identical to b1b7a10. Earlier checks: T7 43/43; h12 and h3
+      slow copies pass unchanged; t12/check_a.py 31/31 in a scratch copy
+      with four changes (step end called after each tool call, method name,
+      return 0 and the new line for the long text and for a stdout that is
+      no execution log). Not run: the REPL with a real Ctrl-C, SIGINT to a
+      real listener, executor `local` in a real bpsa run, pytest.
+      Seen, not fixed: `agents.py` catches the first interrupt of a model
+      call with a bare `except:` and sleeps 30 s before a retry; the
+      listener's stop line "the messages of that run are not delivered
+      again" does not hold for messages a wait printed in the interrupted
+      step (they are delivered again).

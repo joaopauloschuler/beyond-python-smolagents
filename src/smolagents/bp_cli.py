@@ -420,6 +420,13 @@ def take_queued_message_text() -> str:
     return message_text
 
 
+def record_printed_messages_as_read(memory_step):
+    """Step callback: records as read the messages that wait_for_messages printed and that memory_step holds in its observations or its error,
+    the two texts of a code step that the model receives. A step that an interrupt ended holds neither, so its messages stay queued."""
+    if _message_poller is not None:
+        _message_poller.record_printed_as_read(f"{memory_step.observations or ''}{memory_step.error or ''}")
+
+
 def task_with_queued_messages(task: str) -> str:
     """Returns task followed by the queued agent-to-agent messages, which take_queued_message_text removes from the queue; task when none wait."""
     message_text = take_queued_message_text()
@@ -820,6 +827,8 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         tools.extend(mcp_client.__enter__())
 
     step_cbs = [_compact_step_callback, load_image_callback]
+    if _message_settings is not None:
+        step_cbs.append(record_printed_messages_as_read)
     if gui_manager:
         from smolagents.bp_tools_gui import gui_screenshot_callback
         step_cbs.append(gui_screenshot_callback)

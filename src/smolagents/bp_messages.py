@@ -47,7 +47,6 @@ MESSAGE_BODY_LINE_PREFIX = "|"
 MESSAGE_POLLER_STOP_SECONDS = 2.0
 WAITED_MESSAGE_CHECK_SECONDS = 1.0  # while MessagePoller.wait_until_queued runs, its thread checks the folders this often
 MAX_WAIT_FOR_MESSAGES_SECONDS = 3600.0
-MAX_WAITED_MESSAGE_TEXT_CHARACTERS = 10_000  # wait_for_messages prints at most this much into an execution log, which is cut at 20,000
 DEFAULT_MAX_GROUP_MEMBERS = 9
 MEMBER_START_TIMEOUT_SECONDS = 120.0
 MEMBER_START_TIMEOUT_SECONDS_PER_FURTHER_MEMBER = 30.0  # members that start at the same time share the processors
@@ -756,8 +755,8 @@ def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
 
 class MessagePoller:
     """Daemon thread that checks every folder of settings at start and then every settings.poll_seconds, and queues the new messages to
-    settings.agent_name. take_queued saves the last-read ids, so a process that ends before take_queued receives the queued messages again.
-    Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent calls take_queued."""
+    settings.agent_name. take_queued and record_printed_as_read save the last-read ids, so a process that ends before them receives the queued messages again.
+    Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent removes messages from the queue."""
 
     def __init__(self, settings: MessageSettings, print_line, announce_queued):
         self.settings = settings
@@ -766,6 +765,9 @@ class MessagePoller:
         self.messages_waiting = threading.Event()  # set exactly while messages are queued; wait on it instead of calling take_queued in a loop
         self._queue_lock = threading.Lock()
         self._queued: list[QueuedMessages] = []
+        self._announced_message_count = 0  # write_new_messages has printed or counted the first this-many queued messages
+        self._printed_message_count = 0  # of those, the first this-many are printed in the execution log of the code step in progress
+        self._new_messages_waiting = threading.Event()  # set exactly while more messages are queued than _announced_message_count
         self._last_queued_ids: dict[str, dict[str, int]] = {}  # per folder path: the ids up to which the thread has queued
         self._printed_failure_reasons: dict[str, str] = {}  # per folder path: the reason of the failing check; absent after a check that worked
         self._stop_requested = threading.Event()
@@ -785,36 +787,83 @@ class MessagePoller:
             self._thread.join(timeout=MESSAGE_POLLER_STOP_SECONDS)
             self._thread = None
 
-    def wait_until_queued(self, timeout_seconds: float) -> bool:
-        """Blocks the caller until messages are queued or timeout_seconds pass; returns whether any are queued. It reads no folder: during
-        the wait the thread checks them at once and then every WAITED_MESSAGE_CHECK_SECONDS (or settings.poll_seconds when shorter)."""
+    def wait_for_new_messages(self, timeout_seconds: float) -> bool:
+        """Blocks the caller until a message is queued that write_new_messages has not announced, or timeout_seconds pass; returns whether one is.
+        It reads no folder: during the wait the thread checks them at once and then every WAITED_MESSAGE_CHECK_SECONDS (or settings.poll_seconds when shorter)."""
         self._is_wait_in_progress = True
         self._check_requested.set()
         try:
-            return self.messages_waiting.wait(timeout_seconds)
+            return self._new_messages_waiting.wait(timeout_seconds)
         finally:
             self._is_wait_in_progress = False
 
-    def queued_batches(self) -> list[QueuedMessages]:
-        """Returns the queued messages in the order queued and leaves them queued."""
+    def write_new_messages(self, log_file, max_characters: int) -> tuple[int, int]:
+        """Writes to log_file the messages queued since its last call, in the order queued, as far as their one text stays within max_characters; none
+        once a call has left one unwritten. All stay queued until record_printed_as_read or take_queued. Returns how many it wrote and how many it left unwritten."""
         with self._queue_lock:
-            return list(self._queued)
+            new_messages = [(batch.folder, message) for batch in self._queued for message in batch.messages][self._announced_message_count:]
+            may_print = self._printed_message_count == self._announced_message_count  # false: an earlier message waits for take_queued, and order is kept
+            self._announced_message_count += len(new_messages)
+            self._new_messages_waiting.clear()
+        message_text = MESSAGES_FOR_MODEL_HEADING
+        written_count = 0
+        for folder, message in new_messages if may_print else []:
+            message_block = printable_messages([message], "utf-8", folder.label)
+            if len(message_text) + len(message_block) > max_characters:
+                break
+            message_text += message_block
+            written_count += 1
+        if written_count:
+            log_file.write(message_text)
+            self._printed_message_count += written_count
+        return written_count, len(new_messages) - written_count
 
-    def take_queued(self, batch_count: int | None = None) -> list[QueuedMessages]:
-        """Removes and returns the queued messages in the order queued (only the first batch_count batches when given), and saves each
-        folder's last-read ids. When a save fails it prints one line and still returns the messages: this process delivers them once, a restarted one again."""
+    def record_printed_as_read(self, step_text: str):
+        """Call it when a code step has ended, with the text of that step that the model receives. Removes from the queue the messages that
+        write_new_messages printed and step_text holds, and saves the last-read ids of the batches this empties; the other messages stay queued."""
         with self._queue_lock:
-            taken_count = len(self._queued) if batch_count is None else batch_count
-            queued, self._queued = self._queued[:taken_count], self._queued[taken_count:]
-            if not self._queued:
-                self.messages_waiting.clear()
-        for batch in {batch.folder: batch for batch in queued}.values():  # the last batch of a folder holds its newest ids
+            printed_count = self._printed_message_count
+            self._printed_message_count = self._announced_message_count = 0
+            read_batches, unread_batches = [], []
+            for batch in self._queued:
+                read_count = 0
+                while (read_count < min(printed_count, len(batch.messages))
+                       and printable_messages([batch.messages[read_count]], "utf-8", batch.folder.label) in step_text):
+                    read_count += 1
+                if read_count < len(batch.messages):
+                    printed_count = 0  # the queue order is the order of the last-read ids: nothing after an unread message is recorded
+                    unread_batches.append(batch._replace(messages=batch.messages[read_count:]))
+                else:
+                    printed_count -= read_count
+                    read_batches.append(batch)
+            self._queued = unread_batches
+            self._set_waiting_events()
+        self._save_last_read_ids(read_batches)
+
+    def take_queued(self) -> list[QueuedMessages]:
+        """Removes and returns the queued messages in the order queued, and saves each folder's last-read ids. When a save fails it prints
+        one line and still returns the messages: this process delivers them once, a restarted one again."""
+        with self._queue_lock:
+            queued, self._queued = self._queued, []
+            self._printed_message_count = self._announced_message_count = 0
+            self._set_waiting_events()
+        self._save_last_read_ids(queued)
+        return queued
+
+    def _set_waiting_events(self):
+        """Sets or clears messages_waiting and _new_messages_waiting to match the queue; the caller holds _queue_lock."""
+        queued_message_count = sum(len(batch.messages) for batch in self._queued)
+        for event, is_set in ((self.messages_waiting, queued_message_count > 0),
+                              (self._new_messages_waiting, queued_message_count > self._announced_message_count)):
+            event.set() if is_set else event.clear()
+
+    def _save_last_read_ids(self, read_batches: list[QueuedMessages]):
+        for batch in {batch.folder: batch for batch in read_batches}.values():  # the last batch of a folder holds its newest ids
             try:
                 save_last_read_ids(batch.folder.path, self.settings.agent_name, batch.last_read_ids)
             except Exception as error:
                 self._print_line_or_nothing(f"Message folder {batch.folder.label}: could not record the delivered messages as read "
                                             f"({str(error) or type(error).__name__}); a restarted agent receives them again.")
-        return queued
 
     def queued_messages_line(self) -> str | None:
         """Returns one line that names every queued message and its folder, or None when none wait."""
@@ -859,7 +908,7 @@ class MessagePoller:
             return False
         with self._queue_lock:
             self._queued.append(QueuedMessages(folder, messages, last_read_ids))
-            self.messages_waiting.set()
+            self._set_waiting_events()
         return True
 
 

@@ -8,6 +8,7 @@
 from .tools import tool, Tool
 from .default_tools import VisitWebpageTool
 from .models import ChatMessage, MessageRole
+from .utils import MAX_LENGTH_TRUNCATE_CONTENT
 import difflib
 import os
 import shutil
@@ -3435,22 +3436,28 @@ class WaitForMessagesTool(Tool):
 
     name = "wait_for_messages"
     description_template = (
-        "Waits until at least one message from another agent has arrived for you, or until `timeout_seconds` have passed. "
+        "Waits until at least one new message from another agent has arrived for you, or until `timeout_seconds` have passed. "
         "Use it instead of time.sleep whenever you wait for a reply; it returns as soon as a message is there. "
-        "The tool itself prints every message that arrived into the execution log of your code step, as '=== message' blocks, "
-        "so you need no print; these messages are not shown to you a second time. "
+        "The tool itself prints the messages into the execution log of your code step, as '=== message' blocks, "
+        "so you need no print; these messages are not shown to you a second time, unless the code step was interrupted. "
         "When none arrived, it prints one line saying so; you may then call it again or go on without the reply. "
-        "It returns the number of messages that arrived (0 after a timeout), so when you expect several replies, "
+        "It returns the number of messages it printed (0 after a timeout), so when you expect several replies, "
         "call it again until you have them all. "
+        "It prints only into the first {log_characters:,} characters of the execution log, in the order the messages arrived: "
+        "a message that does not fit there, and every message after it in the same code step, is not printed and not counted. "
+        "One line then says how many were not printed; they reach you in full after the code step, so end the code step instead of waiting for them. "
+        "Where a code step has no execution log that the tool can print into (executor 'local'), it prints nothing and returns 0, "
+        "and every message reaches you after the code step. "
         "`timeout_seconds` is a number above 0 and at most {max_seconds:g}; any other value prints one line starting with 'Error:' and returns 0 at once."
     )
     inputs = {"timeout_seconds": {"type": "number", "description": "The longest time to wait, in seconds."}}
     output_type = "integer"
+    kept_log_start_characters = MAX_LENGTH_TRUNCATE_CONTENT // 2  # truncate_content always keeps this many characters from the start of an execution log
 
     def __init__(self, message_poller_source):
         from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS
 
-        self.description = self.description_template.format(max_seconds=MAX_WAIT_FOR_MESSAGES_SECONDS)
+        self.description = self.description_template.format(max_seconds=MAX_WAIT_FOR_MESSAGES_SECONDS, log_characters=self.kept_log_start_characters)
         super().__init__()
         self._message_poller_source = message_poller_source  # returns the bp_messages.MessagePoller of this process, None before it started
 
@@ -3458,7 +3465,7 @@ class WaitForMessagesTool(Tool):
         import io
         import sys
 
-        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS, MAX_WAITED_MESSAGE_TEXT_CHARACTERS, model_text_of_queued_messages
+        from smolagents.bp_messages import MAX_WAIT_FOR_MESSAGES_SECONDS
 
         # The exec executor collects the output of a code step in a StringIO; any other sys.stdout may be the terminal, so nothing is printed to it.
         is_stdout_execution_log = isinstance(sys.stdout, io.StringIO)
@@ -3471,17 +3478,14 @@ class WaitForMessagesTool(Tool):
         if message_poller is None:
             print("Error: this process does not check its message folders yet. Nothing was waited for.", file=log_file)
             return 0
-        message_poller.wait_until_queued(float(timeout_seconds))
-        queued = message_poller.queued_batches()
-        message_count = sum(len(batch.messages) for batch in queued)
-        if not queued:
+        message_poller.wait_for_new_messages(float(timeout_seconds))
+        # A later print of the code step can push the log over the cut; only its first kept_log_start_characters are certain to stay.
+        free_characters = self.kept_log_start_characters - len(log_file.getvalue()) if is_stdout_execution_log else 0
+        printed_count, unprinted_count = message_poller.write_new_messages(log_file, free_characters)
+        if unprinted_count:
+            print(f"{unprinted_count} {'more ' if printed_count else ''}message(s) arrived and are not printed here: the first {self.kept_log_start_characters:,} characters "
+                  "of this execution log have no room for them, or an earlier message waits unprinted. They reach you in full after this code step; "
+                  "end the code step instead of waiting for them.", file=log_file)
+        elif not printed_count:
             print(f"No message arrived within {timeout_seconds:g} seconds.", file=log_file)
-            return 0
-        message_text = model_text_of_queued_messages(queued)
-        if not is_stdout_execution_log or len(message_text) > MAX_WAITED_MESSAGE_TEXT_CHARACTERS:
-            print(f"{message_count} message(s) arrived. They are too long to print here: they reach you in full once this code step has ended.", file=log_file)
-            return message_count
-        # Printed first, removed from the queue second: an interrupt in between leaves the messages queued.
-        log_file.write(message_text)
-        message_poller.take_queued(len(queued))
-        return message_count
+        return printed_count
