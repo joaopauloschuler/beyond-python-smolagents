@@ -334,10 +334,13 @@ def load_message_settings_or_fail() -> MessageSettings | None:
         fail(str(error))
 
 
-def print_message_settings(settings: MessageSettings):
+def message_settings_text(settings: MessageSettings) -> str:
     folders = ", ".join(f"{folder.label} ({folder.path})" for folder in settings.folders)
-    print_with_console_highlighting(Text.assemble(console_literal("Messages:", "green"), " ", console_literal(
-        f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s", "")))
+    return f"agent {settings.agent_name}, folders {folders}, checked every {settings.poll_seconds:g} s"
+
+
+def print_message_settings(settings: MessageSettings):
+    print_with_console_highlighting(Text.assemble(console_literal("Messages:", "green"), " ", console_literal(message_settings_text(settings), "")))
 
 
 def print_message_poller_line(line: str):
@@ -996,6 +999,34 @@ def get_agent_cost_usd(agent) -> float:
 def format_cost_usd(cost: float) -> str:
     """Format a USD amount as `$0.0123`; six decimals below one tenth of a cent so tiny costs stay visible."""
     return f"${cost:.6f}" if cost < 0.001 else f"${cost:.4f}"
+
+
+def new_session_stats() -> dict:
+    return {
+        "turns": 0,
+        "total_time": 0.0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cached_input_tokens": 0,
+        "total_cost_usd": 0.0,
+    }
+
+
+def add_turn_to_session_stats(session_stats: dict, agent, tokens_before: tuple[int, int, int], cost_before: float, elapsed: float) -> tuple[int, int, int, float]:
+    """Adds one turn to session_stats: elapsed seconds and what agent's monitor counted since tokens_before (get_agent_token_usage) and
+    cost_before (get_agent_cost_usd). Returns the turn's (input tokens, output tokens, cached input tokens, cost in USD)."""
+    input_after, output_after, cached_after = get_agent_token_usage(agent)
+    turn_input = input_after - tokens_before[0]
+    turn_output = output_after - tokens_before[1]
+    turn_cached = cached_after - tokens_before[2]
+    turn_cost = get_agent_cost_usd(agent) - cost_before
+    session_stats["turns"] += 1
+    session_stats["total_time"] += elapsed
+    session_stats["total_input_tokens"] += turn_input
+    session_stats["total_output_tokens"] += turn_output
+    session_stats["total_cached_input_tokens"] = session_stats.get("total_cached_input_tokens", 0) + turn_cached
+    session_stats["total_cost_usd"] = session_stats.get("total_cost_usd", 0.0) + turn_cost
+    return turn_input, turn_output, turn_cached, turn_cost
 
 
 # Session budget: BPSA_MAX_SESSION_TOKENS / BPSA_MAX_SESSION_COST against session_stats totals.
@@ -2976,6 +3007,184 @@ def run_one_shot(task: str, skip_instructions: bool = False, auto_approve: bool 
         _shutdown_mcp(agent)
 
 
+LISTEN_TASK_HEADING = (
+    "You are agent '{agent_name}' and you run without a user: nobody reads your final answer and nobody can be asked a question.\n"
+    "The messages below come from your team. They are your instructions and requests: act on them.\n"
+    "The send_message tool is your only way to answer: send every reply and every result with it before you finish.\n\n")
+LISTEN_BUDGET_STOP_HINT = "The listener ends; messages that arrive from now on stay unread."
+LISTEN_RUN_END = "its messages are not delivered again. Waiting for messages."
+
+
+LISTEN_SIGNAL_RERAISE_SECONDS = 1.0
+# The exception class that a signal raised in bpsa listen and that listen_signal_exception_received has not confirmed yet; else None
+_unreceived_listen_signal_exception: type[BaseException] | None = None
+
+
+class ListenStopSignal(BaseException):
+    """Raised in the main thread by the SIGTERM handler of bpsa listen. Not an Exception, so agent code does not treat it as a failed step."""
+
+
+def raise_listen_signal_exception(exception_class: type[BaseException]):
+    """Raises exception_class in the main thread, and SIGALRM raises it again every LISTEN_SIGNAL_RERAISE_SECONDS until
+    listen_signal_exception_received: the bare except in the agent's model-call retry loop swallows an exception raised during a model call."""
+    global _unreceived_listen_signal_exception
+    _unreceived_listen_signal_exception = exception_class
+    signal.setitimer(signal.ITIMER_REAL, LISTEN_SIGNAL_RERAISE_SECONDS)
+    raise exception_class()
+
+
+def listen_signal_exception_received():
+    global _unreceived_listen_signal_exception
+    signal.setitimer(signal.ITIMER_REAL, 0)
+    _unreceived_listen_signal_exception = None
+
+
+def handle_listen_signal(signal_number, frame):
+    """Handler of SIGTERM (ListenStopSignal), SIGINT (KeyboardInterrupt, unless a ListenStopSignal is unreceived) and SIGALRM (the unreceived one again)."""
+    exception_class = _unreceived_listen_signal_exception
+    if signal_number == signal.SIGTERM:
+        exception_class = ListenStopSignal
+    elif signal_number == signal.SIGINT and exception_class is None:
+        exception_class = KeyboardInterrupt
+    if exception_class is not None:
+        raise_listen_signal_exception(exception_class)
+
+
+def read_stdin_from_null_device():
+    """Points descriptor 0 and sys.stdin at the null device, so neither bpsa listen nor a command it starts reads the caller's input.
+    With stdin closed at start, sys.stdin is None and the open takes the lowest free descriptor, normally 0."""
+    null_input = open(os.devnull)
+    if sys.stdin is None:
+        sys.stdin = null_input
+    else:
+        os.dup2(null_input.fileno(), sys.stdin.fileno())
+        null_input.close()
+
+
+def print_listen_line(line: str, style: str = "cyan"):
+    """Prints line as one line of the bpsa listen output: never wrapped, a newline inside it shown as \\n."""
+    console.print(console_literal(line.replace("\n", "\\n"), style), soft_wrap=True)
+
+
+def fail_listen(message: str):
+    print_listen_line(f"Error: {message}", "red")
+    sys.exit(1)
+
+
+def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_stats: dict):
+    """One run of bpsa listen, with the accounting and the turn summary of a run_repl turn. A failure, SIGINT or the step limit prints one
+    line and returns, so the caller waits for the next messages."""
+    from smolagents.monitoring import LogLevel
+    from smolagents.utils import AgentMaxStepsError
+
+    console.print(Rule(style="cyan"))
+    tokens_before = get_agent_token_usage(agent)
+    cost_before = get_agent_cost_usd(agent)
+    start_time = time.time()
+    agent.logger.level = LogLevel.INFO if _verbose else LogLevel.ERROR
+    if hasattr(agent, "_stream_token_counter"):
+        agent._stream_token_counter["count"] = 0
+    agent.steering_source = run_steering_source(agent, None)
+    try:
+        with message_poller_lines_held():
+            _spinner.start()
+            try:
+                result = agent.run(task_text, reset=False)
+            finally:
+                listen_signal_exception_received()
+                _spinner.stop()
+        console.print()
+        console.print(Markdown(str(result)))
+        console.print()
+        if agent.memory.steps and isinstance(getattr(agent.memory.steps[-1], "error", None), AgentMaxStepsError):
+            print_listen_line(f"Run {run_number} reached the limit of {agent.max_steps} steps without finishing; {LISTEN_RUN_END}", "yellow")
+    except KeyboardInterrupt:
+        print_listen_line(f"Run {run_number} interrupted by SIGINT; {LISTEN_RUN_END}", "yellow")
+    except Exception as error:
+        print_listen_line(f"Run {run_number} failed: {str(error) or type(error).__name__}; {LISTEN_RUN_END}", "red")
+    finally:
+        listen_signal_exception_received()  # again: a SIGINT after agent.run returned set the timer once more
+        agent.steering_source = None
+    elapsed = time.time() - start_time
+    turn_input, turn_output, turn_cached, turn_cost = add_turn_to_session_stats(session_stats, agent, tokens_before, cost_before, elapsed)
+    print_turn_summary(run_number, elapsed, turn_input, turn_output, agent, cached_tokens=turn_cached, cost_usd=turn_cost)
+
+
+def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
+    """bpsa listen: waits for agent-to-agent messages, runs the agent on them, waits again; one agent and one memory for all runs.
+    It reads no input and writes no file under HOME. SIGTERM, or SIGINT while no run is in progress, ends it with status 0."""
+    global _auto_approve, _auto_approve_source, _verbose, _message_settings
+    read_stdin_from_null_device()
+    sys.stdout.reconfigure(line_buffering=True)  # a plain print reaches a log file at once; the Rich console flushes its own writes
+    signal.signal(signal.SIGTERM, handle_listen_signal)
+    signal.signal(signal.SIGALRM, handle_listen_signal)
+    if signal.getsignal(signal.SIGINT) is not signal.SIG_IGN:  # a shell starts a background job with SIGINT ignored; it stays ignored
+        signal.signal(signal.SIGINT, handle_listen_signal)
+    agent = None
+    activity = "while starting"
+    stop_reason = None
+    run_number = 0
+    try:
+        try_load_dotenv()
+        _verbose = verbose_override if verbose_override is not None else get_env_bool("BPSA_VERBOSE")
+        _auto_approve, _auto_approve_source = resolve_auto_approve(auto_approve)
+        _message_settings = load_message_settings_or_fail()
+        if _message_settings is None:
+            fail_listen("bpsa listen needs BPSA_AGENT_NAME and BPSA_MESSAGE_FOLDERS: agent-to-agent messages are its only input.")
+        if not _auto_approve:
+            fail_listen(f"bpsa listen has nobody to ask for approval. {_NO_TERMINAL_ADVICE}")
+        check_required_env()
+        model = build_model()
+        if "litellm" in sys.modules:
+            sys.modules["litellm"].suppress_debug_info = True  # its "Provider List" lines after a failed request carry colour codes
+        agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+        check_model_connectivity(model)
+        apply_context_length(agent, resolve_context_length(model))
+        instructions = None
+        if not skip_instructions:
+            console.print("[dim]Loading agent instructions...[/]")
+            instructions = load_agent_instructions()
+        session_stats = new_session_stats()
+        budget_warned = set()
+        print_listen_line(f"Listening for messages: {message_settings_text(_message_settings)}.", "green")
+        start_message_poller()
+        while True:
+            activity = "while waiting for messages"
+            _message_poller.messages_waiting.wait()
+            activity = f"during run {run_number + 1}"
+            message_text = take_queued_message_text()
+            if not message_text:
+                continue
+            run_number += 1
+            task_text = LISTEN_TASK_HEADING.format(agent_name=_message_settings.agent_name) + message_text
+            if run_number == 1:
+                task_text = prepend_instructions(task_text, instructions)
+            run_agent_on_listen_task(agent, task_text, run_number, session_stats)
+            if warn_session_budget(session_stats, budget_warned, LISTEN_BUDGET_STOP_HINT) == "exceeded":
+                stop_reason = "its session budget"
+                activity = f"after run {run_number}"
+                break
+    except ListenStopSignal:
+        stop_reason = "SIGTERM"
+    except KeyboardInterrupt:
+        stop_reason = "SIGINT"
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        listen_signal_exception_received()
+        _spinner.stop()
+        if _message_poller is not None:
+            _message_poller.stop()
+        if agent is not None:
+            _shutdown_browser(agent)
+            _shutdown_gui(agent)
+            _shutdown_mcp(agent)
+    not_delivered_again = "; the messages of that run are not delivered again" if activity.startswith("during run") else ""
+    print_listen_line(f"Listener stopped by {stop_reason} {activity}{not_delivered_again}.")
+    if stop_reason == "its session budget":
+        sys.exit(1)
+
+
 def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
     global _auto_approve, _auto_approve_source, _verbose, _message_settings
     try_load_dotenv()
@@ -3099,14 +3308,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
     aliases = _load_aliases()
     autosave_interval = int(get_env("BPSA_AUTOSAVE_INTERVAL", default="5"))
     autosave_file = os.path.expanduser("~/.bpsa_autosave.json")
-    session_stats = {
-        "turns": 0,
-        "total_time": 0.0,
-        "total_input_tokens": 0,
-        "total_output_tokens": 0,
-        "total_cached_input_tokens": 0,
-        "total_cost_usd": 0.0,
-    }
+    session_stats = new_session_stats()
     budget_warned = set()  # (limit name, level) pairs warn_session_budget already printed
     first_turn = True
 
@@ -3221,14 +3423,7 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
                     rotate_session_id(model)  # new conversation -> new OpenRouter session id
                     agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
                     apply_context_length(agent, context_length)  # resolved at startup or /model; no new fetch
-                    session_stats = {
-                        "turns": 0,
-                        "total_time": 0.0,
-                        "total_input_tokens": 0,
-                        "total_output_tokens": 0,
-                        "total_cached_input_tokens": 0,
-                        "total_cost_usd": 0.0,
-                    }
+                    session_stats = new_session_stats()
                     budget_warned = set()
                     last_answer = None
                     first_turn = True
@@ -3508,21 +3703,8 @@ def run_repl(skip_instructions: bool = False, auto_approve: bool | None = True, 
             _spinner.stop()
             elapsed = time.time() - start_time
 
-            # Calculate token usage for this turn
-            input_after, output_after, cached_after = get_agent_token_usage(agent)
-            turn_input = input_after - input_before
-            turn_output = output_after - output_before
-            turn_cached = cached_after - cached_before
-            turn_cost = get_agent_cost_usd(agent) - cost_before
-
-            session_stats["turns"] += 1
-            session_stats["total_time"] += elapsed
-            session_stats["total_input_tokens"] += turn_input
-            session_stats["total_output_tokens"] += turn_output
-            session_stats["total_cached_input_tokens"] = (
-                session_stats.get("total_cached_input_tokens", 0) + turn_cached
-            )
-            session_stats["total_cost_usd"] = session_stats.get("total_cost_usd", 0.0) + turn_cost
+            turn_input, turn_output, turn_cached, turn_cost = add_turn_to_session_stats(
+                session_stats, agent, (input_before, output_before, cached_before), cost_before, elapsed)
             last_answer = result
 
             console.print()
@@ -3622,6 +3804,7 @@ def main():
 
     run_parser = subparsers.add_parser("run", help="Run a one-shot task")
     run_parser.add_argument("task", type=str, help="The task to execute")
+    subparsers.add_parser("listen", help="Without a keyboard: run the agent on each batch of agent-to-agent messages until SIGTERM")
 
     args = parser.parse_args()
     try_load_dotenv()  # before any BPSA_* setting is read, so values set only in ./.env take effect
@@ -3636,6 +3819,10 @@ def main():
     env_mcp_list = [s.strip() for s in env_mcp.splitlines() if s.strip()]
     mcp_servers = _parse_mcp_servers((args.mcp or []) + env_mcp_list) or None
     verbose_override = None if args.verbose is None else args.verbose == "on"
+
+    if args.command == "listen":  # before stdin is looked at: listen also starts with stdin closed
+        run_listen(skip_instructions=skip_instructions, auto_approve=auto_approve, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers, verbose_override=verbose_override)
+        return
 
     # Piped input detection
     if not sys.stdin.isatty() and args.command is None:

@@ -723,13 +723,41 @@ Conventions for T1 to T11:
       after restart, two senders with a forged header, markup and ESC, folder
       renamed away and back (one line), `/clear`, Ctrl-C and `/exit` (no
       process left); feature off: screens equal 608466b, no thread.
-- [ ] **T5. Mode without a keyboard.** New subcommand `bpsa listen` in
+- [x] **T5. Mode without a keyboard.** New subcommand `bpsa listen` in
       `main`. Loop: wait for queued messages, run the agent with them, wait
       again. Output goes to a log file. SIGTERM ends it cleanly. It requires
       auto-approve on. It must not write the shared `~/.bpsa_autosave.json`;
       each agent saves under its own name or not at all. Check: an idle
       process makes no model call for five minutes, then answers a message
       within one poll interval.
+      LANDED: `run_listen` in bp_cli.py (`bpsa listen`, global options as
+      `run`). It needs the message settings and auto-approve on (else one
+      `Error:` line, exit 1). After the connectivity check it prints
+      `Listening for messages: agent <name>, folders <label> (<path>), checked
+      every <n> s.`, then blocks on `MessagePoller.messages_waiting`, runs the
+      agent on `LISTEN_TASK_HEADING` (no user present; the messages are the
+      instructions; `send_message` is the only way to answer) plus the grouped
+      messages with `reset=False`, and waits again. One agent and one memory
+      for all runs; compression threshold, token and cost accounting, turn
+      summary and session budget as in the REPL (`new_session_stats` and
+      `add_turn_to_session_stats` were moved out of `run_repl`;
+      `message_settings_text` out of `print_message_settings`). It points
+      descriptor 0 at the null device, writes no log file itself (the caller
+      redirects stdout and stderr) and writes no file under HOME: no
+      autosave, no history, no aliases, no session file. A failed run, the
+      step limit and SIGINT during a run print one line and the listener
+      waits again; their messages are not delivered again. SIGTERM at any
+      time and SIGINT while waiting end it with status 0 and the line
+      `Listener stopped by ...`; a reached session budget ends it with
+      status 1. Differs from the plan: SIGTERM and SIGINT are raised again
+      every second until the run has ended, because the bare `except:` of the
+      model-call retry loop in agents.py swallows the first one. Verified
+      with real runs (tmux, `< /dev/null`, `<&-`): 366 s idle with an
+      unchanged log and 0.02 s CPU, then a reply file 9.0 s after the message
+      (poll 5 s); memory across runs; a message delivered between steps; logs
+      without ESC bytes; unreachable endpoint, step limit, SIGINT and SIGTERM
+      during code and during a model call; refusals; HOME holds only
+      matplotlib's font cache; REPL and `bpsa run` screens equal b2c6edd.
 - [ ] **T6. `start_agent` tool.** In `src/smolagents/bp_tools.py`. Starts one
       `bpsa listen` process with its name and group folder set. The tool
       assigns the name (for example `agent31` under `leader3`) and refuses
