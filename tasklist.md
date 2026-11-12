@@ -1270,3 +1270,73 @@ Conventions for T1 to T11:
       `Reset done:` message it receives; a listener's agent often ends a
       reply with `wait_for_messages(300)` instead of ending its run, so the
       next message arrives inside the same run.
+      REVIEW FIXES (2026-11-12). Found by review of `4335bb0`: (M-1) after
+      a reset, `live_members_line` (`own_member_records`, `os.listdir`)
+      raised `OSError` for a removed folder and `run_listen` died with a
+      traceback, losing the message just taken; (M-2) with requests from two
+      folders, or from two senders found in different poll cycles, the
+      batches queued after the earliest request were discarded (every batch
+      below the newest request's `reset_count`), and the saved read ids
+      could be lower than those of a discarded batch; (L-2) each `Reset
+      done:` stated the total discard count of all pending requests as its
+      own; (M-3) a new process carried out (or refused) every old request
+      lying in a folder, `*_all_*.reset` included, at its first check; (L-1)
+      a refused request was never recorded as read, so each new `bpsa run`
+      or REPL under that name refused it again; (L-3) `reset_agent` said
+      that no answer means no listener has that name; (L-4) docs/CLI.md said
+      that a member cannot reset its leader.
+      Fixes: `own_member_records(settings, unlisted_folder_errors)` skips a
+      folder it cannot list when given the dict; `live_members_line(settings,
+      print_line)` prints one line naming it, and the task runs. Decision (3)
+      now reads: `take_pending_resets` discards the batches queued before the
+      EARLIEST pending request, and in the batches after it the messages of
+      a pending request's sender with a lower id in that folder; every other
+      message stays queued. Per folder it saves the highest id of every
+      entry (`highest_ids`), lowered for each sender with a kept message to
+      the id below its first kept one, so a restarted reader receives
+      exactly the kept, undelivered messages. With several requests the
+      count is that of the one replacement: `(N unread messages discarded in
+      total for the K reset requests served by this one replacement)`.
+      Decision (5) changes: requests in the poller's first listing of a
+      folder after the process started are recorded as read and neither
+      carried out, refused nor confirmed (listener, REPL, `bpsa run`); so a
+      listener restarted after SIGTERM during a reset no longer confirms
+      that request. A refusal records the request as read
+      (`_record_as_read`: into the last queued batch of that folder, or
+      saved at once when none is queued). Tool text: "No such message
+      usually means that no listening agent has that name; it may also
+      still be replacing its context or have failed to send the message."
+      docs/CLI.md: Reset subsection (several requests, first check, refusal
+      recorded, folder that cannot be listed), `reset_agent` row ("an agent
+      started with `start_agent` has no `reset_agent` tool").
+      Verified (scratch `t15fix/`): check_bcd.py 45/45 (the review scenario
+      over folders `a` and `b` in one poll cycle: `NEW-INSTRUCTIONS` and
+      `CARL-2` delivered once, read ids `{"boss1": 1, "carl": 2}` and
+      `{"boss2": 1, "dora": 1}`, a restarted reader gets exactly those two,
+      then nothing; a second sender's request in a later poll; one request;
+      a new reader and a reader with `.read.json` holding old
+      `boss_all_000002.reset` and `boss_w_000003.reset`: no reset, no answer,
+      the message delivered, a later request carried out; three non-listener
+      pollers in a row: one refusal); the same script on `4335bb0` code
+      discards 4 instead of 2 and delivers nothing. Scripted `run_listen`
+      with folders `a` and `b`, `b` removed before a reset: confirmation,
+      one line `Message folder b could not be checked for the agents you
+      started: No such file or directory`, the next message answered, exit
+      0 on SIGTERM (`4335bb0`: `FileNotFoundError` traceback, exit 1). Real
+      `bpsa listen`: fact, reset, question answered `UNKNOWN`, one `Reset
+      done:`; restarted under the same name with two unrecorded old requests
+      (`boss_w_000004.reset`, `boss_all_000005.reset`): no reset, no answer,
+      the next message answered, read ids `{"boss": 6}`. Earlier checks:
+      t15 check_a.py 77/77 (scratch copy: in section 5 the poller starts
+      before the request is written, because a request of the first listing
+      is no longer refused), T7 43/43, h12 slow PASS, h3 slow PASS (75 `ok`),
+      m12 copies check_x.py 30/30, check_a.py 31/31, check_ab.py 63/64:
+      E7 "both delivered once between the steps" fails on `4335bb0` code as
+      well (the short message written during the step is not listed before
+      the step ends), not changed. Feature off: system prompt and tool list
+      byte-identical to `4335bb0` (42,963 bytes).
+      Not run: the race in which a refusal is recorded while `take_queued`
+      saves an older batch (the refused id may then stay unrecorded; the
+      next process ignores it as an old request); a folder that is missing
+      at start and appears later (its first successful listing counts as
+      first); pytest.

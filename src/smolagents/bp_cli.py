@@ -3137,9 +3137,10 @@ def confirm_listen_resets():
     agent_name = _message_settings.agent_name
     for pending in pending_resets:
         line = (f"Reset {pending.reset.message_id} from {pending.reset.sender} in folder {pending.folder.label}: conversation and Python variables "
-                f"cleared, {discarded_messages_phrase(discarded_message_count)}")
+                f"cleared, {discarded_messages_phrase(discarded_message_count, len(pending_resets))}")
         try:
-            file_name = write_message(pending.folder.path, agent_name, pending.reset.sender, reset_done_text(agent_name, pending.reset, discarded_message_count))
+            file_name = write_message(pending.folder.path, agent_name, pending.reset.sender,
+                                      reset_done_text(agent_name, pending.reset, discarded_message_count, len(pending_resets)))
             line += f", confirmed with {file_name}"
         except (ValueError, OSError) as error:
             line += f"; the confirmation could not be sent ({str(error) or type(error).__name__})"
@@ -3277,7 +3278,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             if not message_text:
                 continue
             run_number += 1
-            members_line = live_members_line(_message_settings) if is_context_reset else ""
+            members_line = live_members_line(_message_settings, lambda line: print_listen_line(line, "yellow")) if is_context_reset else ""
             task_text = LISTEN_TASK_HEADING + (f"{members_line}\n\n" if members_line else "") + message_text
             if is_context_new:
                 task_text = prepend_instructions(task_text, instructions)

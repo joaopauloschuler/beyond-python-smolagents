@@ -3443,7 +3443,7 @@ class ResetAgentTool(Tool):
         "Messages that it had not read yet are discarded, also your own earlier ones; a message that you send after the reset reaches its fresh context, "
         "so you may send the new instructions right after this call, in full: the agent remembers nothing of what you told it before. "
         "When it has cleared its context, the agent sends you a message that starts with 'Reset done:'; this takes up to its message check interval. "
-        "No such message means that no listening agent has that name. "
+        "No such message usually means that no listening agent has that name; it may also still be replacing its context or have failed to send the message. "
         "`name` is the name of one agent, or 'all' for every agent that listens in that folder except you; you cannot reset yourself. "
         "Reset only agents that work for you. "
         "`folder` is the label of one of your message folders; leave it out when you have only one. "

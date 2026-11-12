@@ -545,11 +545,19 @@ def loaded_member_record(folder: MessageFolder, member_name: str) -> MemberRecor
     return MemberRecord(member_name, folder, 0, -1, "")
 
 
-def own_member_records(settings: MessageSettings) -> list[MemberRecord]:
-    """Returns the records, in the folders of settings, of every member named <settings.agent_name>-<k>, ordered by k."""
+def own_member_records(settings: MessageSettings, unlisted_folder_errors: dict[str, str] | None = None) -> list[MemberRecord]:
+    """Returns the records, in the folders of settings, of every member named <settings.agent_name>-<k>, ordered by k. Raises the OSError of a
+    folder that cannot be listed; with unlisted_folder_errors given it skips that folder and stores {label: reason} there instead."""
     records = {}
     for folder in settings.folders:
-        for file_name in os.listdir(folder.path):
+        try:
+            file_names = os.listdir(folder.path)
+        except OSError as error:
+            if unlisted_folder_errors is None:
+                raise
+            unlisted_folder_errors[folder.label] = error.strerror or type(error).__name__
+            continue
+        for file_name in file_names:
             if file_name.startswith(".") and file_name.endswith(".agent.json"):
                 member_name = file_name[1:-len(".agent.json")]
                 number = member_number(settings.agent_name, member_name)
@@ -782,23 +790,30 @@ def message_prompt_paragraph(settings: MessageSettings) -> str:
     return paragraph
 
 
-def live_members_line(settings: MessageSettings) -> str:
-    """Returns one line for the first task of an agent after a reset: the live agents that it started, each with its folder; "" when none runs."""
-    live_members = [f"{record.name} (folder {record.folder.label})" for record in own_member_records(settings) if is_member_live(record)]
+def live_members_line(settings: MessageSettings, print_line) -> str:
+    """Returns one line for the first task of an agent after a reset: the live agents that it started, each with its folder; "" when none runs.
+    A folder that cannot be listed adds no agent; print_line is then called once with one line that names it."""
+    unlisted_folder_errors = {}
+    live_members = [f"{record.name} (folder {record.folder.label})" for record in own_member_records(settings, unlisted_folder_errors) if is_member_live(record)]
+    if unlisted_folder_errors:
+        print_line("Message folder " + ", ".join(f"{label} could not be checked for the agents you started: {reason}"
+                                                 for label, reason in unlisted_folder_errors.items()))
     if not live_members:
         return ""
     return (f"Before your context was reset you started these agents, and they still run: {', '.join(live_members)}. "
             "They kept their own context and know nothing of your reset; stop those you no longer need with stop_agent.")
 
 
-def discarded_messages_phrase(discarded_message_count: int) -> str:
-    return f"{discarded_message_count} unread message{'' if discarded_message_count == 1 else 's'} discarded"
+def discarded_messages_phrase(discarded_message_count: int, reset_request_count: int = 1) -> str:
+    """Returns the phrase that counts the messages discarded by one replacement of the agent, which served reset_request_count requests."""
+    phrase = f"{discarded_message_count} unread message{'' if discarded_message_count == 1 else 's'} discarded"
+    return phrase + (f" in total for the {reset_request_count} reset requests served by this one replacement" if reset_request_count > 1 else "")
 
 
-def reset_done_text(agent_name: str, reset: ResetRequest, discarded_message_count: int) -> str:
+def reset_done_text(agent_name: str, reset: ResetRequest, discarded_message_count: int, reset_request_count: int = 1) -> str:
     """Returns the text of the message with which the listener agent_name confirms reset to its sender, once its context is cleared."""
     return (f"Reset done: agent {agent_name} cleared its conversation and its Python variables on reset {reset.message_id} from {reset.sender} "
-            f"({discarded_messages_phrase(discarded_message_count)}). Its next task starts in a fresh context.")
+            f"({discarded_messages_phrase(discarded_message_count, reset_request_count)}). Its next task starts in a fresh context.")
 
 
 def reset_refused_text(agent_name: str, reset: ResetRequest) -> str:
@@ -823,6 +838,11 @@ class PendingReset(NamedTuple):
     discarded_message_count: int  # earlier messages of the reset's sender that were found with it and never queued
 
 
+def highest_ids(first_ids: dict[str, int], second_ids: dict[str, int]) -> dict[str, int]:
+    """Returns a new dict with each sender of first_ids or second_ids and the higher of its two ids."""
+    return {sender: max(first_ids.get(sender, 0), second_ids.get(sender, 0)) for sender in first_ids | second_ids}
+
+
 def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
     """Returns queued as the one text a model receives: MESSAGES_FOR_MODEL_HEADING, then printable_messages with the folder label.
     Encoding utf-8 escapes control characters and lone surrogates and leaves every other character as it is."""
@@ -833,7 +853,8 @@ class MessagePoller:
     """Daemon thread that checks every folder of settings at start and then every settings.poll_seconds, and queues the new messages to
     settings.agent_name. take_queued and record_shown_as_read save the last-read ids, so a process that ends before them receives the queued messages again.
     Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent removes messages from the queue.
-    A reset request is recorded for take_pending_resets when request_reset is given; otherwise the thread answers it with reset_refused_text."""
+    A reset request is recorded for take_pending_resets when request_reset is given; otherwise the thread answers it with reset_refused_text;
+    either way only after the first listing of its folder."""
 
     def __init__(self, settings: MessageSettings, print_line, announce_queued, request_reset=None):
         self.settings = settings
@@ -954,21 +975,41 @@ class MessagePoller:
         return bool(self._pending_resets)
 
     def take_pending_resets(self) -> tuple[list[PendingReset], int]:
-        """Call it once the context of the agent is cleared. Removes the pending reset requests and the messages queued before the newest
-        of them, records these messages and the requests as read, and returns the requests and how many messages were discarded for them."""
+        """Call it once the context of the agent is cleared. Removes the pending reset requests, the messages queued before the earliest of them
+        and their senders' messages below them; records these as read, keeps the other messages queued, returns the requests and the discard count."""
         with self._queue_lock:
             pending_resets, self._pending_resets = self._pending_resets, []
             if not pending_resets:
                 return [], 0
-            newest_reset_count = pending_resets[-1].reset_count
-            discarded_batches = [batch for batch in self._queued if batch.reset_count < newest_reset_count]
-            self._queued = [batch for batch in self._queued if batch.reset_count >= newest_reset_count]
+            earliest_reset_count = pending_resets[0].reset_count
+            reset_ids = {}  # per (folder path, sender): the highest id of that sender's pending requests in that folder
+            read_ids = {}  # per folder path: per sender the id up to which every message to this reader is delivered or discarded
+            folders = {}
+            for pending in pending_resets:
+                reset_key = (pending.folder.path, pending.reset.sender)
+                reset_ids[reset_key] = max(reset_ids.get(reset_key, 0), pending.reset.message_id)
+                read_ids[pending.folder.path] = highest_ids(read_ids.get(pending.folder.path, {}), pending.last_read_ids)
+                folders[pending.folder.path] = pending.folder
+            kept_batches = []
+            discarded_message_count = sum(pending.discarded_message_count for pending in pending_resets)
+            for batch in self._queued:
+                kept_messages = [] if batch.reset_count < earliest_reset_count else [
+                    message for message in batch.messages if message.message_id > reset_ids.get((batch.folder.path, message.sender), 0)]
+                if len(kept_messages) < len(batch.messages):
+                    discarded_message_count += len(batch.messages) - len(kept_messages)
+                    folders[batch.folder.path] = batch.folder
+                if kept_messages:
+                    kept_batches.append(batch._replace(messages=kept_messages))
+                read_ids[batch.folder.path] = highest_ids(read_ids.get(batch.folder.path, {}), batch.last_read_ids)
+            for batch in kept_batches:  # a sender's discarded ids are all below its kept ones, so a restarted reader receives exactly the kept messages
+                for message in batch.messages:
+                    folder_read_ids = read_ids[batch.folder.path]
+                    folder_read_ids[message.sender] = min(folder_read_ids[message.sender], message.message_id - 1)
+            self._queued = kept_batches
             self._printed_message_count = self._shown_message_count = 0
             self._step_with_shown_messages = None
             self._set_waiting_events()
-        # Per folder the last entry is saved: a request's ids hold those of every batch queued before it.
-        self._save_last_read_ids(discarded_batches + [QueuedMessages(pending.folder, [], pending.last_read_ids) for pending in pending_resets])
-        discarded_message_count = sum(len(batch.messages) for batch in discarded_batches) + sum(pending.discarded_message_count for pending in pending_resets)
+        self._save_last_read_ids([QueuedMessages(folder, [], read_ids[path]) for path, folder in folders.items()])
         return pending_resets, discarded_message_count
 
     def _set_waiting_events(self):
@@ -1018,16 +1059,20 @@ class MessagePoller:
             self._check_requested.clear()
 
     def _queue_new_messages(self, folder: MessageFolder) -> bool:
-        """Queues the new messages in folder and returns whether it queued any; records or refuses the new reset requests. Raises what the folder check raises."""
+        """Queues the new messages in folder and returns whether it queued any; records or refuses the new reset requests, and records as read
+        without either those of the first listing after start: this process has a fresh context. Raises what the folder check raises."""
         reader = self.settings.agent_name
         last_queued_ids = self._last_queued_ids.get(folder.path)
-        if last_queued_ids is None:
+        is_first_listing = last_queued_ids is None
+        if is_first_listing:
             last_queued_ids = load_last_read_ids(folder.path, reader)  # kept only after a listing worked: a missing folder reads as no ids
         messages, resets, last_read_ids = read_new_messages_and_resets(folder.path, reader, last_queued_ids)
         self._last_queued_ids[folder.path] = last_read_ids
-        if resets and self.request_reset is None:
-            for reset in resets:
+        if resets and (is_first_listing or self.request_reset is None):
+            for reset in resets if not is_first_listing else []:
                 self._refuse_reset(folder, reset)
+            if not messages:
+                self._record_as_read(folder, last_read_ids)
             resets = []
         pending_resets = []
         if resets:
@@ -1047,6 +1092,15 @@ class MessagePoller:
         if resets:
             self.request_reset()
         return bool(messages)
+
+    def _record_as_read(self, folder: MessageFolder, last_read_ids: dict[str, int]):
+        """Call it after a listing of folder that queued no message: its ids go to the last batch queued from folder, or are saved now when none is."""
+        with self._queue_lock:
+            folder_batch_indexes = [index for index, batch in enumerate(self._queued) if batch.folder.path == folder.path]
+            if folder_batch_indexes:
+                self._queued[folder_batch_indexes[-1]] = self._queued[folder_batch_indexes[-1]]._replace(last_read_ids=last_read_ids)
+                return
+        self._save_last_read_ids([QueuedMessages(folder, [], last_read_ids)])
 
     def _refuse_reset(self, folder: MessageFolder, reset: ResetRequest):
         """Answers reset with reset_refused_text as a message to its sender and prints one line."""
