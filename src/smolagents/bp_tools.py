@@ -3431,6 +3431,55 @@ class StopAgentTool(Tool):
             return f"Error: {error}. Nothing was stopped."
 
 
+class ResetAgentTool(Tool):
+    """Writes a reset request from this process's agent name into one of its message folders (bp_messages.write_reset)."""
+
+    name = "reset_agent"
+    description = (
+        "Asks a running agent to forget everything and start afresh, without stopping its process: use it to give an agent that you started "
+        "a new, unrelated topic, or to get back an agent that is stuck or no longer answers. It is much faster than stop_agent followed by start_agent. "
+        "The agent leaves the task it is working on at once, even in the middle of a step, and clears its conversation and its Python variables; "
+        "it keeps its name, its folders and its files, and the agents that it started itself keep running. "
+        "Messages that it had not read yet are discarded, also your own earlier ones; a message that you send after the reset reaches its fresh context, "
+        "so you may send the new instructions right after this call, in full: the agent remembers nothing of what you told it before. "
+        "When it has cleared its context, the agent sends you a message that starts with 'Reset done:'; this takes up to its message check interval. "
+        "No such message means that no listening agent has that name. "
+        "`name` is the name of one agent, or 'all' for every agent that listens in that folder except you; you cannot reset yourself. "
+        "Reset only agents that work for you. "
+        "`folder` is the label of one of your message folders; leave it out when you have only one. "
+        "Returns one line naming the reset request written, or one line starting with 'Error:' when nothing was requested."
+    )
+    inputs = {
+        "name": {"type": "string", "description": "Name of the agent to reset, or 'all'."},
+        "folder": {
+            "type": "string",
+            "description": "Label of the message folder to write the request to; required only when you have several folders.",
+            "nullable": True,
+        },
+    }
+    output_type = "string"
+
+    def __init__(self, settings):
+        super().__init__()
+        self._settings = settings  # bp_messages.MessageSettings
+
+    def forward(self, name: str, folder: str | None = None) -> str:
+        from smolagents.bp_messages import check_message_target, message_folder_of_label, write_reset
+
+        try:
+            check_message_target(name)
+            message_folder = message_folder_of_label(self._settings, folder)
+        except ValueError as error:
+            return f"Error: {error} Nothing was requested."
+        try:
+            file_name = write_reset(message_folder.path, self._settings.agent_name, name)
+        except ValueError as error:
+            return f"Error: {error} Nothing was requested."
+        except OSError as error:
+            return f"Error: could not write the reset request in folder {message_folder.label}: {error}. Nothing was requested."
+        return f"Reset requested with {file_name} in folder {message_folder.label}. A message that starts with 'Reset done:' follows from each agent that reset."
+
+
 class CodeStepEndedForMessages(Exception):
     """WaitForMessagesTool raises it to end the code step: messages wait that it cannot print there, and they are delivered after the code step."""
 

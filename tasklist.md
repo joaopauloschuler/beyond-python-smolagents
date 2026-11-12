@@ -1149,3 +1149,124 @@ Conventions for T1 to T11:
       same inexact wording as the stop line had. The exception text says
       "right after this code step"; when that step was the last one the
       run may take, the messages arrive with the next task.
+- [x] **T15. Reset.** A leader gives a `bpsa listen` agent a fresh start
+      for a new topic, or gets a stuck one back, without stopping and
+      starting its process.
+      LANDED (2026-11-12): a reset request is an empty file
+      `from_to_id.reset` (`RESET_FILE_SUFFIX`) with the sender's next
+      message id; `to` is an agent name or `all`. `write_reset` writes it
+      (through `write_message_or_reset`, the former body of
+      `write_message`); the command `python -m smolagents.bp_messages reset
+      --to T` and the tool `reset_agent(name, folder?)` (`ResetAgentTool`)
+      call it. `send`, `send_message` and `write_message` always build
+      `.txt`, so no message text resets anything.
+      `parse_message_or_reset_file_name` parses both forms;
+      `parse_message_file_name` still returns None for a reset name;
+      `parsed_message_files` lists both, so the id counter counts resets;
+      `read_new_messages_and_resets` returns messages and `ResetRequest`s,
+      `read_new_messages` passes over resets (their ids count as read), so
+      the `new` and `wait` commands skip them without output. A reader of
+      `7070871` ignores a `.reset` file and reads the messages around it;
+      its writer continues after the reset's id (from the lock file).
+      Poller: `MessagePoller(..., request_reset=None)`. With
+      `request_reset` (only `bpsa listen` passes one) the thread records a
+      `PendingReset` and calls it; without, the thread answers
+      `reset_refused_text` and prints one line (REPL and `bpsa run`: the
+      context of a person's session is not cleared by another agent).
+      Listener: `request_listen_reset` sends SIGUSR1 to the main thread;
+      `handle_listen_signal` raises `ListenResetSignal` through the
+      existing `raise_listen_signal_exception` (SIGALRM raises it again
+      every second), but only inside `listen_reset_interruptible`: the wait
+      for messages and `agent.run`. `run_agent_on_listen_task` catches it,
+      prints `Run N ended by a reset request; ...` and does the turn's
+      accounting. At the top of its loop `run_listen` then replaces the
+      agent as `/clear` does (`_shutdown_browser`/`_gui`/`_mcp`,
+      `rotate_session_id`, `build_agent`, `apply_context_length`) and calls
+      `confirm_listen_resets`: `MessagePoller.take_pending_resets`, one
+      `reset_done_text` message and one log line per request. `agents.py`
+      is unchanged.
+      Decisions. (1) Cleared by replacing the agent, not field by field:
+      conversation, knowledge notepad, plan, Python variables, compression
+      state and step counters go together, as for `/clear`; browser, GUI
+      and MCP connections are closed and opened again. (2) Kept:
+      `session_stats` and `budget_warned`, so the budget counts on; the
+      run number; the last-read ids. Not undone: files, working directory
+      of the process, imported modules, tmux sessions, child processes.
+      (3) Queued-message rule: batches queued before the newest pending
+      request are discarded and recorded as read (`QueuedMessages.
+      reset_count`); messages of the request's sender with a lower id found
+      in the same listing are never queued; all others are kept. While a
+      request is pending, `take_queued` and `write_new_messages` hand out
+      nothing, so no message for the new context reaches the old one.
+      (4) The marks of `wait_for_messages` are cleared with the queue.
+      (5) Reset while idle, in `wait_for_messages`, in a model call, in a
+      code step: the same exception. In `start_agent`: the members of that
+      call are stopped (its existing handler), earlier members stay.
+      Several requests found before the agent is replaced: one replacement,
+      one confirmation each. A request that arrives during a replacement:
+      a second replacement. During shutdown: SIGUSR1 is ignored. SIGTERM
+      during a reset ends the listener; that request is not confirmed and
+      not recorded, so a restarted listener confirms it. (6) Members are
+      not reset or stopped; the first task after a reset starts with
+      `live_members_line` when some run. Agent instruction files are
+      prepended again to that task. (7) `reset_agent` is registered with
+      `stop_agent` (`BPSA_MAX_GROUP_MEMBERS` above 0), so a member cannot
+      reset its leader; it accepts any name in the folder and `all`.
+      `message_prompt_paragraph` is unchanged (215 words): the tool
+      description was enough in the real run. (8) A failing `build_agent`
+      during a reset (an MCP server that is gone) ends the listener with a
+      traceback after its members are stopped; not handled further.
+      Verified with real runs (scripts and logs in scratch `t15/`, poll
+      5 s, one processor): check_a.py 77/77 (names, parsers, id counter
+      across messages, resets, deleted files and a lost lock file, the
+      `7070871` reader and writer, six reset-like texts through
+      `write_message`, `send` and `send_message`: 0 requests, the queue
+      rule, two requests in one listing, restart, refusal, 6 command
+      errors, 3 tool errors). Idle listener: password and variable known
+      before (`password=ZEBRA-4417; variable_defined=True`), `UNKNOWN` and
+      `False` after; confirmation 2.9 s after the request file; read ids
+      `{"boss": 7}`; with `BPSA_MAX_SESSION_TOKENS=20000` two runs of
+      11,743 and 11,748 tokens with a reset between ended the listener
+      with `Session tokens: 23,491 of 20,000`, status 1. Busy listener,
+      request file to confirmation file: 4.4 s in a model call, 0.3 s in
+      `time.sleep(60)`, 0.5 s in `wait_for_messages(600)` and in a
+      `wait_for_messages(300)` the model chose itself, 2.5 s in
+      `start_agent(count=2)` (both starting members gone); no marker file
+      and no `SLEPT` or `WAITED` message afterwards; the next task answered
+      `UNKNOWN`. Queue: two messages queued during a sleep step, then a
+      third, the reset and a fourth from the same sender: `3 unread
+      messages discarded`, the next run saw only the fourth. `all`: a
+      request under the name `w4` reset `w5` and not the listener `w4`;
+      `boss` to `all` reset both (2.0 and 2.4 s). Three requests from two
+      senders at once: three confirmations. Leader `lead` with member
+      `lead-1`: after the reset the member ran on with its context, the
+      leader answered `members=lead-1; member_password=HERON-5529;
+      my_own_memory_of_password=UNKNOWN`; then it reset `lead-1` with
+      `reset_agent` (member then `UNKNOWN`), stopped it with `stop_agent`
+      and started `lead-2`. SIGTERM at the line `Run 5 ended by a reset
+      request`: `Listener stopped by SIGTERM during a reset.`, status 0,
+      `lead-2` stopped; SIGTERM 0.05 s after a reset's log line: status 0,
+      member stopped. `bpsa run` and the REPL (tmux): one `Reset 1 from
+      boss in folder ... refused` line, the refusal message, context kept
+      (`FALCON-12`). Feature off: system prompt and tool list
+      byte-identical to `7070871`.
+      Earlier checks, unchanged scripts: T7 43/43, h12 slow copy PASS, h3
+      slow copy PASS (75 `ok`), and scratch copies of the `m12/` scripts
+      with no assertion changed: check_x.py 30/30, check_a.py 31/31,
+      check_ab.py 64/64. docs/CLI.md: new subsection "Reset", the `.reset`
+      file form, one tool row, one command line.
+      Not run: a reset with `--browser`, `--gui`, `--tmux` or MCP servers;
+      a `build_agent` that fails during a reset; executor `local`; a
+      listener restarted with an unrecorded request; a reset while
+      `stop_agent` waits or while a code step runs a child process; the
+      discard of batches queued from a second folder (unit check and real
+      runs used one folder per request); SIGINT around a reset; pytest.
+      Seen, not fixed: the tokens of a model call that a reset (or SIGTERM,
+      SIGINT) interrupts are not counted (`Turn 1 | ... In: 0`), so the
+      budget misses them; each reset prints the four start lines of
+      `build_agent` (`Caution: you set an authorization ...`,
+      `Initializing executor, hold on...`) into the log; an idle listener
+      that sent a reset makes one model call (about 12,000 tokens) on each
+      `Reset done:` message it receives; a listener's agent often ends a
+      reply with `wait_for_messages(300)` instead of ending its run, so the
+      next message arrives inside the same run.

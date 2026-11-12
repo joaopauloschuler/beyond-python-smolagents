@@ -5,7 +5,8 @@
 # Refer to the git commit history for individual authorship.
 # Licensed under the Apache License, Version 2.0
 
-"""Agent-to-agent messages as files `from_to_id.txt` in a shared folder. Only this module knows that name format."""
+"""Agent-to-agent messages as files `from_to_id.txt`, and reset requests as files `from_to_id.reset`, in a shared folder.
+Only this module knows these name formats."""
 
 import argparse
 import errno
@@ -34,7 +35,9 @@ except ImportError:  # Windows
 MESSAGE_TARGET_ALL = "all"
 AGENT_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 AGENT_NAME_RULE = "1 to 64 characters, lowercase ASCII letters, digits or '-', not starting with '-', and not 'all'"
-MESSAGE_FILE_NAME_PATTERN = re.compile(r"([a-z0-9-]+)_([a-z0-9-]+)_([0-9]{6,})\.txt")
+MESSAGE_FILE_SUFFIX = ".txt"
+RESET_FILE_SUFFIX = ".reset"  # a reset request: write_message, and so the send command and send_message, never build this name
+MESSAGE_FILE_NAME_PATTERN = re.compile(r"([a-z0-9-]+)_([a-z0-9-]+)_([0-9]{6,})(\.txt|\.reset)")
 MESSAGE_ID_DIGITS = 6
 TEMPORARY_MESSAGE_FILE_SUFFIX = ".tmp"
 WAIT_POLL_SECONDS = 0.5
@@ -75,6 +78,13 @@ class Message(NamedTuple):
     text: str
 
 
+class ResetRequest(NamedTuple):
+    """A file `from_to_id.reset`: sender asks target (an agent name or 'all') to clear its context. Its id comes from the sender's message ids."""
+    sender: str
+    target: str
+    message_id: int
+
+
 def is_valid_agent_name(name: str) -> bool:
     return isinstance(name, str) and AGENT_NAME_PATTERN.fullmatch(name) is not None and name != MESSAGE_TARGET_ALL
 
@@ -91,30 +101,38 @@ def check_message_target(target: str):
         raise ValueError(f"Invalid message target {ascii(target)}: use 'all' or an agent name of {AGENT_NAME_RULE}.")
 
 
-def message_file_name(sender: str, target: str, message_id: int) -> str:
-    return f"{sender}_{target}_{message_id:0{MESSAGE_ID_DIGITS}d}.txt"
+def message_file_name(sender: str, target: str, message_id: int, suffix: str = MESSAGE_FILE_SUFFIX) -> str:
+    return f"{sender}_{target}_{message_id:0{MESSAGE_ID_DIGITS}d}{suffix}"
 
 
-def parse_message_file_name(file_name: str) -> tuple[str, str, int] | None:
-    """Returns (sender, target, id) of a message file name, or None when file_name is not exactly what message_file_name builds."""
+def parse_message_or_reset_file_name(file_name: str) -> tuple[str, str, int, bool] | None:
+    """Returns (sender, target, id, whether it is a reset request) of a file name, or None when file_name is not exactly what
+    message_file_name builds with MESSAGE_FILE_SUFFIX or RESET_FILE_SUFFIX."""
     match = MESSAGE_FILE_NAME_PATTERN.fullmatch(file_name)
     if match is None:
         return None
     sender, target, message_id = match[1], match[2], int(match[3])
     if not is_valid_agent_name(sender) or (target != MESSAGE_TARGET_ALL and not is_valid_agent_name(target)) or message_id < 1:
         return None
-    if message_file_name(sender, target, message_id) != file_name:
+    if message_file_name(sender, target, message_id, match[4]) != file_name:
         return None
-    return sender, target, message_id
+    return sender, target, message_id, match[4] == RESET_FILE_SUFFIX
+
+
+def parse_message_file_name(file_name: str) -> tuple[str, str, int] | None:
+    """Returns (sender, target, id) of a message file name, or None when file_name is not exactly what message_file_name builds
+    for a message; the name of a reset request gives None."""
+    parsed = parse_message_or_reset_file_name(file_name)
+    return None if parsed is None or parsed[3] else parsed[:3]
 
 
 def parsed_message_files(folder: str) -> dict[tuple[str, int], tuple[str, str]]:
-    """Returns {(sender, id): (target, file name)} for the message files in folder; other names are ignored."""
+    """Returns {(sender, id): (target, file name)} for the message files and reset requests in folder; other names are ignored."""
     message_files = {}
     for file_name in os.listdir(folder):
-        parsed = parse_message_file_name(file_name)
+        parsed = parse_message_or_reset_file_name(file_name)
         if parsed is not None:
-            sender, target, message_id = parsed
+            sender, target, message_id, is_reset = parsed
             message_files[(sender, message_id)] = (target, file_name)
     return message_files
 
@@ -136,7 +154,8 @@ def store_message_id(lock_descriptor: int, message_id: int):
 
 
 def next_message_id_with_lock_file(folder: str, sender: str, lock_descriptor: int) -> int:
-    """Returns one above the larger of the id stored in sender's open lock file and the highest id of sender's messages in folder, to any target."""
+    """Returns one above the larger of the id stored in sender's open lock file and the highest id of sender's messages and reset
+    requests in folder, to any target."""
     highest_file_id = max((message_id for message_sender, message_id in parsed_message_files(folder) if message_sender == sender), default=0)
     return 1 + max(stored_message_id(lock_descriptor), highest_file_id)
 
@@ -175,8 +194,21 @@ def sender_lock(folder: str, sender: str):
 
 
 def write_message(folder: str, sender: str, target: str, text: str) -> str:
-    """Writes text (at most MAX_MESSAGE_TEXT_CHARACTERS) as sender's next message to target in folder and returns its file name. Under sender_lock, a hard
-    link from a temporary file creates the final name, never replacing a message (it retries with the next id), and then its id is stored in the lock file."""
+    """Writes text (at most MAX_MESSAGE_TEXT_CHARACTERS) as sender's next message to target in folder and returns its file name."""
+    return write_message_or_reset(folder, sender, target, text, MESSAGE_FILE_SUFFIX)
+
+
+def write_reset(folder: str, sender: str, target: str) -> str:
+    """Writes sender's reset request to target (an agent name or 'all') in folder as an empty file with sender's next message id and
+    returns its file name. Raises ValueError when target is sender."""
+    if target == sender:
+        raise ValueError(f"{sender} is your own agent name; you cannot reset yourself.")
+    return write_message_or_reset(folder, sender, target, "", RESET_FILE_SUFFIX)
+
+
+def write_message_or_reset(folder: str, sender: str, target: str, text: str, suffix: str) -> str:
+    """Writes text as sender's next file to target in folder, named with suffix, and returns its file name. Under sender_lock, a hard link from
+    a temporary file creates the final name, never replacing a file (it retries with the next id), and then its id is stored in the lock file."""
     check_agent_name(sender)
     check_message_target(target)
     if len(text) > MAX_MESSAGE_TEXT_CHARACTERS:
@@ -192,7 +224,7 @@ def write_message(folder: str, sender: str, target: str, text: str) -> str:
             attempted_file_name = None
             while True:
                 message_id = next_message_id_with_lock_file(folder, sender, lock_descriptor)
-                file_name = message_file_name(sender, target, message_id)
+                file_name = message_file_name(sender, target, message_id, suffix)
                 try:
                     os.link(temporary_path, os.path.join(folder, file_name))
                     # The message is sent: a failed store only leaves the id to the listing.
@@ -257,8 +289,14 @@ def message_file_text(path: str) -> str:
 
 
 def read_new_messages(folder: str, reader: str, last_read_ids: dict[str, int]) -> tuple[list[Message], dict[str, int]]:
-    """Returns the messages in folder to reader or 'all' from other senders with ids above last_read_ids[sender], ordered by sender and id,
-    and a new dict with each sender's highest id taken. A file that cannot be read or decoded is delivered as message_file_text describes."""
+    """Returns the messages and the ids of read_new_messages_and_resets. It passes over reset requests: their ids count as read."""
+    messages, resets, updated_last_read_ids = read_new_messages_and_resets(folder, reader, last_read_ids)
+    return messages, updated_last_read_ids
+
+
+def read_new_messages_and_resets(folder: str, reader: str, last_read_ids: dict[str, int]) -> tuple[list[Message], list[ResetRequest], dict[str, int]]:
+    """Returns the messages, and the reset requests, in folder to reader or 'all' from other senders with ids above last_read_ids[sender], each ordered by sender and id,
+    and a new dict with each sender's highest id taken. An unreadable message file is delivered as message_file_text describes; a reset request's content is never read."""
     check_agent_name(reader)
     message_files = parsed_message_files(folder)
     new_ids = {}
@@ -270,11 +308,14 @@ def read_new_messages(folder: str, reader: str, last_read_ids: dict[str, int]) -
     if any(len(ids) != highest_new_ids[sender] - last_read_ids.get(sender, 0) for sender, ids in new_ids.items()):
         message_files = parsed_message_files(folder) | message_files
     updated_last_read_ids = dict(last_read_ids) | highest_new_ids
-    messages = []
+    messages, resets = [], []
     for (sender, message_id), (target, file_name) in sorted(message_files.items()):
         if sender in highest_new_ids and last_read_ids.get(sender, 0) < message_id <= highest_new_ids[sender] and target in (reader, MESSAGE_TARGET_ALL):
-            messages.append(Message(sender, target, message_id, message_file_text(os.path.join(folder, file_name))))
-    return messages, updated_last_read_ids
+            if file_name.endswith(RESET_FILE_SUFFIX):
+                resets.append(ResetRequest(sender, target, message_id))
+            else:
+                messages.append(Message(sender, target, message_id, message_file_text(os.path.join(folder, file_name))))
+    return messages, resets, updated_last_read_ids
 
 
 def stderr_literal(text: str) -> str:
@@ -741,10 +782,45 @@ def message_prompt_paragraph(settings: MessageSettings) -> str:
     return paragraph
 
 
+def live_members_line(settings: MessageSettings) -> str:
+    """Returns one line for the first task of an agent after a reset: the live agents that it started, each with its folder; "" when none runs."""
+    live_members = [f"{record.name} (folder {record.folder.label})" for record in own_member_records(settings) if is_member_live(record)]
+    if not live_members:
+        return ""
+    return (f"Before your context was reset you started these agents, and they still run: {', '.join(live_members)}. "
+            "They kept their own context and know nothing of your reset; stop those you no longer need with stop_agent.")
+
+
+def discarded_messages_phrase(discarded_message_count: int) -> str:
+    return f"{discarded_message_count} unread message{'' if discarded_message_count == 1 else 's'} discarded"
+
+
+def reset_done_text(agent_name: str, reset: ResetRequest, discarded_message_count: int) -> str:
+    """Returns the text of the message with which the listener agent_name confirms reset to its sender, once its context is cleared."""
+    return (f"Reset done: agent {agent_name} cleared its conversation and its Python variables on reset {reset.message_id} from {reset.sender} "
+            f"({discarded_messages_phrase(discarded_message_count)}). Its next task starts in a fresh context.")
+
+
+def reset_refused_text(agent_name: str, reset: ResetRequest) -> str:
+    """Returns the text of the message with which agent_name, which is no `bpsa listen` process, answers reset to its sender."""
+    return (f"Reset refused: agent {agent_name} is not a 'bpsa listen' process, so reset {reset.message_id} from {reset.sender} changed nothing. "
+            "Only a 'bpsa listen' process resets.")
+
+
 class QueuedMessages(NamedTuple):
     folder: MessageFolder
     messages: list[Message]
     last_read_ids: dict[str, int]  # the reader's last-read ids in folder once these messages are delivered
+    reset_count: int = 0  # how many reset requests the poller had recorded when it queued these messages
+
+
+class PendingReset(NamedTuple):
+    """A reset request that the poller thread recorded and take_pending_resets has not taken yet."""
+    folder: MessageFolder
+    reset: ResetRequest
+    reset_count: int  # queued messages with a lower reset_count were queued before this request
+    last_read_ids: dict[str, int]  # the reader's last-read ids in folder once the reset is done
+    discarded_message_count: int  # earlier messages of the reset's sender that were found with it and never queued
 
 
 def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
@@ -756,10 +832,14 @@ def model_text_of_queued_messages(queued: list[QueuedMessages]) -> str:
 class MessagePoller:
     """Daemon thread that checks every folder of settings at start and then every settings.poll_seconds, and queues the new messages to
     settings.agent_name. take_queued and record_shown_as_read save the last-read ids, so a process that ends before them receives the queued messages again.
-    Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent removes messages from the queue."""
+    Only this thread reads the folders and touches _last_queued_ids; only the thread that runs the agent removes messages from the queue.
+    A reset request is recorded for take_pending_resets when request_reset is given; otherwise the thread answers it with reset_refused_text."""
 
-    def __init__(self, settings: MessageSettings, print_line, announce_queued):
+    def __init__(self, settings: MessageSettings, print_line, announce_queued, request_reset=None):
         self.settings = settings
+        self.request_reset = request_reset  # the thread calls it without arguments after it recorded a reset request; None: this process refuses resets
+        self._pending_resets: list[PendingReset] = []  # guarded by _queue_lock
+        self._reset_count = 0  # reset requests recorded so far; written by the thread only
         self.print_line = print_line  # called with one line of plain text: why a folder check or a save of the last-read ids failed
         self.announce_queued = announce_queued  # the thread calls it without arguments each time it has queued messages
         self.messages_waiting = threading.Event()  # set exactly while messages are queued; wait on it instead of calling take_queued in a loop
@@ -803,6 +883,8 @@ class MessagePoller:
         max_characters. All stay queued until record_shown_as_read or take_queued. Returns how many it wrote and how many it left unwritten."""
         with self._queue_lock:
             unwritten_messages = [(batch.folder, message) for batch in self._queued for message in batch.messages][self._printed_message_count:]
+            if self._pending_resets:  # the step that asks is about to be left; what is queued is discarded or belongs to the new context
+                unwritten_messages = []
         message_text = MESSAGES_FOR_MODEL_HEADING
         written_count = 0
         for folder, message in unwritten_messages:
@@ -856,14 +938,38 @@ class MessagePoller:
 
     def take_queued(self) -> list[QueuedMessages]:
         """Removes and returns the queued messages in the order queued, and saves each folder's last-read ids. When a save fails it prints
-        one line and still returns the messages: this process delivers them once, a restarted one again."""
+        one line and still returns the messages: this process delivers them once, a restarted one again. While a reset request is pending
+        it returns nothing and removes nothing."""
         with self._queue_lock:
+            if self._pending_resets:
+                return []
             queued, self._queued = self._queued, []
             self._printed_message_count = self._shown_message_count = 0
             self._step_with_shown_messages = None
             self._set_waiting_events()
         self._save_last_read_ids(queued)
         return queued
+
+    def has_pending_reset(self) -> bool:
+        return bool(self._pending_resets)
+
+    def take_pending_resets(self) -> tuple[list[PendingReset], int]:
+        """Call it once the context of the agent is cleared. Removes the pending reset requests and the messages queued before the newest
+        of them, records these messages and the requests as read, and returns the requests and how many messages were discarded for them."""
+        with self._queue_lock:
+            pending_resets, self._pending_resets = self._pending_resets, []
+            if not pending_resets:
+                return [], 0
+            newest_reset_count = pending_resets[-1].reset_count
+            discarded_batches = [batch for batch in self._queued if batch.reset_count < newest_reset_count]
+            self._queued = [batch for batch in self._queued if batch.reset_count >= newest_reset_count]
+            self._printed_message_count = self._shown_message_count = 0
+            self._step_with_shown_messages = None
+            self._set_waiting_events()
+        # Per folder the last entry is saved: a request's ids hold those of every batch queued before it.
+        self._save_last_read_ids(discarded_batches + [QueuedMessages(pending.folder, [], pending.last_read_ids) for pending in pending_resets])
+        discarded_message_count = sum(len(batch.messages) for batch in discarded_batches) + sum(pending.discarded_message_count for pending in pending_resets)
+        return pending_resets, discarded_message_count
 
     def _set_waiting_events(self):
         """Sets or clears messages_waiting and _new_messages_waiting to match the queue; the caller holds _queue_lock."""
@@ -912,30 +1018,57 @@ class MessagePoller:
             self._check_requested.clear()
 
     def _queue_new_messages(self, folder: MessageFolder) -> bool:
-        """Queues the new messages in folder and returns whether there were any. Raises what the folder check raises."""
+        """Queues the new messages in folder and returns whether it queued any; records or refuses the new reset requests. Raises what the folder check raises."""
         reader = self.settings.agent_name
         last_queued_ids = self._last_queued_ids.get(folder.path)
         if last_queued_ids is None:
             last_queued_ids = load_last_read_ids(folder.path, reader)  # kept only after a listing worked: a missing folder reads as no ids
-        messages, last_read_ids = read_new_messages(folder.path, reader, last_queued_ids)
+        messages, resets, last_read_ids = read_new_messages_and_resets(folder.path, reader, last_queued_ids)
         self._last_queued_ids[folder.path] = last_read_ids
-        if not messages:
-            return False
+        if resets and self.request_reset is None:
+            for reset in resets:
+                self._refuse_reset(folder, reset)
+            resets = []
+        pending_resets = []
+        if resets:
+            # Of a reset's sender only the messages after its reset are for the new context; other senders' messages are delivered rather than lost.
+            highest_reset_ids = {reset.sender: reset.message_id for reset in resets}  # resets are ordered by sender and id
+            kept_messages = [message for message in messages if message.message_id > highest_reset_ids.get(message.sender, 0)]
+            self._reset_count += 1
+            for reset in resets:  # the messages dropped here are counted once, with the first request
+                pending_resets.append(PendingReset(folder, reset, self._reset_count, last_queued_ids | highest_reset_ids,
+                                                   0 if pending_resets else len(messages) - len(kept_messages)))
+            messages = kept_messages
         with self._queue_lock:
-            self._queued.append(QueuedMessages(folder, messages, last_read_ids))
-            self._set_waiting_events()
-        return True
+            self._pending_resets.extend(pending_resets)
+            if messages:
+                self._queued.append(QueuedMessages(folder, messages, last_read_ids, self._reset_count))
+                self._set_waiting_events()
+        if resets:
+            self.request_reset()
+        return bool(messages)
+
+    def _refuse_reset(self, folder: MessageFolder, reset: ResetRequest):
+        """Answers reset with reset_refused_text as a message to its sender and prints one line."""
+        line = f"Reset {reset.message_id} from {reset.sender} in folder {folder.label} refused: this is not a 'bpsa listen' process. Nothing was cleared."
+        try:
+            write_message(folder.path, self.settings.agent_name, reset.sender, reset_refused_text(self.settings.agent_name, reset))
+        except (ValueError, OSError) as error:
+            line += f" The refusal could not be sent ({str(error) or type(error).__name__})."
+        self._print_line_or_nothing(line)
 
 
 def message_command_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--folder", help="message folder; default: BPSA_MESSAGE_FOLDERS when it names exactly one folder")
     common.add_argument("--name", help="your agent name; default: BPSA_AGENT_NAME")
-    parser = argparse.ArgumentParser(prog="python -m smolagents.bp_messages", description="Send and read agent-to-agent messages in a message folder.")
+    parser = argparse.ArgumentParser(prog="python -m smolagents.bp_messages", description="Send and read agent-to-agent messages in a message folder, and reset listening agents.")
     commands = parser.add_subparsers(dest="command", required=True)
     send = commands.add_parser("send", parents=[common], help="write one message and print its file name")
     send.add_argument("--to", required=True, help="an agent name or 'all'")
     send.add_argument("text", nargs="?", default="-", help="message text; '-' or absent reads it from stdin")
+    reset = commands.add_parser("reset", parents=[common], help="ask a `bpsa listen` agent, or all of them in the folder, to clear its context, and print the file name of the request")
+    reset.add_argument("--to", required=True, help="an agent name or 'all'")
     new = commands.add_parser("new", parents=[common], help="print the messages you have not read and record them as read")
     wait = commands.add_parser("wait", parents=[common], help="as new, but first wait until at least one message arrives")
     wait.add_argument("--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT_SECONDS,
@@ -960,6 +1093,10 @@ def run_message_command(args: argparse.Namespace) -> int:
         text = sys.stdin.buffer.read().decode("utf-8", "surrogateescape") if args.text == "-" else args.text
         print(write_message(folder, name, args.to, text))
         return 0
+    if args.command == "reset":
+        check_message_target(args.to)
+        print(write_reset(folder, name, args.to))
+        return 0
     if args.command == "new":
         print_and_record_new_messages(folder, name, args.peek)
         return 0
@@ -976,7 +1113,7 @@ def run_message_command(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Runs the send, new and wait commands. An error prints one line on stderr and returns EXIT_ERROR; Ctrl-C returns EXIT_INTERRUPTED."""
+    """Runs the send, reset, new and wait commands. An error prints one line on stderr and returns EXIT_ERROR; Ctrl-C returns EXIT_INTERRUPTED."""
     args = message_command_parser().parse_args(argv)
     try:
         return run_message_command(args)

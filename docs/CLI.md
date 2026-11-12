@@ -396,13 +396,19 @@ for example `leader1_all_000003.txt`:
   except the sender.
 - `id` counts the sender's messages in that folder, starting at `000001`.
 
+A reset request (see Reset below) is an empty file named `from_to_id.reset`,
+for example `boss_agent31_000004.reset`. Its `id` comes from the same counter
+as the sender's messages. Only the file name makes it a reset request: the
+`send` command and `send_message` always write `.txt`, so no message text can
+reset an agent. A bpsa version from before reset requests ignores such a file.
+
 A folder is addressed by its label, the last component of its path. Besides
 messages, a folder holds hidden files per agent: `.<name>.lock`,
 `.<name>.read.json` (the last id read per sender) and, for agents started with
 `start_agent`, `.<name>.agent.json` and the log `<name>.log`. Each agent name
 must belong to one process per folder.
 
-Message files (`*.txt`) that were read may be deleted at any time, also while
+Message files (`*.txt`) and reset requests (`*.reset`) that were read may be deleted at any time, also while
 agents run; the hidden files must stay, because `.<name>.lock` holds the
 sender's highest id, so its ids never go down. To reset a folder completely,
 stop its agents and delete everything in it, hidden files included. Deleting a
@@ -417,6 +423,7 @@ reader then skips its messages up to the last id it had read.
 | `send_message(to, text, folder?)` | Writes one message. `folder` is needed only by an agent with several folders. |
 | `start_agent(folder?, working_directory?, count?)` | Starts one `bpsa listen` process named `<own name>-<k>` on that folder and returns when it listens (about 30 s). With `count=N` it starts `N` processes at the same time, with consecutive `k`, and returns when each listens or has failed (measured on one processor: 29 s for one, 41 s for two, 57 s for three), with one line per agent; those that failed are stopped, the others stay. It starts none when `N` exceeds the limit or the available memory. A new agent cannot start agents itself. |
 | `stop_agent(name)` | Stops an agent that the caller started; `all` stops each of them. |
+| `reset_agent(name, folder?)` | Writes a reset request to the agent `name`, or with `all` to every `bpsa listen` agent in that folder except the caller (see Reset). It returns at once; each agent that reset answers with a message starting `Reset done:`. Only agents that may start agents (`BPSA_MAX_GROUP_MEMBERS` above 0) have this tool, as `start_agent` and `stop_agent`, so an agent started with `start_agent` cannot reset its leader. |
 | `wait_for_messages(timeout_seconds)` | Blocks the code step until at least one message has arrived or `timeout_seconds` (above 0, at most 3,600; any other value raises an exception) have passed; meanwhile the folders are checked every second. It prints the new messages into the step's execution log and returns how many it printed; it returns 0 only when none arrived in that time. The tool prints only into the first 10,000 characters of the execution log (a log above 20,000 characters keeps its first and last 10,000) and in the order of arrival. When a message has arrived that does not fit there, the tool raises an exception instead of returning: the code step ends, its error text says how many messages wait, and they are delivered right after the step (with the next task when that step was the last one the run may take). A further call in the same code step raises again at once. With `BPSA_GLOBAL_EXECUTOR=local` the tool cannot print into the execution log, so it raises for every message; that executor at present ends the run on any exception of a code step, and the messages are then delivered with the next task. A printed message is recorded as read once its code step has ended, the step's output or error text holds the message and the step is in the agent's memory: before the next step, or when the run ends (REPL and `bpsa listen`; `bpsa run` does not record the messages printed in its last step). After an interrupt (Ctrl-C, SIGINT, SIGTERM) or a failure before that point the message is delivered again: with the next task or after a restart. |
 | Incoming messages | Checked every `BPSA_MESSAGE_POLL_SECONDS` without a model call. They reach the model between two steps of a run, or with the next task when the agent is idle. A message counts as read when it is handed to a run. |
 
@@ -440,15 +447,68 @@ reads stdin and needs auto-approve on (`--auto-approve on` or
 `BPSA_AUTO_APPROVE=on`); it writes no file in the home directory. Redirect its
 output to a log file. It is up when the log shows a line starting
 `Listening for messages: agent <name>, folders`. SIGTERM ends it with status 0
-after it has stopped the agents it started. Nobody reads its final answers:
+after it has stopped the agents it started; a reset request (see Reset) clears
+its memory and keeps the process. Nobody reads its final answers:
 the agent must reply with `send_message`. The messages of a failed or
 interrupted run are not delivered again, except those that
 `wait_for_messages` printed in the code step that was in progress.
+
+### Reset
+
+A reset gives a `bpsa listen` agent a fresh start without stopping its process
+(a start takes about 30 s): for a new topic, or for an agent that is stuck.
+It is sent with `reset_agent` or with the `reset` command below, to one agent
+name or to `all` (every `bpsa listen` agent that reads the folder, except the
+sender). No model takes part: the listener finds the request at its next
+folder check (every `BPSA_MESSAGE_POLL_SECONDS`; every second while it is in
+`wait_for_messages`) and then:
+
+1. leaves the task in progress at once, also in the middle of a model call or
+   a code step (as SIGTERM does), and nothing of that task runs afterwards;
+2. replaces its agent by a new one, as `/clear` does in the interactive
+   session;
+3. answers the sender with a message written by code:
+   `Reset done: agent <name> cleared its conversation and its Python variables on reset <id> from <sender> (<N> unread messages discarded). Its next task starts in a fresh context.`
+
+Cleared: the conversation, the knowledge notepad, the plan, the Python
+variables of the code executor; the browser, GUI and MCP connections of the
+old agent are closed and opened again. Kept: the process, the agent name, the
+folders, the last id read per sender (no old message is delivered again), and
+the session token and cost totals with `BPSA_MAX_SESSION_TOKENS` and
+`BPSA_MAX_SESSION_COST`, so a reset is no way around a budget. Not undone:
+files, the working directory of the process, imported modules, environment
+variables, tmux sessions and child processes of the old context.
+
+Messages around a reset:
+
+- Messages that the listener had queued when it found the request are
+  discarded: recorded as read and never shown.
+- Messages of the request's sender with an id below the request are discarded
+  too. So `send`, `reset`, `send` in this order delivers only the last one.
+- Every other message reaches the fresh context: the sender's messages with an
+  id above the request, and other senders' messages found together with it.
+
+Agents that the reset agent had started keep running and keep their own
+context. When some run, the first task after the reset starts with one line:
+`Before your context was reset you started these agents, and they still run: leader1-1 (folder group1). They kept their own context and know nothing of your reset; stop those you no longer need with stop_agent.`
+
+Only `bpsa listen` resets. An interactive session or a `bpsa run` with the
+same name keeps its context, shows one line and answers
+`Reset refused: agent <name> is not a 'bpsa listen' process, so reset <id> from <sender> changed nothing. Only a 'bpsa listen' process resets.`
+The `new` and `wait` commands pass over a reset request without output. A
+name that nobody listens under gives no answer. The sender is not checked:
+any agent that can write to the folder can reset any listener in it.
+
+Measured with a 5 s poll interval, from the request file to the confirmation
+file: 2.0 to 2.9 s for an idle listener, 0.5 s during `wait_for_messages`,
+0.3 s during a `time.sleep` code step and 4.4 s during a model call (the poll
+wait is part of each).
 
 ### Commands for a person or an outside program
 
 ```bash
 python -m smolagents.bp_messages send --folder F --name ME --to TARGET "text"   # text from stdin when absent or "-"
+python -m smolagents.bp_messages reset --folder F --name ME --to TARGET         # reset one `bpsa listen` agent, or `all`; prints the request's file name
 python -m smolagents.bp_messages new  --folder F --name ME [--peek]             # print unread messages
 python -m smolagents.bp_messages wait --folder F --name ME [--timeout 300]      # block until one arrives; exit 3 on timeout
 ```

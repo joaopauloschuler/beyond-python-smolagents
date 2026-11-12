@@ -84,8 +84,8 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Span, Text
 from smolagents.bp_messages import (
-    LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, load_message_settings, message_prompt_paragraph,
-    model_text_of_queued_messages, stop_live_members,
+    LISTENER_READY_LINE_PREFIX, MessagePoller, MessageSettings, MessageSettingsError, discarded_messages_phrase, live_members_line,
+    load_message_settings, message_prompt_paragraph, model_text_of_queued_messages, reset_done_text, stop_live_members, write_message,
 )
 from smolagents.bp_utils import FAILED_INCLUDE_TAG_TYPE, count_display_escaped_characters, display_escaped_run_pattern, dotenv_loaded_names, get_env, get_env_bool, load_dotenv_recording_names, parse_env_bool, replace_file_with_text, visible_control_characters, visible_encodable_text
 
@@ -385,12 +385,13 @@ def message_poller_lines_held():
             print_queued_messages_line()
 
 
-def start_message_poller():
-    """Starts the MessagePoller of this process when the message settings are on; atexit stops it. Without settings it does nothing."""
+def start_message_poller(request_reset=None):
+    """Starts the MessagePoller of this process when the message settings are on; atexit stops it. Without settings it does nothing.
+    request_reset is MessagePoller's: None makes this process refuse reset requests."""
     global _message_poller
     if _message_settings is None or _message_poller is not None:
         return
-    _message_poller = MessagePoller(_message_settings, print_message_poller_line, announce_queued_messages)
+    _message_poller = MessagePoller(_message_settings, print_message_poller_line, announce_queued_messages, request_reset)
     _message_poller.start()
     atexit.register(_message_poller.stop)
 
@@ -826,9 +827,10 @@ def build_agent(model, approval_callback=None, browser_enabled=False, gui_enable
         tools.append(SendMessageTool(_message_settings))
         tools.append(WaitForMessagesTool(lambda: _message_poller))
         if _message_settings.max_group_members > 0:
-            from smolagents.bp_tools import StartAgentTool, StopAgentTool
+            from smolagents.bp_tools import ResetAgentTool, StartAgentTool, StopAgentTool
             tools.append(StartAgentTool(_message_settings))
             tools.append(StopAgentTool(_message_settings))
+            tools.append(ResetAgentTool(_message_settings))
 
     if mcp_servers:
         from smolagents import MCPClient
@@ -3063,8 +3065,16 @@ LISTEN_SIGNAL_RERAISE_SECONDS = 1.0
 _unreceived_listen_signal_exception: type[BaseException] | None = None
 
 
+# True while the main thread of bpsa listen is inside listen_reset_interruptible
+_is_listen_reset_interruptible = False
+
+
 class ListenStopSignal(BaseException):
     """Raised in the main thread by the SIGTERM handler of bpsa listen. Not an Exception, so agent code does not treat it as a failed step."""
+
+
+class ListenResetSignal(BaseException):
+    """Raised in the main thread of bpsa listen, inside listen_reset_interruptible, while a reset request is pending. Not an Exception, as ListenStopSignal."""
 
 
 def raise_listen_signal_exception(exception_class: type[BaseException]):
@@ -3083,14 +3093,57 @@ def listen_signal_exception_received():
 
 
 def handle_listen_signal(signal_number, frame):
-    """Handler of SIGTERM (ListenStopSignal), SIGINT (KeyboardInterrupt, unless a ListenStopSignal is unreceived) and SIGALRM (the unreceived one again)."""
+    """Handler of SIGTERM (ListenStopSignal), SIGINT (KeyboardInterrupt), SIGUSR1 (ListenResetSignal for a pending reset request) and SIGALRM
+    (the unreceived exception again). SIGINT and SIGUSR1 raise nothing while another exception is unreceived; ListenResetSignal only inside listen_reset_interruptible."""
     exception_class = _unreceived_listen_signal_exception
     if signal_number == signal.SIGTERM:
         exception_class = ListenStopSignal
     elif signal_number == signal.SIGINT and exception_class is None:
         exception_class = KeyboardInterrupt
+    elif signal_number == signal.SIGUSR1 and exception_class is None and _message_poller is not None and _message_poller.has_pending_reset():
+        exception_class = ListenResetSignal
+    if exception_class is ListenResetSignal and not _is_listen_reset_interruptible:
+        if _unreceived_listen_signal_exception is ListenResetSignal:
+            listen_signal_exception_received()
+        return
     if exception_class is not None:
         raise_listen_signal_exception(exception_class)
+
+
+def request_listen_reset():
+    """The poller thread calls it after it recorded a reset request: SIGUSR1 to the main thread, which leaves its wait or its run."""
+    signal.pthread_kill(threading.main_thread().ident, signal.SIGUSR1)
+
+
+@contextlib.contextmanager
+def listen_reset_interruptible():
+    """Context in which a pending reset request raises ListenResetSignal in the main thread: at entry for a request that is already
+    pending, later through handle_listen_signal."""
+    global _is_listen_reset_interruptible
+    _is_listen_reset_interruptible = True
+    try:
+        if _message_poller.has_pending_reset():
+            raise ListenResetSignal()
+        yield
+    finally:
+        _is_listen_reset_interruptible = False
+        listen_signal_exception_received()
+
+
+def confirm_listen_resets():
+    """Call it in bpsa listen once the agent is replaced: takes the pending reset requests (MessagePoller.take_pending_resets), sends
+    reset_done_text to the sender of each and prints one line per request."""
+    pending_resets, discarded_message_count = _message_poller.take_pending_resets()
+    agent_name = _message_settings.agent_name
+    for pending in pending_resets:
+        line = (f"Reset {pending.reset.message_id} from {pending.reset.sender} in folder {pending.folder.label}: conversation and Python variables "
+                f"cleared, {discarded_messages_phrase(discarded_message_count)}")
+        try:
+            file_name = write_message(pending.folder.path, agent_name, pending.reset.sender, reset_done_text(agent_name, pending.reset, discarded_message_count))
+            line += f", confirmed with {file_name}"
+        except (ValueError, OSError) as error:
+            line += f"; the confirmation could not be sent ({str(error) or type(error).__name__})"
+        print_listen_line(f"{line}. Waiting for messages.")
 
 
 def read_stdin_from_null_device():
@@ -3115,8 +3168,8 @@ def fail_listen(message: str):
 
 
 def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_stats: dict):
-    """One run of bpsa listen, with the accounting and the turn summary of a run_repl turn. A failure, SIGINT or the step limit prints one
-    line and returns, so the caller waits for the next messages."""
+    """One run of bpsa listen, with the accounting and the turn summary of a run_repl turn. A failure, SIGINT, a reset request or the step
+    limit prints one line and returns, so the caller waits for the next messages."""
     from smolagents.monitoring import LogLevel
     from smolagents.utils import AgentMaxStepsError
 
@@ -3132,7 +3185,8 @@ def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_sta
         with message_poller_lines_held():
             _spinner.start()
             try:
-                result = agent.run(task_text, reset=False)
+                with listen_reset_interruptible():
+                    result = agent.run(task_text, reset=False)
             finally:
                 listen_signal_exception_received()
                 _spinner.stop()
@@ -3144,6 +3198,8 @@ def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_sta
             print_listen_line(f"Run {run_number} reached the limit of {agent.max_steps} steps without finishing; {LISTEN_RUN_END}", "yellow")
     except KeyboardInterrupt:
         print_listen_line(f"Run {run_number} interrupted by SIGINT; {LISTEN_RUN_END}", "yellow")
+    except ListenResetSignal:
+        print_listen_line(f"Run {run_number} ended by a reset request; its messages are not delivered again.", "yellow")
     except Exception as error:
         print_listen_line(f"Run {run_number} failed: {str(error) or type(error).__name__}; {LISTEN_RUN_END}", "red")
     finally:
@@ -3155,13 +3211,14 @@ def run_agent_on_listen_task(agent, task_text: str, run_number: int, session_sta
 
 
 def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None, browser_enabled: bool = False, gui_enabled: bool = False, image_enabled: bool = False, tmux_enabled: bool = False, mcp_servers=None, verbose_override=None):
-    """bpsa listen: waits for agent-to-agent messages, runs the agent on them, waits again; one agent and one memory for all runs.
-    It reads no input and writes no file under HOME. SIGTERM, or SIGINT while no run is in progress, ends it with status 0."""
+    """bpsa listen: waits for agent-to-agent messages, runs the agent on them, waits again; one agent and one memory for all runs, until
+    a reset request replaces the agent. It reads no input and writes no file under HOME. SIGTERM, or SIGINT while no run is in progress, ends it with status 0."""
     global _auto_approve, _auto_approve_source, _verbose, _message_settings
     read_stdin_from_null_device()
     sys.stdout.reconfigure(line_buffering=True)  # a plain print reaches a log file at once; the Rich console flushes its own writes
     signal.signal(signal.SIGTERM, handle_listen_signal)
     signal.signal(signal.SIGALRM, handle_listen_signal)
+    signal.signal(signal.SIGUSR1, handle_listen_signal)
     if signal.getsignal(signal.SIGINT) is not signal.SIG_IGN:  # a shell starts a background job with SIGINT ignored; it stays ignored
         signal.signal(signal.SIGINT, handle_listen_signal)
     agent = None
@@ -3183,7 +3240,8 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
             sys.modules["litellm"].suppress_debug_info = True  # its "Provider List" lines after a failed request carry colour codes
         agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
         check_model_connectivity(model)
-        apply_context_length(agent, resolve_context_length(model))
+        context_length = resolve_context_length(model)
+        apply_context_length(agent, context_length)
         instructions = None
         if not skip_instructions:
             console.print("[dim]Loading agent instructions...[/]")
@@ -3191,18 +3249,39 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
         session_stats = new_session_stats()
         budget_warned = set()
         print_listen_line(f"{LISTENER_READY_LINE_PREFIX}{message_settings_text(_message_settings)}.", "green")
-        start_message_poller()
+        start_message_poller(request_listen_reset)
+        is_context_new = True
+        is_context_reset = False
         while True:
+            if _message_poller.has_pending_reset():
+                # As /clear: a new agent has no conversation and no Python variables. session_stats and budget_warned stay, so the budget counts on.
+                activity = "during a reset"
+                replaced_agent, agent = agent, None
+                _shutdown_browser(replaced_agent)
+                _shutdown_gui(replaced_agent)
+                _shutdown_mcp(replaced_agent)
+                rotate_session_id(model)
+                agent = build_agent(model, approval_callback=interactive_approval_callback, browser_enabled=browser_enabled, gui_enabled=gui_enabled, image_enabled=image_enabled, tmux_enabled=tmux_enabled, mcp_servers=mcp_servers)
+                apply_context_length(agent, context_length)
+                confirm_listen_resets()
+                is_context_new = is_context_reset = True
+                continue
             activity = "while waiting for messages"
-            _message_poller.messages_waiting.wait()
+            try:
+                with listen_reset_interruptible():
+                    _message_poller.messages_waiting.wait()
+            except ListenResetSignal:
+                continue
             activity = f"during run {run_number + 1}"
             message_text = take_queued_message_text()
             if not message_text:
                 continue
             run_number += 1
-            task_text = LISTEN_TASK_HEADING + message_text
-            if run_number == 1:
+            members_line = live_members_line(_message_settings) if is_context_reset else ""
+            task_text = LISTEN_TASK_HEADING + (f"{members_line}\n\n" if members_line else "") + message_text
+            if is_context_new:
                 task_text = prepend_instructions(task_text, instructions)
+            is_context_new = is_context_reset = False
             run_agent_on_listen_task(agent, task_text, run_number, session_stats)
             if warn_session_budget(session_stats, budget_warned, LISTEN_BUDGET_STOP_HINT) == "exceeded":
                 stop_reason = "its session budget"
@@ -3215,6 +3294,7 @@ def run_listen(skip_instructions: bool = False, auto_approve: bool | None = None
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGUSR1, signal.SIG_IGN)
         listen_signal_exception_received()
         _spinner.stop()
         if _message_poller is not None:
